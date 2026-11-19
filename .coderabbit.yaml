@@ -1,0 +1,94 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit은 코멘트만 — 승인 · Reviewer · 커밋 · PR · 머지는 사람이 한다(CLAUDE.md).
+# 자동 리뷰는 끈다. 필요할 때 PR 코멘트에 @coderabbitai review 로만 부른다(이전 프로젝트에서 자동 검수가 너무 오래 걸렸음).
+# 운영 규칙: main 보호 규칙의 필수 검사에 CodeRabbit을 넣지 않는다.
+# 운영 규칙: 코드 변경 명령(autofix · 커밋 · 테스트 생성 · 충돌 해결 · 새 PR)은 쓰지 않는다 — 코멘트 · 질문 · 요약만.
+language: "ko-KR"
+early_access: false
+tone_instructions: "부트캠프 수강생이 이해하도록 원인과 수정 예시를 짧게 설명한다. [필수]는 실제 오류 · 보안 · 권한 · 개인정보 · 데이터 무결성 · 계약 위반에만 붙인다. 사소한 스타일은 [선택]을 붙이거나 생략한다. 과한 추상화나 새 디자인 패턴은 제안하지 않는다."
+
+reviews:
+  profile: "chill"
+  high_level_summary: true
+  high_level_summary_in_walkthrough: true
+  collapse_walkthrough: false
+  sequence_diagrams: true
+  estimate_code_review_effort: true
+  review_status: true
+  poem: false
+  in_progress_fortune: false
+
+  auto_approvals:
+    enabled: false
+    allow_author_approval: false
+  suggested_reviewers: false
+  auto_assign_reviewers: false
+  auto_apply_labels: false
+  fail_commit_status: false
+
+  finishing_touches:
+    docstrings: { enabled: false }
+    unit_tests: { enabled: false }
+    simplify: { enabled: false }
+    autofix: { enabled: false }
+    fix_ci: { enabled: false }
+    resolve_merge_conflict: { enabled: false }
+
+  post_merge_actions: []
+
+  auto_review:
+    enabled: false              # 수동 호출만: @coderabbitai review
+    drafts: false
+
+  path_filters:
+    - "!**/build/**"
+    - "!**/.gradle/**"
+    - "!backend/gradle/wrapper/**"
+    - "!**/node_modules/**"
+    - "!**/*.min.js"
+
+  path_instructions:
+    - path: "backend/src/main/java/**/controller/**"
+      instructions: "요청 매핑 · 요청 DTO 검증 · 인가 검사 · 응답 DTO만. Entity를 응답으로 내보내거나 Repository를 직접 부르면 [필수]."
+    - path: "backend/src/main/java/**/service/**"
+      instructions: "@Transactional 경계는 Service 공개 메서드. 가게 단위 데이터는 항상 가게 조건으로 조회 · 저장(다른 가게 ID는 404). 가상 잔액 변경은 거래 내역과 한 트랜잭션."
+    - path: "backend/src/main/java/**/repository/**"
+      instructions: "가게 조건 없는 findById 류 조회, 문자열로 이어 붙인 쿼리, N+1을 본다."
+    - path: "backend/src/main/java/**/dto/**"
+      instructions: "사장님 응답에 다른 가게 방문 이력 · 공유 손님 정보가 그대로 나가면 [필수]. 세그먼트는 익명 집계만."
+    - path: "backend/src/main/resources/db/migration/**"
+      instructions: "이미 있는 V{n} 파일 수정은 [필수]. 새 변경은 새 V{n+1}."
+    - path: "docs/CONTRACTS*.md"
+      instructions: "계약 문서가 바뀌었으면 같은 PR의 DTO · 경로 · enum이 문서와 맞는지 본다."
+
+  pre_merge_checks:
+    title:
+      mode: "warning"
+      requirements: "형식 ^(feat|fix|refactor|perf|test|docs|style|build|ci|chore)(\\([a-z0-9-]+\\))?: .{1,50}$ — 설명은 50자 이내, 끝에 마침표 없음."
+    description:
+      mode: "warning"
+    docstrings:
+      mode: "off"
+    custom_checks:
+      - name: "AI 작성자 표기 없음"
+        mode: "warning"
+        instructions: "PR 본문과 커밋 메시지에 'Co-authored-by: Claude', 'noreply@anthropic.com', 'Generated with Claude Code'가 하나라도 있으면 실패, 없으면 통과."
+      - name: "적용된 Flyway 파일 수정 금지"
+        mode: "warning"
+        instructions: "backend/src/main/resources/db/migration/ 아래 이미 있던 파일이 수정 · 삭제 · 이름 변경되었으면 실패."
+      - name: "관련 이슈 번호"
+        mode: "warning"
+        instructions: "PR 본문 「관련 Issue」 절에 #숫자가 하나 이상 있으면 통과, 없으면 실패."
+
+  tools:
+    pmd: { enabled: true }
+    gitleaks: { enabled: true }
+    languagetool: { enabled: false }
+    markdownlint: { enabled: false }
+
+chat:
+  auto_reply: false
+  allow_non_org_members: false
+
+issue_enrichment:
+  planning: { enabled: false }

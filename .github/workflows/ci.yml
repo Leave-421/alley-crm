@@ -1,0 +1,115 @@
+# CI — PR과 main push마다 프론트엔드 · 백엔드를 검증한다.
+#
+# - 두 job 이름은 main 보호 규칙의 "필수 status check"에 그대로 등록돼 있다. 이름을 바꾸면 규칙도 같이 고친다.
+# - frontend/ · backend/ 가 아직 없으면 해당 job은 "건너뜀"을 출력하고 통과한다(뼈대 단계용).
+#   코드가 생기면 자동으로 실제 검사가 돈다.
+# - secret을 쓰지 않는다. 백엔드 테스트 DB는 이 job 안에서만 사는 MySQL 서비스 컨테이너이고,
+#   아래 접속 정보는 CI 전용 일회용 값이다.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: frontend (lint · build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: detect frontend
+        id: detect
+        run: |
+          if [ -f frontend/package.json ]; then echo "exists=true" >> "$GITHUB_OUTPUT"
+          else echo "exists=false" >> "$GITHUB_OUTPUT"; echo "frontend/package.json 없음 — 건너뜀"; fi
+
+      - uses: actions/setup-node@v4
+        if: steps.detect.outputs.exists == 'true'
+        with:
+          node-version-file: .nvmrc
+
+      # package-lock.json 이 있으면 npm ci, 없으면 npm install
+      - name: install
+        if: steps.detect.outputs.exists == 'true'
+        working-directory: frontend
+        run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+      # 스크립트가 아직 없으면 --if-present 로 건너뛴다
+      - name: lint
+        if: steps.detect.outputs.exists == 'true'
+        working-directory: frontend
+        run: npm run lint --if-present
+
+      - name: build
+        if: steps.detect.outputs.exists == 'true'
+        working-directory: frontend
+        run: npm run build --if-present
+
+  backend:
+    name: backend (test · bootJar)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      mysql:
+        image: mysql:8.4.13   # compose.yaml과 같은 버전
+        env:
+          MYSQL_DATABASE: app_test
+          MYSQL_USER: app_ci
+          MYSQL_PASSWORD: ci-only-password
+          MYSQL_ROOT_PASSWORD: ci-only-root-password
+          TZ: UTC
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+
+    env:
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: app_test
+      MYSQL_USER: app_ci
+      MYSQL_PASSWORD: ci-only-password
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: detect backend
+        id: detect
+        run: |
+          if [ -f backend/gradlew ]; then echo "exists=true" >> "$GITHUB_OUTPUT"
+          else echo "exists=false" >> "$GITHUB_OUTPUT"; echo "backend/gradlew 없음 — 건너뜀"; fi
+
+      - uses: actions/setup-java@v4
+        if: steps.detect.outputs.exists == 'true'
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: gradle test bootJar
+        if: steps.detect.outputs.exists == 'true'
+        working-directory: backend
+        run: chmod +x gradlew && ./gradlew test bootJar --no-daemon --console=plain
+
+      - name: upload test report (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-report
+          path: backend/build/reports/tests/test/
+          retention-days: 7

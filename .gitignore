@@ -1,0 +1,51 @@
+### Secrets — never commit ###
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+
+### OS / Editors ###
+.DS_Store
+.idea/
+*.iws
+*.iml
+*.ipr
+.vscode/*
+!.vscode/extensions.json
+*.suo
+*.sw?
+
+### Logs ###
+logs/
+*.log
+
+### Backend (Gradle / Spring Boot) ###
+.gradle/
+**/build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+out/
+bin/
+!**/src/main/**/bin/
+!**/src/test/**/bin/
+backend/HELP.md
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### Frontend (Node / Vite) ###
+**/node_modules/
+**/dist/
+dist-ssr/
+*.local
+
+### Local DB data (compose uses a named volume; this is for bind-mount setups) ###
+mysql-data/
+
+### Claude Code (personal settings) ###
+.claude/settings.local.json
