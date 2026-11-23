@@ -12,6 +12,15 @@ body:
     validations:
       required: true
 
+  - type: input
+    id: backlog
+    attributes:
+      label: 백로그 ID · 화면 ID
+      description: "[이슈 백로그](https://github.com/Leave-421/alley-crm-docs/blob/main/docs/00-backlog.md)의 ID와, 화면 이슈면 [화면 명세](https://github.com/Leave-421/alley-crm-docs/blob/main/docs/07-screens.md)의 화면 ID."
+      placeholder: "예: A8 · G-02"
+    validations:
+      required: false
+
   - type: textarea
     id: problem
     attributes:
@@ -39,5 +48,27 @@ body:
       placeholder: |
         - 포함: ...
         - 제외: ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: blocked_by
+    attributes:
+      label: 선행
+      description: 먼저 끝나야 하는 이슈. 이슈 번호(#N)로 적습니다.
+      placeholder: |
+        - #...
+    validations:
+      required: false
+
+  - type: textarea
+    id: mockup_diff
+    attributes:
+      label: 목업과 다른 점
+      description: "화면 이슈만 적습니다. 임시 목업과 화면 명세를 대조한 결과이며, **화면 명세가 목업보다 우선**합니다. 목업을 고치면 해결된 줄을 지웁니다."
+      placeholder: |
+        - 넣을 것 (목업에 없음): ...
+        - 뺄 것 (명세에 없음): ...
+        - 바꿀 것 (값 · 상태 · 문구): ...
     validations:
       required: false
