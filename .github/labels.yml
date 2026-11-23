@@ -17,6 +17,23 @@
   color: "cfd3d7"
   description: "Task 템플릿. 브랜치·커밋 type: chore, refactor, test, docs 중 맞는 것"
 
+# 담당 라벨 — 실제 담당자가 정해지기 전 가상 인물 A ~ E (기획 저장소 docs/00-backlog.md)
+- name: "owner:A"
+  color: "fbca04"
+  description: "프론트 · 손님 화면 · 지도"
+- name: "owner:B"
+  color: "fbca04"
+  description: "프론트 기반 · 사장님 · 상인회 화면"
+- name: "owner:C"
+  color: "0e8a16"
+  description: "백엔드 기반 · 계정 · 가게 · 손님 · 알림 · 분석"
+- name: "owner:D"
+  color: "0e8a16"
+  description: "DB 기반 · 예약 · 돈"
+- name: "owner:E"
+  color: "0e8a16"
+  description: "추천 · 쿠폰 · 데이터"
+
 # 영역 라벨 — TODO: 요구사항 정의서의 기능 그룹이 확정되면 주석을 풀고 고친다.
 # 아래는 v1 결정 정리 기준 후보다.
 # - name: "area:auth"

@@ -1,6 +1,6 @@
 # {{SERVICE}} — Claude Code 진입점
 
-골목 상권 공동 예약 CRM. 한 골목의 가게 10곳 내외가 예약 시스템 하나를 같이 쓰고, 손님이 가게 사이를 어떻게 움직이는지 보고 함께 마케팅한다(코스 제안 · 소개 수수료). 등장인물은 손님 · 사장님 · 상인회. 팀 5명, 마감 2026-12-11.
+골목 상권 공동 예약 CRM. 한 골목(대학가 한 권역)의 참여 가게 15곳이 예약 시스템 하나를 같이 쓰고, 확인된 방문 기록으로 다음 가게를 추천하며 함께 마케팅한다(다음 방문 추천 · 오늘의 코스 · 추천 쿠폰 · 소개 수수료). 등장인물은 손님 · 사장님 · 상인회. 팀 5명, 마감 2026-12-11.
 
 - 기획 저장소: https://github.com/Leave-421/alley-crm-docs (요구사항 · 기능 명세 · 화면)
 - 규칙 상세: `.claude/rules/` (git-workflow · code-quality · security · testing · scope-control). 실행 명령: `README.md`.
@@ -8,7 +8,7 @@
 ## 스택
 
 - **backend/**: Java 21 · Spring Boot · Spring MVC · Spring Data JPA · Spring Security(서버 세션) · Flyway · MySQL 8.4. 기본 패키지 TODO.
-- **frontend/**: 미정 — JavaScript 기본, 필요하면 React · TypeScript 도입. TODO
+- **frontend/**: React + JavaScript (Vite, Node 24). TypeScript 전환은 미결. 실시간 알림은 SSE, 인증은 세션 쿠키 + CSRF(기획 저장소 `docs/ARCHITECTURE.md`).
 - 로컬: MySQL만 `compose.yaml`, Spring(`:8080`) · 프론트 개발 서버(`:5173`)는 직접 실행.
 
 ```text
@@ -29,9 +29,9 @@ frontend/ backend/ docs/(계약) compose.yaml .env.example .github/ .claude/
 ## 절대 원칙
 
 - **가게 격리**: 가게 단위 데이터는 항상 가게 조건으로 조회한다. 다른 가게 ID는 `404`(IDOR 방어).
-- **손님 정보**: 가게끼리 공유한 손님 정보는 코스 제안과 집계 계산에만 쓴다. 사장님에게는 "제안으로 왔는지"와 익명 집계만, 손님은 흐름 · 매출 데이터를 보지 못한다.
+- **손님 정보**: 가게끼리 공유한 손님 정보는 코스 제안과 집계 계산에만 쓴다. 사장님에게는 "추천으로 왔는지"와 익명 집계만 보이고 **보낸 가게 이름은 보이지 않는다.** 손님은 흐름 · 매출 데이터를 보지 못한다.
 - **돈은 가상**: 예약금 · 소개 수수료는 가상 잔액이다. 실제 결제 · 송금 · 문자 발송 연동을 만들지 않는다.
-- **v1 제외**: 캠페인 발송 · 쿠폰 · 노쇼 기능을 만들지 않는다.
+- **v1 제외**: 캠페인 발송 · 노쇼 기능 · 상인회 추천 코스 · 권역 선택 · 검색을 만들지 않는다. (추천 쿠폰은 2026-11-23 결정으로 v1에 들어갔다.)
 - secret · 비밀번호를 커밋하거나 출력하지 않는다. `.env`는 읽지 않는다.
 
 ## 명령 (자세히는 README)
@@ -61,6 +61,6 @@ Claude Code는 개발 보조 도구이고 팀원이 아니다. Plan 모드 · Au
 ## 병렬 세션 작업 경계
 
 - 한 세션은 한 이슈 · 한 브랜치만 다룬다. 이슈 범위 밖 파일은 고치지 않고 후속 이슈 후보로 보고한다.
-- 역할 분담: TODO (정해지면 `.github/CODEOWNERS`와 함께 채운다). Issue별 담당은 Issue 본문이 기준이다.
+- 역할 분담: 기획 저장소 `docs/00-backlog.md`(가상 인물 A ~ E, 이슈 라벨 `owner:A` ~ `owner:E`). 실제 담당이 정해지면 `.github/CODEOWNERS`와 함께 채운다. Issue별 담당은 Issue 본문 · 라벨이 기준이다.
 - 다른 팀원의 영역을 건드려야 하면 먼저 사용자에게 묻는다. 테이블 · Entity · migration은 만든 사람만 고친다.
 - 공유 파일(`docs/`, 공통 패키지, `.github/`, 빌드 설정)은 이슈가 그 변경을 요구할 때만 고친다.
