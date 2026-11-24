@@ -69,6 +69,15 @@ D1(#12)에서 정한 enum 값의 **유일한 목록**이다. DB에는 이 문자
 | `recommend_distance_exponent` | 1.0 | 거리 지수 β — **기획 미결, 임시 기본값** |
 | `recommend_count` | 3 | 추천 개수 |
 
+### 추천 (담당 E, `CONTRACTS_API.md` 3.1)
+
+추천 배지 `badge`는 위 표에 있다.
+
+| enum | 값 |
+| --- | --- |
+| 이유 종류 `reasonType` | `visit_data` 방문 데이터 · `colocation` 업종 동반 입지 · `time_band` 시간대 · `attractiveness` 매력도 · `demographic` 손님층 · `distance` 거리 |
+| 기준 시각 출처 `baseTimeSource` | `now` 현재 시각 · `reservation` 기준 가게 예약 시각 |
+
 ## 4. 에러 코드
 
 | code | HTTP | 언제 |
