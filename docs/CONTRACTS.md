@@ -11,11 +11,14 @@
 
 ## 2. 역할
 
-| 역할 | 설명 |
-| --- | --- |
-| 손님 (회원 · 비회원) | TODO |
-| 사장님 | TODO |
-| 상인회 | TODO |
+계정의 `role` 값(C2). 비회원은 계정이 없고 비회원 예약 조회의 제한 세션을 받는다(C13).
+
+| 역할 | `role` | 설명 |
+| --- | --- | --- |
+| 손님 (회원) | `customer` | 회원가입으로 만든다. 성별 · 연령대를 회원정보에 둔다 |
+| 손님 (비회원) | — | 계정 없음. 예약번호 + 전화번호로 확인(C13) |
+| 사장님 | `owner` | 가게당 1개(`storeId`). 직원 계정 없음. 가게 가입 승인 뒤 쓴다(C5) |
+| 상인회 | `association` | 권역당 1개(`regionId`). 가입 기능 없이 초기 데이터로만 만든다 |
 
 ## 3. Entity · 상태
 
@@ -102,7 +105,8 @@ D1(#12)에서 정한 enum 값의 **유일한 목록**이다. DB에는 이 문자
 ## 6. 인증 · 세션 · CSRF
 
 - 서버 세션 쿠키(Spring Security HttpSession). JWT를 쓰지 않는다. 세션 쿠키는 `HttpOnly` · `SameSite=Lax`, HTTPS에서 `Secure`.
-- 기본은 모든 `/api/**`가 로그인 필요다. 로그인 없이 여는 경로는 이 절에 적는다: `GET /api/v1/csrf`, `GET /actuator/health`. (C2 · C3에서 로그인 · 회원가입 · 비회원 조회 · 손님 공개 조회 경로를 더한다.)
+- 기본은 모든 `/api/**`가 로그인 필요다. 로그인 없이 여는 경로는 이 절에 적는다: `GET /api/v1/csrf`, `GET /actuator/health`, `POST /api/v1/auth/signup`, `POST /api/v1/auth/login`. (C3 · C13에서 비회원 조회 · 손님 공개 조회 경로를 더한다.) 로그인 없이 여는 `POST`도 CSRF 토큰은 필요하다.
+- 로그인에 성공하면 세션 ID를 새로 발급한다(세션 고정 방지). 로그아웃은 `POST /api/v1/auth/logout`만 받는다.
 - **CSRF:** 앱을 처음 열 때 `GET /api/v1/csrf`를 부르면 `XSRF-TOKEN` 쿠키가 내려온다. 상태 변경 요청(`POST` · `PUT` · `PATCH` · `DELETE`)은 그 값을 `X-XSRF-TOKEN` 헤더로 보낸다. 없거나 틀리면 `403 csrf_invalid`.
 - 로그인 안 된 요청은 리다이렉트하지 않고 `401 unauthorized` JSON으로 응답한다.
 - SSE 연결도 같은 세션 쿠키로 인증한다.
