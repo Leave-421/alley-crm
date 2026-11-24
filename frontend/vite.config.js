@@ -1,6 +1,7 @@
 import { fileURLToPath, URL } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { msw } from 'msw/vite';
 
 // 개발 서버(:5173)가 /api 요청을 Spring(:8080)으로 넘긴다.
 // 브라우저 입장에서는 출처가 localhost:5173 하나라서 세션 쿠키 · XSRF-TOKEN 쿠키가 그대로 붙는다.
@@ -8,8 +9,12 @@ import react from '@vitejs/plugin-react';
 const API_TARGET = 'http://localhost:8080';
 const apiProxy = { '/api': { target: API_TARGET, changeOrigin: false } };
 
-export default defineConfig({
-  plugins: [react()],
+export default defineConfig(({ mode }) => ({
+  plugins: [
+    react(),
+    // 목 모드(`npm run dev:mock`)에서만 MSW 워커 스크립트를 내준다. 다른 빌드에는 넣지 않는다.
+    mode === 'mock' && msw({ mode: 'worker-only' }),
+  ].filter(Boolean),
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
@@ -23,4 +28,4 @@ export default defineConfig({
     strictPort: true,
     proxy: apiProxy,
   },
-});
+}));
