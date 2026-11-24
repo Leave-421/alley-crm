@@ -1,0 +1,15 @@
+{
+  "//": "TypeScript로 바꿀 때: 파일 확장자를 .ts/.tsx로 바꾸고 이 파일을 tsconfig.json으로 옮긴 뒤 checkJs 대신 strict를 켠다.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "checkJs": false,
+    "skipLibCheck": true,
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src"]
+}
