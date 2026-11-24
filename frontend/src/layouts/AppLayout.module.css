@@ -31,7 +31,7 @@
   min-height: 22px;
   padding: 0 var(--space-2);
   border: 1px solid rgba(255, 255, 255, 0.9);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-badge);
   background: linear-gradient(90deg, #d5c5ce 0%, #e1d4db 55%, #e9dfe4 100%);
   font-size: var(--text-sm);
   font-weight: var(--weight-bold);

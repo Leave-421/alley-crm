@@ -3,12 +3,12 @@
   align-self: flex-start; /* flex 부모 안에서 폭이 늘어나지 않게 */
   align-items: center;
   gap: var(--space-1);
-  min-height: 22px;
-  padding: 0 var(--space-2);
+  min-height: 26px;
+  padding: 0 10px;
   border: 1.5px solid transparent;
-  border-radius: var(--radius-pill);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
+  border-radius: var(--radius-badge);
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
   line-height: 1;
   white-space: nowrap;
 }

@@ -1,11 +1,12 @@
 /*
  * 디자인 토큰. 값은 확정 목업(claude.ai 「로코리 LOCORI — 15곳 골목 지도 앱」,
- * https://claude.ai/artifact/EDVhgMPk2tVvq4XHMoC3wv, 버전 1795506897-1f85 · 자주색 계열)에서 뽑았다.
+ * https://claude.ai/artifact/EDVhgMPk2tVvq4XHMoC3wv, 버전 1795508345-e3eb · 버건디 계열)에서 뽑았다.
  * 컴포넌트는 색 · 크기를 직접 쓰지 말고 이 변수만 쓴다. 목업 색이 바뀌면 이 파일만 고친다.
  */
 :root {
   /* 글꼴 — 웹폰트는 아직 불러오지 않는다(설치된 글꼴 → 시스템 글꼴 순서로 대체) */
   --font-sans: 'Inter', 'Noto Sans KR', system-ui, -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  --font-display: 'Do Hyeon', 'Noto Sans KR', var(--font-sans); /* 화면 제목(목업 .h1) */
 
   /* 글자 크기 · 줄 높이 · 굵기 */
   --text-xs: 11px;
@@ -37,6 +38,13 @@
   --color-gray-50: #f3eef1;
   --color-white: #ffffff;
 
+  /* 브랜드 · 주요 행동 색(버건디) */
+  --color-brand-500: #8a2e40;
+  --color-brand-600: #7a2737;
+  --color-brand-700: #6b1e2e;
+  --color-brand-800: #5e1a28;
+  --color-on-brand: #fbf3f6;
+
   /* 포인트 색 */
   --color-pink-50: #eee0ec;
   --color-pink-100: #f2dce5;
@@ -47,18 +55,27 @@
   --color-rust-600: #8e3b30;
 
   /* 역할별 이름 */
-  --color-bg: #e6dae1;
-  --gradient-bg: linear-gradient(170deg, #e6dae1 0%, #d9c8d2 45%, #cdb8c5 100%);
-  --color-surface: var(--color-white);
+  --color-bg: #ece4e7;
+  --gradient-bg: linear-gradient(180deg, #ece4e7 0%, #e1d6db 100%);
+  --color-surface: rgba(255, 251, 252, 0.86); /* 카드 바탕 */
+  --color-surface-border: rgba(63, 36, 42, 0.09);
   --color-text: var(--color-ink-900);
   --color-text-muted: var(--color-ink-500);
+  --color-heading: var(--color-brand-700);
   --color-border: var(--color-gray-300);
   --color-border-strong: var(--color-gray-400);
-  --color-primary: var(--color-ink-700);
-  --color-on-primary: var(--color-white);
+  --color-primary: var(--color-brand-700);
+  --gradient-primary: linear-gradient(180deg, var(--color-brand-600) 0%, var(--color-brand-800) 100%);
+  --color-on-primary: var(--color-on-brand);
+  --color-unread-dot: var(--color-berry-500);
   --color-danger-text: var(--color-rust-600);
-  --color-focus: var(--color-ink-500);
-  --color-tab-inactive: #dcc8d3; /* 진자주 하단 탭 위의 꺼진 탭 글자 */
+  --color-focus: var(--color-brand-700);
+
+  /* 하단 탭 */
+  --gradient-tabbar: linear-gradient(180deg, #4a2a31 0%, var(--color-ink-800) 100%);
+  --color-tab-inactive: #dcc8d3;
+  --color-tab-active: var(--color-white);
+  --gradient-tab-active-icon: linear-gradient(180deg, var(--color-brand-500), var(--color-brand-700));
 
   /*
    * 예약 상태 4개(신청 · 확정 · 방문 · 취소, 07-screens 「모든 화면 공통」).
@@ -72,7 +89,7 @@
   --status-confirmed-text: var(--color-ink-900);
   --status-visited-bg: var(--color-ink-800);
   --status-visited-border: var(--color-ink-800);
-  --status-visited-text: var(--color-white);
+  --status-visited-text: var(--color-on-brand);
   --status-canceled-bg: transparent;
   --status-canceled-border: var(--color-gray-400);
   --status-canceled-text: var(--color-ink-500);
@@ -88,6 +105,7 @@
 
   /* 모서리 */
   --radius-sm: 6px;
+  --radius-badge: 7px;
   --radius-md: 10px;
   --radius-button: 18px;
   --radius-lg: 20px;
@@ -95,7 +113,7 @@
   --radius-pill: 999px;
 
   /* 그림자 */
-  --shadow-card: 0 12px 32px rgba(150, 120, 137, 0.14);
+  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(63, 36, 42, 0.05), 0 8px 22px rgba(63, 36, 42, 0.06);
   --shadow-tabbar: 0 -8px 22px rgba(63, 36, 42, 0.25);
 
   /* 레이아웃 */
