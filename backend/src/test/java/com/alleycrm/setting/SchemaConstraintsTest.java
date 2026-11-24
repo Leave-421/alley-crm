@@ -89,6 +89,21 @@ class SchemaConstraintsTest {
     }
 
     @Test
+    void 같은_표시_이벤트의_노출_재전송은_1건만() {
+        long visitor = insert("INSERT INTO visitor (anon_id) VALUES ('00000000-0000-0000-0000-000000000001')");
+        String sql = """
+                INSERT INTO recommendation_exposure (visitor_id, display_id, base_store_id, recommended_store_id, `rank`, badge, shown_at)
+                VALUES (?, ?, ?, ?, 1, 'visit_data', NOW(6))
+                """;
+        jdbc.update(sql, visitor, "11111111-1111-1111-1111-111111111111", storeA, storeB);
+
+        assertThatThrownBy(() -> jdbc.update(sql, visitor, "11111111-1111-1111-1111-111111111111", storeA, storeB))
+                .isInstanceOf(DataAccessException.class);
+        // 다시 그린 카드 묶음(새 display_id)은 그대로 남는다
+        jdbc.update(sql, visitor, "22222222-2222-2222-2222-222222222222", storeA, storeB);
+    }
+
+    @Test
     void 월_정산은_권역_달마다_하나() {
         jdbc.update("INSERT INTO settlement (region_id, month) VALUES (?, '2026-11')", regionId);
 

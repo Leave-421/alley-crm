@@ -17,6 +17,7 @@ CREATE TABLE store_click (
 CREATE TABLE recommendation_exposure (
     id                    BIGINT       NOT NULL AUTO_INCREMENT,
     visitor_id            BIGINT       NOT NULL,
+    display_id            CHAR(36)     NOT NULL COMMENT '프론트가 카드 묶음을 그릴 때마다 만드는 UUID(같은 표시의 재전송 거르기)',
     base_store_id         BIGINT       NOT NULL,
     recommended_store_id  BIGINT       NOT NULL,
     `rank`                INT          NOT NULL,
@@ -26,6 +27,7 @@ CREATE TABLE recommendation_exposure (
     shown_at              DATETIME(6)  NOT NULL,
     data_source           VARCHAR(10)  NOT NULL DEFAULT 'real',
     PRIMARY KEY (id),
+    CONSTRAINT uk_exposure_display UNIQUE (visitor_id, display_id, recommended_store_id) COMMENT '같은 표시 이벤트의 중복 전송만 1건으로. 실제 반복 노출은 새 display_id라 모두 남음',
     CONSTRAINT fk_exposure_visitor FOREIGN KEY (visitor_id) REFERENCES visitor (id),
     CONSTRAINT fk_exposure_base_store FOREIGN KEY (base_store_id) REFERENCES store (id),
     CONSTRAINT fk_exposure_recommended_store FOREIGN KEY (recommended_store_id) REFERENCES store (id),
