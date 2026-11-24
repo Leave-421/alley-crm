@@ -7,7 +7,7 @@
 
 ## 스택
 
-- **backend/**: Java 21 · Spring Boot · Spring MVC · Spring Data JPA · Spring Security(서버 세션) · Flyway · MySQL 8.4. 기본 패키지 TODO.
+- **backend/**: Java 21 · Spring Boot · Spring MVC · Spring Data JPA · Spring Security(서버 세션) · Flyway · MySQL 8.4. 기본 패키지 이름은 C1 이슈에서 정한다(미정).
 - **frontend/**: React + JavaScript (Vite, Node 24). TypeScript 전환은 미결. 실시간 알림은 SSE, 인증은 세션 쿠키 + CSRF(기획 저장소 `docs/ARCHITECTURE.md`).
 - 로컬: MySQL만 `compose.yaml`, Spring(`:8080`) · 프론트 개발 서버(`:5173`)는 직접 실행.
 
@@ -22,9 +22,14 @@ frontend/ backend/ docs/(계약) compose.yaml .env.example .github/ .claude/
 
 ## 백엔드 패키지 원칙
 
-- 단일 애플리케이션(모듈형 모놀리스). 도메인 패키지는 기획 확정 뒤 정한다. TODO
+- 단일 애플리케이션(모듈형 모놀리스). 도메인 패키지는 C1 이슈에서 정한다(미정).
 - 패키지마다 controller · service · repository · domain(Entity) · dto. **Controller → Service(트랜잭션) → Repository**, 요청/응답 DTO 분리, Entity 직접 응답 금지.
 - 스키마는 Flyway(`backend/src/main/resources/db/migration/`)로만 바꾼다.
+- **상태가 바뀌는 데이터**(예약 · 쿠폰 · 잔액 · 수수료)는 JPA 엔티티로, **집계 · 추천 계산**은 네이티브 SQL(JdbcTemplate 또는 `nativeQuery`)로 쓴다. 집계 · 추천 조회는 다른 도메인 테이블을 읽기 전용으로 읽어도 된다(쓰기는 그 도메인의 Service로만).
+- 쿠폰 총수량은 조건부 UPDATE 한 번(`issued < total`일 때만 +1)으로 원자 처리한다.
+- 현재 시각은 바꿔 끼울 수 있는 시계로만 읽는다(`LocalDateTime.now()` 직접 호출 금지).
+- 테스트 DB는 Testcontainers(MySQL 8.4)로 띄운다. H2로 대신하지 않는다.
+- 근거: 기획 저장소 `docs/ARCHITECTURE.md` 「데이터 접근 · 테스트」 · 「서버 시각」.
 
 ## 절대 원칙
 
@@ -38,7 +43,7 @@ frontend/ backend/ docs/(계약) compose.yaml .env.example .github/ .claude/
 
 ```powershell
 docker compose up -d --wait                 # 루트 — 로컬 MySQL (.env 필요)
-cd backend;  .\gradlew.bat test bootJar    # MySQL 필요
+cd backend;  .\gradlew.bat test bootJar    # Docker 필요(Testcontainers, C1에서 설정)
 cd frontend; npm ci; npm run lint; npm run build
 ```
 
@@ -62,5 +67,7 @@ Claude Code는 개발 보조 도구이고 팀원이 아니다. Plan 모드 · Au
 
 - 한 세션은 한 이슈 · 한 브랜치만 다룬다. 이슈 범위 밖 파일은 고치지 않고 후속 이슈 후보로 보고한다.
 - 역할 분담: 기획 저장소 `docs/00-backlog.md`(가상 인물 A ~ E, 이슈 라벨 `owner:A` ~ `owner:E`). 실제 담당이 정해지면 `.github/CODEOWNERS`와 함께 채운다. Issue별 담당은 Issue 본문 · 라벨이 기준이다.
-- 다른 팀원의 영역을 건드려야 하면 먼저 사용자에게 묻는다. 테이블 · Entity · migration은 만든 사람만 고친다.
+- 다른 팀원의 영역을 건드려야 하면 먼저 사용자에게 묻는다.
+- **테이블 · 칸은 D1 이슈가 기획 저장소 `06-data.md` 기준으로 처음에 전부 만든다.** 그 뒤 테이블 · Entity · migration 변경은 담당 D에게 요청한다. 다른 사람은 읽기 · 쓰기만 한다.
+- 여러 사람이 같은 코드를 건드리는 곳(예약 신청 단계 뼈대, '방문 처리됨' 이벤트, 프론트 영역별 라우트 파일, API 계약 절 등)은 기획 저장소 `docs/00-backlog.md` 「같이 쓰는 것 규칙」을 따른다.
 - 공유 파일(`docs/`, 공통 패키지, `.github/`, 빌드 설정)은 이슈가 그 변경을 요구할 때만 고친다.

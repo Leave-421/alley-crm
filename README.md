@@ -23,7 +23,7 @@ docker compose up -d --wait      # 로컬 MySQL
 ## 3. 빌드 · 테스트 명령
 
 ```powershell
-# 백엔드 (MySQL 필요)
+# 백엔드 (테스트는 Docker 필요 — Testcontainers. 실행은 로컬 MySQL)
 cd backend
 .\gradlew.bat test bootJar
 .\gradlew.bat bootRun            # :8080
