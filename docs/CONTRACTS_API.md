@@ -46,6 +46,30 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약 · 방문 처리, 가상 잔액 · 예약금, 수수료 · 정산, 시연용 시각 조작.
 '방문 처리됨' 이벤트의 이름 · 내용도 이 절에 적는다(D11).
 
+### 시연용 시각 조작 (D18)
+
+`app.demo-tools.enabled=true`(환경 변수 `DEMO_TOOLS_ENABLED=true`)일 때만 있다. 기본은 꺼져 있고, 꺼져 있으면 `404 not_found`. 실제 운영에서는 켜지 않는다. 서버의 모든 시간 규칙(자동 거절 · 자동 취소 · 쿠폰 만료 · 리마인드 · 파기)이 이 시계를 따른다.
+
+응답 `ClockResponse`: `{ "now": "2026-11-28T09:00:00Z", "offsetSeconds": 86400 }` — 지금 서버 시각과 실제 시각과의 차이(초)
+
+#### `GET /api/v1/demo/clock` — 지금 서버 시각
+
+- 역할: 로그인한 누구나(시연 도구)
+- 응답 `200`: `ClockResponse`
+
+#### `POST /api/v1/demo/clock` — 시각 앞당기기 · 맞추기
+
+- 역할: 로그인한 누구나(시연 도구)
+- 요청: `{ "advanceMinutes": 1440 }`(음수면 되돌림) 또는 `{ "at": "2026-12-01T00:00:00Z" }` — 둘 중 하나만
+- 응답 `200`: `ClockResponse`
+- 실패: `invalid`(둘 다 있거나 둘 다 없음) · `unauthorized` · `csrf_invalid`
+
+#### `DELETE /api/v1/demo/clock` — 실제 시각으로 되돌리기
+
+- 역할: 로그인한 누구나(시연 도구)
+- 응답 `200`: `ClockResponse`(`offsetSeconds: 0`)
+- 실패: `unauthorized` · `csrf_invalid`
+
 예시 형식(D2에서 확정):
 
 ### `POST /api/v1/reservations` — 예약 신청
