@@ -20,14 +20,14 @@
 - **요청 DTO와 응답 DTO를 나누고, Entity를 응답으로 바로 내보내지 않는다.** DTO 필드 · 경로 · enum 값은 `docs/CONTRACTS_API.md` 그대로 쓴다.
 - 패키지 사이는 그 패키지의 Service로만 부르고 다른 패키지의 Repository를 직접 쓰지 않는다.
 - 가게 단위 데이터는 항상 가게(·골목) 조건으로 조회 · 저장한다. 쿼리는 매개변수 바인딩만 쓴다.
-- 스키마는 Flyway 마이그레이션(`backend/src/main/resources/db/migration/V{n}__{설명}.sql`)으로만 바꾼다. `ddl-auto`로 테이블을 만들지 않는다.
+- 스키마는 Flyway 마이그레이션(`backend/src/main/resources/db/migration/V{yyyyMMddHHmm}__{설명}.sql` — 여러 사람이 동시에 만들어도 겹치지 않게 타임스탬프 버전)으로만 바꾼다. `ddl-auto`로 테이블을 만들지 않는다.
 - 알림(SSE 등)은 트랜잭션 커밋 뒤에 보낸다.
 - 시각은 UTC로 저장 · 응답한다(`Z`로 끝나는 ISO 8601). API의 내부 ID는 문자열이다(Entity는 `Long`).
 - **에러 응답**: `{ "error": { "code": "...", "message": "..." } }`. code는 소문자 snake. 새 code는 계약 변경이다. 전역 예외 처리 한 곳에서 이 모양으로 바꾼다.
 
 ## 프론트엔드 (`frontend/`)
 
-> 스택 미정(JavaScript 기본, 필요 시 React · TypeScript 도입). 기획 확정 뒤 채운다. TODO
+> React + JavaScript (Vite). TypeScript 전환은 미결이라, 전환해도 설정만 바꾸면 되게 둔다. 개발 서버는 Vite 프록시로 API를 같은 출처로 붙인다.
 
 - API 요청은 상대 경로 `/api/**`. 화면 코드 곳곳에서 `fetch`를 직접 부르지 말고 API 호출 모듈 한 곳을 거친다.
 - 새 라이브러리 · 상태 관리 도구는 팀 합의 뒤 들인다.
