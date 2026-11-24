@@ -6,5 +6,5 @@
 - flaky test를 단순 재실행으로 숨기지 않는다. 테스트를 지우거나 CI에서 빼서 통과처럼 보이게 하지 않는다.
 - 테스트하지 못한 부분은 최종 보고와 PR에 명시한다. 로컬에서 돌린 것과 GitHub Actions에서 돈 것을 구분해 적는다.
 - 실제 명령은 루트 `README.md` 「빌드 · 테스트 명령」을 따른다.
-- 백엔드 테스트는 MySQL이 필요하다. 로컬은 `docker compose up -d --wait` 뒤 `backend/`에서 실행한다.
+- 백엔드 테스트는 Testcontainers로 MySQL 8.4를 띄운다(Docker 실행 필요, H2로 대신하지 않는다). 통합 테스트는 `@Import(TestcontainersConfiguration.class)`를 붙인다. 로컬 앱 실행은 `docker compose up -d --wait`의 MySQL을 쓴다.
 - 예약 상태 전이 · 수수료 계산 · 가상 잔액처럼 숫자와 상태가 걸린 규칙은 단위 테스트로 고정한다.
