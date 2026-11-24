@@ -19,7 +19,55 @@
 
 ## 3. Entity · 상태
 
-- 예약 상태: `requested` → `confirmed` → `visited`, 그리고 `canceled` (v1 결정 — 노쇼 상태 없음). TODO 확정
+D1(#12)에서 정한 enum 값의 **유일한 목록**이다. DB에는 이 문자열 그대로(소문자 snake, `VARCHAR`) 저장하고, API 요청 · 응답 · 프론트 목도 같은 값을 쓴다. 값을 더하거나 바꾸는 것은 계약 변경이다(담당 D에게 요청).
+테이블 · 칸의 기준은 기획 저장소 `docs/06-data.md`, 마이그레이션은 `backend/src/main/resources/db/migration/`.
+
+| 대상 | 값 → 뜻 |
+| --- | --- |
+| 가게 업종 `store.category` | `restaurant` 음식점 · `cafe` 카페 · `dessert` 디저트 · `pub` 주점 · `workshop` 공방 · `bookstore` 서점 · `gift_shop` 소품샵 · `stationery` 문구점 |
+| 소속 골목 `store.alley` | `front_gate` 정문 앞 · `center` 중앙 · `back_street` 뒷길 |
+| 가게 가입 상태 `store.joinStatus` | `requested` 신청 · `approved` 승인 · `rejected` 거절 · `withdraw_requested` 탈퇴 신청 · `withdrawn` 탈퇴 |
+| 영업 상태 `store.businessStatus` | `open` 영업 · `paused` 휴업 · `closed` 운영 중단 (사장님이 바꿈) |
+| 휴무일 `store.closedDays` | `mon` · `tue` · `wed` · `thu` · `fri` · `sat` · `sun`의 목록. 빈 목록이면 연중무휴 |
+| 역할 `account.role` | `customer` 손님(회원) · `owner` 사장님 · `association` 상인회 (「2. 역할」) |
+| 손님 종류 `customer.type` | `member` 회원 · `guest` 비회원 |
+| 성별 `gender` | `female` 여성 · `male` 남성. **응답 안 함은 `null`** |
+| 연령대 `ageGroup` | `age_20_or_under` 20대 이하 · `age_30s` 30대 · `age_40s` 40대 · `age_50_or_over` 50대 이상. 모르면 `null` |
+| 데이터 출처 `dataSource` | `real` 실제 운영 · `demo` 시연용 가상 · `public` 외부 공개 통계 (NFR-10) |
+| 예약 상태 `reservation.status` | `requested` 신청 → `confirmed` 확정 → `visited` 방문, 그리고 `canceled` 취소 (노쇼 상태 없음) |
+| 취소 사유 `reservation.cancelReason` | `customer_canceled` 손님 취소 · `store_rejected` 가게 거절(자동 거절 포함) · `auto_canceled` 자동 취소 |
+| 추천 배지 `badge` | `visit_data` 방문 데이터 기반 · `local_popular` 지역 인기 가게 |
+| 추천 피드백 `feedback.type` | `reject` 거절 · `reroll` 리롤 |
+| 오늘의 코스 기록 `type` | `impression` 노출 · `click` 클릭 |
+| 요일 구분 `dayType` | `weekday` 평일 · `weekend` 주말 |
+| 쿠폰 혜택 `benefitType` | `fixed_discount` 정액 할인 · `service` 서비스 제공 (정률 할인 없음) |
+| 쿠폰 상태 `coupon.status` | `downloaded` 다운로드됨 · `applied` 예약에 적용됨 · `used` 사용 완료 · `expired` 기간 만료 · `apply_canceled` 적용 취소 |
+| 지갑 주인 `wallet.ownerType` | `customer` 회원 손님 · `store` 가게 · `fund` 상인회 기금 |
+| 거래 종류 `walletTx.type` | `charge` 충전 · `deposit_paid` 예약금 납부 · `deposit_refunded` 예약금 환불 · `referral_fee_charged` 소개 수수료 차감 · `fund_deposited` 기금 입금 |
+| 월 정산 상태 `settlement.status` | `aggregated` 집계됨 · `confirmed` 확정 |
+| 알림 받는 쪽 `notification.recipientType` | `account` 계정(회원 · 사장님) · `guest_reservation` 비회원 예약 |
+| 알림 종류 `notification.type` | `reservation_requested` 새 예약 · `reservation_confirmed` 확정 · `reservation_rejected` 거절 · `reservation_canceled` 취소 · `change_requested` 변경 요청 · `change_approved` 변경 승인 · `change_rejected` 변경 거절 · `reminder` 리마인드 · `delay_reported` 지연 입력 · `next_store_recommended` 다음 가게 추천 · `coupon_status` 쿠폰 상태 · `store_join_result` 가게 가입 결과. 종류를 늘리는 것은 C14에서 이 표를 고친다 |
+
+- 공공데이터 통계의 `kind` · 시간대 `timeBand` 값은 E2에서 이 표에 더한다.
+- API JSON 필드 이름은 camelCase(`joinStatus`), DB 칸 이름은 snake_case(`join_status`)다. 값은 둘 다 위 문자열 그대로다.
+
+### 설정값 키
+
+코드 `com.alleycrm.setting.SettingKey`가 키와 기본값의 기준이고, `SettingService`로만 읽는다(NFR-04). 권역에서 바꾼 값만 `setting` 테이블에 둔다. 기준: 기획 저장소 `docs/05-policy.md` 「설정값」 · 「추천 설정값」.
+
+| 키 | 기본값 | 뜻 |
+| --- | --- | --- |
+| `referral_fee_rate` | 0.04 | 소개 수수료율. 수수료 기록에 생길 때 값을 저장한다 |
+| `revisit_days` | 60 | 재방문 기간(일) |
+| `late_cancel_refund_rate` | 0.5 | 하루 전이 지난 뒤 취소의 환불 비율 기본값. 가게 값(`store.late_cancel_refund_rate`)이 있으면 그 값 |
+| `guest_retention_months` | 6 | 비회원 정보 보관(마지막 방문 후, 개월) |
+| `guest_no_visit_retention_days` | 30 | 방문 기록 없는 비회원 보관(마지막 예약 취소 후, 일) |
+| `recommend_weight_attractiveness` · `_distance` · `_clq` · `_time_band` · `_demographic` | 0.25 · 0.25 · 0.25 · 0.125 · 0.125 | 추천 기본값 가중치 |
+| `recommend_smoothing_k` | 10 | 평활 상수 k |
+| `recommend_group_ratio` | 0.3 | 성별·연령대 집단 비율 g |
+| `recommend_min_unique_customers` | 5 | 실제 기록 최소 고유 손님 수 |
+| `recommend_distance_exponent` | 1.0 | 거리 지수 β — **기획 미결, 임시 기본값** |
+| `recommend_count` | 3 | 추천 개수 |
 
 ## 4. 에러 코드
 
