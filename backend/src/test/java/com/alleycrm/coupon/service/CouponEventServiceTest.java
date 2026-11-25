@@ -11,6 +11,7 @@ import com.alleycrm.coupon.domain.BenefitType;
 import com.alleycrm.coupon.dto.CouponEventCreateRequest;
 import com.alleycrm.coupon.dto.CouponEventResponse;
 import jakarta.persistence.EntityManager;
+import java.time.Duration;
 import java.time.Instant;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,6 +31,9 @@ import org.springframework.transaction.annotation.Transactional;
 class CouponEventServiceTest {
 
     private static final Instant NOW = Instant.parse("2026-12-01T03:00:00Z");
+
+    /** AppClock.setTo는 시각을 고정하지 않고 그 시각부터 계속 흐르게 하므로 저장 시각은 조금 뒤가 된다. */
+    private static final Duration CLOCK_DRIFT = Duration.ofSeconds(10);
 
     @Autowired
     CouponEventService service;
@@ -76,7 +80,7 @@ class CouponEventServiceTest {
         assertThat(created.totalQuantity()).isEqualTo(100);
         assertThat(created.issuedCount()).isZero();
         assertThat(created.remainingQuantity()).isEqualTo(100);
-        assertThat(created.confirmedAt()).isEqualTo(NOW);
+        assertThat(created.confirmedAt()).isBetween(NOW, NOW.plus(CLOCK_DRIFT));
         assertThat(created.stoppedAt()).isNull();
         assertThat(created.benefitAvailable()).isTrue();
 
@@ -111,7 +115,7 @@ class CouponEventServiceTest {
 
         CouponEventResponse stopped = service.stop(storeA, Long.parseLong(first.id()));
 
-        assertThat(stopped.stoppedAt()).isEqualTo(NOW.plusSeconds(60));
+        assertThat(stopped.stoppedAt()).isBetween(NOW.plusSeconds(60), NOW.plusSeconds(60).plus(CLOCK_DRIFT));
         assertThat(stopped.benefitAvailable()).isFalse();
         assertThat(stopped.validDays()).isEqualTo(3);
         assertThat(service.current(storeA).current()).isNull();
