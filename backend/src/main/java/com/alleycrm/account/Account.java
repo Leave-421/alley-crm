@@ -48,6 +48,10 @@ public class Account {
         return new Account(loginId, passwordHash, AccountRole.CUSTOMER, null, null);
     }
 
+    static Account owner(String loginId, String passwordHash, long storeId) {
+        return new Account(loginId, passwordHash, AccountRole.OWNER, storeId, null);
+    }
+
     static Account association(String loginId, String passwordHash, long regionId) {
         return new Account(loginId, passwordHash, AccountRole.ASSOCIATION, null, regionId);
     }
