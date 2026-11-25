@@ -33,6 +33,7 @@ D1(#12)에서 정한 enum 값의 **유일한 목록**이다. DB에는 이 문자
 | 손님 종류 `customer.type` | `member` 회원 · `guest` 비회원 |
 | 성별 `gender` | `female` 여성 · `male` 남성. **응답 안 함은 `null`** |
 | 연령대 `ageGroup` | `age_20_or_under` 20대 이하 · `age_30s` 30대 · `age_40s` 40대 · `age_50_or_over` 50대 이상. 모르면 `null` |
+| 공유 항목 `shareItem` | `name` 이름 · `phone` 연락처 · `visited_stores` 방문한 가게 목록 (이 셋은 항상 공유, 끌 수 없음) · `party_size` 인원 · `visit_datetime` 방문 일시 · `gender_age_group` 성별·연령대 (상인회가 켜고 끔, FR-CUS-06) |
 | 데이터 출처 `dataSource` | `real` 실제 운영 · `demo` 시연용 가상 · `public` 외부 공개 통계 (NFR-10) |
 | 예약 상태 `reservation.status` | `requested` 신청 → `confirmed` 확정 → `visited` 방문, 그리고 `canceled` 취소 (노쇼 상태 없음) |
 | 취소 사유 `reservation.cancelReason` | `customer_canceled` 손님 취소 · `store_rejected` 가게 거절(자동 거절 포함) · `auto_canceled` 자동 취소 |
@@ -68,6 +69,15 @@ D1(#12)에서 정한 enum 값의 **유일한 목록**이다. DB에는 이 문자
 | `recommend_min_unique_customers` | 5 | 실제 기록 최소 고유 손님 수 |
 | `recommend_distance_exponent` | 1.0 | 거리 지수 β — **기획 미결, 임시 기본값** |
 | `recommend_count` | 3 | 추천 개수 |
+
+### 추천 (담당 E, `CONTRACTS_API.md` 3.1)
+
+추천 배지 `badge`는 위 표에 있다.
+
+| enum | 값 |
+| --- | --- |
+| 이유 종류 `reasonType` | `visit_data` 방문 데이터 · `colocation` 업종 동반 입지 · `time_band` 시간대 · `attractiveness` 매력도 · `demographic` 손님층 · `distance` 거리 |
+| 기준 시각 출처 `baseTimeSource` | `now` 현재 시각 · `reservation` 기준 가게 예약 시각 |
 
 ## 4. 에러 코드
 
