@@ -1,7 +1,6 @@
 package com.alleycrm.reservation.request;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -10,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.alleycrm.TestcontainersConfiguration;
+import com.alleycrm.common.TestCsrf;
 import com.alleycrm.common.time.AppClock;
 import java.time.Instant;
 import java.time.LocalTime;
@@ -32,7 +32,7 @@ import tools.jackson.databind.ObjectMapper;
 /** D5 예약 운영 설정 · 슬롯 계산(FR-RSV-05 #1 ~ #6). */
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import({TestcontainersConfiguration.class, ReservationRequestApiTest.FakeCustomerStep.class})
+@Import(TestcontainersConfiguration.class)
 class SlotSettingsTest {
 
     /** 2026-11-27(금) 10:00 Asia/Seoul */
@@ -181,14 +181,14 @@ class SlotSettingsTest {
         b.put("lateCancelRefundRate", null);
         b.put("depositPerPerson", 0);
         b.putAll(overrides);
-        return mvc.perform(put("/api/v1/owner/reservation-settings").with(csrf()).with(user("owner1"))
+        return mvc.perform(put("/api/v1/owner/reservation-settings").with(TestCsrf.csrf(mvc)).with(user("owner1"))
                 .contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(b)));
     }
 
     private ResultActions request(String startAt, int party, String phone) throws Exception {
         Map<String, Object> b = Map.of("storeId", String.valueOf(storeId), "startAt", startAt, "partySize", party,
                 "shareConsent", true, "guest", Map.of("name", "손님", "phone", phone));
-        return mvc.perform(post("/api/v1/reservations").with(csrf())
+        return mvc.perform(post("/api/v1/reservations").with(TestCsrf.csrf(mvc))
                 .contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(b)));
     }
 }
