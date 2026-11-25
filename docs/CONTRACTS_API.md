@@ -352,5 +352,142 @@ E1 ~ E17. 추천 API(E7은 계산보다 계약을 먼저), 노출 · 코스 제�
 | R-18 | G-01 추천 카드에 '다음 코스로 예약하기'를 두는지 (07-screens G-01 · FR-RSV-11 ↔ 확정 목업, 02-workflow 「맞지 않는 곳」) | G-01 카드는 탐색 노출만 기록한다고 적고, 정식 제안을 겸하는지는 정하지 않는다 | 팀 (A 화면) |
 | R-9 | 가게 좌표계. 06-data · 마이그레이션은 `map_x/map_y`를 "골목 안 표시 좌표"로, 05-policy 거리 항은 다른 골목 가게 사이 거리도 씀 | `mapX` · `mapY`는 숫자로만 내려준다 | A1 · D1 · E |
 | R-10 | 이 절의 비로그인 경로(`GET /api/v1/recommendations`, `POST /api/v1/recommendation-exposures`)를 보안 설정에 더하기 | — | C (#24) |
-| R-11 | 정식 제안 조합 유일 제약, 탐색 노출 표시 ID 칸 · 유일 제약 | 애플리케이션 검사만으로는 동시 요청 중복을 막지 못함 | D19 (#120) |
 | R-13 | 코스 예약 요청의 필드 이름(`courseProposalId`)과 제안 검사 실패 코드. 검사 조건(제안 소유 · 추천 가게 일치 · 마감)은 정책상 확정 | — | D12 (#31) |
+
+### 3.2 쿠폰 행사 설정 (E11 #23 · 계약 #133)
+
+> 상태: **계약.** 구현은 #23에서 한다. 사장님 로그인 · 역할은 C2(#24) 구현 뒤 연결한다. 프론트 목(B15 #84 · B3 #62)은 이 절을 따른다.
+> 기준: 기획 저장소 `05-policy.md` 「추천 쿠폰」, `03-requirements.md` FR-CPN-01 · 02 · 04 · 05 · 07 · 11, `06-data.md` COUPON_POLICY · COUPON, `07-screens.md` O-09, 결정 기록 `reviews/decision-meeting-2026-11-25.md`(정률 할인 추가, 쿠폰 기간, 확정 뒤 변경 불가, 중단 뒤 새 행사).
+> 선행: 표 · 칸은 D의 #134(`V202611251000__coupon_policy_owner_period.sql`)를 따른다. `benefitType` 값 목록(`CONTRACTS.md` 「3」)과 3.1 `couponBenefit` 문구도 #134가 고친다. #134가 합쳐진 뒤 이 절을 합친다.
+
+**쿠폰 행사**는 사장님이 한 번 확정하면 **고칠 수 없고 중단만 할 수 있다.** 조건을 바꾸려면 중단한 뒤 새 행사를 만든다. **진행 중인 행사(중단하지 않은 행사)는 가게당 하나**다. 경로의 가게는 **로그인한 사장님 계정의 가게**로 정하고 가게 ID를 받지 않는다(IDOR).
+
+**CouponEvent** (응답):
+
+```json
+{
+  "id": "12",
+  "storeId": "3",
+  "benefitType": "percent_discount",
+  "discountAmount": null,
+  "discountPercent": 10,
+  "maxDiscountAmount": 5000,
+  "serviceName": null,
+  "serviceValue": null,
+  "validDays": 7,
+  "conditions": "2인 이상 방문 시",
+  "totalQuantity": 100,
+  "issuedCount": 12,
+  "remainingQuantity": 88,
+  "confirmedAt": "2026-12-01T03:00:00Z",
+  "stoppedAt": null,
+  "benefitAvailable": true
+}
+```
+
+| 필드 | 뜻 |
+| --- | --- |
+| `id` | 행사 ID. 행사를 새로 만들 때마다 새 ID |
+| `benefitType` | `fixed_discount` 정액 할인 · `percent_discount` 정률 할인 · `service` 서비스 제공(`CONTRACTS.md` 「3」, #134) |
+| `discountAmount` | 정액 할인 금액(원). `fixed_discount`일 때만 값이 있다 |
+| `discountPercent` · `maxDiscountAmount` | 정률 할인율(**퍼센트 정수** 1 ~ 50, `10` = 10%)과 최대 할인액(원). `percent_discount`일 때만 값이 있다. 최대 할인액은 선택이고 `null`이면 상한 없음 |
+| `serviceName` · `serviceValue` | 서비스 내용과 환산 금액(원). `service`일 때만 값이 있다. 환산 금액은 쿠폰 비용 기록용이고 수수료 계산에 쓰지 않는다(FR-CPN-01) |
+| `validDays` | 쿠폰 예약 기한(일). 받은 쿠폰은 다운로드 + `validDays` × 24시간에 만료된다(FR-CPN-05) |
+| `conditions` | 사장님이 정한 조건(자유 문구, 200자 이하). 없으면 `null` |
+| `totalQuantity` · `issuedCount` · `remainingQuantity` | 총수량, 지금까지 발급한 수, 남은 수(= 총수량 − 발급 수). 발급 수는 쿠폰 발급(E12 · E9)만 늘린다 |
+| `confirmedAt` | 확정(저장)한 시각. 이 계약에서는 저장 = 확정이라 항상 값이 있다(임시 저장 없음) |
+| `stoppedAt` | 중단한 시각. `null`이면 진행 중 |
+| `benefitAvailable` | **'예약 혜택' 표시값.** 진행 중(`stoppedAt`이 `null`)이고 남은 수가 1 이상이면 `true`. 추천 카드의 `couponBenefit`(3.1)과 같은 규칙이다(FR-CPN-02 · 11) |
+
+### `GET /api/v1/coupon-events/benefit-types` — 혜택 유형 목록
+
+- 역할: 사장님. 손님 · 상인회는 `403 forbidden_role`.
+- 응답 `200`: `{ "items": [ { "value": "fixed_discount", "label": "정액 할인" }, { "value": "percent_discount", "label": "정률 할인" }, { "value": "service", "label": "서비스 제공" } ] }` — 3가지(FR-CPN-01 #2).
+- 실패: `unauthorized` · `forbidden_role`
+
+### `GET /api/v1/coupon-events/mine` — 내 가게의 진행 중인 쿠폰 행사
+
+- 역할: 사장님. 손님 · 상인회는 `403 forbidden_role`.
+- 응답 `200`: `{ "current": CouponEvent | null }`. `current`는 진행 중인 행사이고, 없으면(만든 적 없음 · 중단함) `null`이다.
+- 화면은 `current`가 `null`이면 만들기 폼과 "확정 뒤에는 어떤 값도 바꿀 수 없고 중단만 할 수 있다" 안내를 보여준다(FR-CPN-01 #3). 총수량이 다 나간 행사도 중단 전까지는 `current`다(`benefitAvailable: false`). 새로 만들려면 먼저 중단한다.
+- 실패: `unauthorized` · `forbidden_role`
+
+### `POST /api/v1/coupon-events` — 쿠폰 행사 만들기(확정)
+
+- 역할: 사장님. `X-XSRF-TOKEN` 필요. 저장하는 순간 확정되고 이후 어떤 값도 바꿀 수 없다.
+- 요청:
+
+  ```json
+  { "benefitType": "percent_discount", "discountAmount": null, "discountPercent": 10, "maxDiscountAmount": 5000, "serviceName": null, "serviceValue": null, "validDays": 7, "conditions": null, "totalQuantity": 50 }
+  ```
+
+- 검사(어긋나면 `400 invalid`):
+  - `benefitType`, `totalQuantity`는 필수. `benefitType`은 위 3가지만.
+  - `fixed_discount`: `discountAmount` 1 이상 필수.
+  - `percent_discount`: `discountPercent` 정수 1 ~ 50 필수. `maxDiscountAmount`는 비우거나 1 이상.
+  - `service`: `serviceName`(1 ~ 50자) · `serviceValue`(1 이상) 필수. **환산 금액 없이 만들면 거절**(FR-CPN-01).
+  - 고른 유형에 쓰지 않는 칸은 무시하고 저장하지 않는다(응답에서 `null`).
+  - `validDays`는 정수 1 ~ 30. 빼면 7(기본값).
+  - `conditions`는 200자 이하, `totalQuantity`는 1 이상.
+- 상태 검사: 진행 중인 행사가 이미 있으면 `409 conflict`(FR-CPN-01 #6). 동시에 두 번 들어와도 진행 중인 행사는 하나만 생긴다(DB의 `uk_coupon_policy_active`가 막고, 서버는 그 위반을 `409 conflict`로 바꾼다).
+- 응답 `201`: 만든 CouponEvent.
+- 실패: `invalid` · `unauthorized` · `forbidden_role` · `conflict` · `csrf_invalid`
+
+### `POST /api/v1/coupon-events/{eventId}/stop` — 쿠폰 행사 중단
+
+- 역할: 사장님. `X-XSRF-TOKEN` 필요. 요청 본문 없음.
+- 화면은 누르기 전에 "다시 켜거나 고칠 수 없고, 이미 받은 쿠폰은 유지된다" 경고를 보여준다(FR-CPN-11 #3).
+- 중단하면 **새 발급만 멈춘다.** 이미 받았거나 예약에 적용된 쿠폰은 자기 기한까지 그대로 쓸 수 있다(FR-CPN-11 #1 · #4). 가게 운영 중단(FR-STO-02)과 다르게 30일 제한 해제 · 적용 취소를 하지 않는다.
+- 경로에 행사 ID를 받는 이유: 화면을 두 개 열어 둔 채 한쪽에서 중단 → 새로 만들기를 하면, 다른 쪽의 중단 버튼이 **새 행사**를 멈추지 않게 한다.
+- 응답 `200`: 중단된 CouponEvent(`stoppedAt` 채움).
+- 실패:
+  - `404 not_found` — 없는 행사 · 다른 가게 행사(존재 숨김)
+  - `409 conflict` — 이미 중단한 행사(FR-CPN-11 #5)
+  - `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+### 고치는 API는 없다
+
+- 확정한 행사를 고치거나 다시 켜는 엔드포인트를 두지 않는다(FR-CPN-01 #4, FR-CPN-11 #5). `PUT` · `PATCH`는 공통 규칙대로 `404 not_found`(`CONTRACTS.md` 「4」 "허용되지 않은 메서드").
+
+### 다른 이슈가 쓰는 규칙 (서버 내부)
+
+| 규칙 | 정의 | 쓰는 곳 |
+| --- | --- | --- |
+| 진행 중인 행사 | `stopped_at IS NULL`인 그 가게의 행 (가게당 0 ~ 1개) | 전부 |
+| '예약 혜택' 표시값 | 진행 중 AND 남은 수 ≥ 1 | 추천 카드 `couponBenefit`(E7), 쿠폰 상세(E12) |
+| 새 발급 가능(가게 쪽 조건) | 위와 같음. 회원별 30일 제한 · 같은 행사의 미사용 적용 쿠폰은 E12가 따로 본다 | 쿠폰 다운로드(E12) |
+| 발급 수 늘리기 | `UPDATE coupon_policy SET issued_count = issued_count + 1 WHERE id = ? AND stopped_at IS NULL AND issued_count < total_quantity` — 바뀐 행이 0이면 소진 · 중단. 중단과 동시에 들어와도 둘 중 먼저 커밋한 쪽만 반영된다 | E12 · E9 (NFR-09) |
+| 쿠폰에 남기는 행사 | 발급한 쿠폰에 `coupon_policy_id`를 넣는다. 혜택 · 기한은 행사 행에서 읽는다(행사는 바뀌지 않으므로 받은 쿠폰의 혜택도 바뀌지 않는다) | E12 · E13 · E14 |
+| 만료 시각 | `expires_at = downloaded_at + valid_days × 24시간` | E12 · E14 |
+| 30일 제한 단위 | 같은 회원 · 같은 행사(`coupon_policy_id`). 새 행사는 이전 행사와 상관없이 다시 받을 수 있다(FR-CPN-04) | E12 |
+| 할인액 | 정액: `min(discount_amount, 방문 금액)`. 정률: `floor(방문 금액 × discount_percent / 100)`을 정수 연산으로 구하고, `max_discount_amount`가 있으면 그 금액까지. 서비스: 0(쿠폰 비용 = 환산 금액) | E14 · D15 (FR-CPN-07 #5 · #6, FR-STL-02 #5) |
+
+### 응답 필드와 테이블 칸 (#134)
+
+| 필드 | 칸 | 비고 |
+| --- | --- | --- |
+| `id` · `storeId` | `coupon_policy.id` · `store_id` | 행사마다 행 1개 |
+| `discountPercent` | `discount_rate` | 정수 퍼센트(DB CHECK 1 ~ 50). API 이름만 다르다 |
+| `maxDiscountAmount` | `max_discount_amount` | DB CHECK > 0 |
+| `validDays` | `valid_days` | DB 기본 7, CHECK 1 ~ 30 |
+| `confirmedAt` · `stoppedAt` | `confirmed_at` · `stopped_at` | 만들 때 `confirmed_at`을 함께 채운다 |
+| — | `active_store_id` | 진행 중인 행사 가게당 하나(UNIQUE)를 위한 계산 칸. 응답에 없고, 엔티티는 읽기 전용으로 둔다(넣거나 바꾸지 않음) |
+| — | `coupon.coupon_policy_id` | 받은 행사. 30일 제한 인덱스 `ix_coupon_customer_policy` |
+
+DB가 막지 않는 것(유형별 필수 칸, 확정 뒤 변경 금지, 중단한 행사 다시 켜기 금지)은 서비스가 지킨다. 이 계약에는 고치는 API가 없고, 중단은 `stopped_at IS NULL`일 때만 바꾸는 조건부 UPDATE로 한다.
+
+### 정책에 따라 정한 것 (3.2)
+
+| 항목 | 정한 것 | 근거 |
+| --- | --- | --- |
+| 정률 할인 enum 값 | `percent_discount` (#134가 `CONTRACTS.md`에 넣음) | FR-CPN-01(11-25) |
+| 할인율 단위 | API는 `discountPercent` 정수(10 = 10%). 공통 규칙 "비율은 소수"와 헷갈리지 않게 이름에 `Percent`를 넣었다 | FR-CPN-01 "정수 1 ~ 50%" |
+| 확정 시점 | 저장 = 확정. 임시 저장 없음 | FR-CPN-01 "처음 확정(저장)" |
+| 기간 기본값 | `validDays`를 빼면 7 | FR-CPN-01 "기본 7일" |
+| 이전 C-1(발급 뒤 혜택 변경) | 정책으로 닫힘 — 확정 뒤 모든 값 변경 불가 | 11-25 추가 결정, Q-26 |
+
+### 미확정 (3.2)
+
+| # | 내용 | 정해지지 않은 동안 | 결정 주체 |
+| --- | --- | --- | --- |
+| C-2 | 승인 전 · 탈퇴 신청 사장님 계정의 접근 | C5(FR-AUTH-04)의 승인 전 계정 규칙을 따른다 | C5 |
