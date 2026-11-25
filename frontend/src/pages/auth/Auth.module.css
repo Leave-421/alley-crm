@@ -1,0 +1,197 @@
+/* 로그인 · 회원가입이 같이 쓰는 틀. 넓은 화면에서도 좁게 가운데 둔다(--layout-narrow-width) */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: var(--layout-narrow-width);
+  margin: 0 auto;
+  padding: var(--space-6) var(--layout-gutter) var(--space-8);
+}
+
+.intro {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.title {
+  color: var(--color-heading);
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-tight);
+}
+
+.lead {
+  color: var(--color-text-muted);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-4);
+  border: 1px solid var(--color-surface-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.sectionTitle {
+  color: var(--color-ink-800);
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: var(--weight-regular);
+}
+
+.failure {
+  padding: var(--space-3);
+  border-left: 3px solid var(--color-danger-text);
+  border-radius: var(--radius-sm);
+  background: var(--color-peach-100);
+  color: var(--color-danger-text);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+}
+
+.notice {
+  padding: var(--space-3);
+  border-left: 3px solid var(--color-berry-500);
+  border-radius: var(--radius-sm);
+  background: var(--color-pink-50);
+  color: var(--color-ink-800);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+}
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2) var(--space-4);
+  font-size: var(--text-md);
+}
+
+.fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.legend {
+  margin-bottom: var(--space-1);
+  padding: 0;
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* 고른 항목은 진한 바탕 + 굵은 글씨로도 구분한다(색만으로 나누지 않음, NFR-11) */
+.choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1.5px solid rgba(63, 36, 42, 0.2);
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.35);
+  color: var(--color-ink-800);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+
+.choice:has(input:checked) {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-weight: var(--weight-bold);
+}
+
+.choice input {
+  margin: 0;
+  accent-color: var(--color-on-primary);
+}
+
+.hint {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+
+.consent {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+  cursor: pointer;
+}
+
+.consent input {
+  width: 20px;
+  height: 20px;
+  margin: 2px 0 0;
+  flex: none;
+  accent-color: var(--color-primary);
+}
+
+.error {
+  color: var(--color-danger-text);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.error::before {
+  content: '! ';
+}
+
+.ownerBox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  font-size: var(--text-md);
+}
+
+.actions {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+}
+
+/* 링크지만 주요 버튼 모양(완료 화면의 다음 행동) */
+.linkButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 48px;
+  border-radius: var(--radius-button);
+  background: var(--gradient-primary);
+  color: var(--color-on-primary);
+  font-weight: var(--weight-bold);
+  text-decoration: none;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
