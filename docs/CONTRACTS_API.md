@@ -213,7 +213,7 @@ E1 ~ E17. 추천 API(E7은 계산보다 계약을 먼저), 노출 · 코스 제�
   | `store.mapX` · `store.mapY` | 가게 좌표. **좌표계는 미확정(R-9).** 거리는 응답에 넣지 않는다(FR-MAP-08) |
   | `badge` | `visit_data` · `local_popular`(`CONTRACTS.md` 「3」). '지역 인기 가게' 안내 문구는 프론트 |
   | `reasonType` · `reasonText` | 근거 종류(`CONTRACTS.md` 「3」 추천)와 서버가 만든 문구. `distance`는 `local_popular`와만 나온다 |
-  | `couponBenefit` | '예약 혜택' 배지 표시값. 쿠폰 행사가 켜져 있고 총수량이 남았으면 `true`. 회원별 발급 가능 여부(30일 제한 등)는 쿠폰 API(E12)가 답한다 |
+  | `couponBenefit` | '예약 혜택' 배지 표시값. 진행 중인(중단되지 않은) 쿠폰 행사가 있고 총수량이 남았으면 `true`. 회원별 발급 가능 여부(30일 제한 등)는 쿠폰 API(E12)가 답한다 |
 
 ### `GET /api/v1/recommendations` — 지도 추천 조회
 
