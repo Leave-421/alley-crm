@@ -12,6 +12,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.SpringApplication;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.env.Environment;
@@ -53,16 +55,27 @@ class SeedRunner implements ApplicationRunner {
     private final DataSource dataSource;
     private final SeedProperties properties;
     private final SeedLoader loader;
+    private final ConfigurableApplicationContext context;
 
-    SeedRunner(Environment environment, DataSource dataSource, SeedProperties properties, SeedLoader loader) {
+    SeedRunner(Environment environment, DataSource dataSource, SeedProperties properties, SeedLoader loader,
+            ConfigurableApplicationContext context) {
         this.environment = environment;
         this.dataSource = dataSource;
         this.properties = properties;
         this.loader = loader;
+        this.context = context;
     }
 
     @Override
     public void run(ApplicationArguments args) {
+        seed();
+        if (properties.closeAfterRun()) {
+            // 시드만 하고 끝나는 실행이라 웹 컨텍스트를 닫는다. 실패하면 예외로 앱이 뜨지 않고 0이 아닌 코드로 끝난다.
+            SpringApplication.exit(context);
+        }
+    }
+
+    private void seed() {
         SeedSafetyGuard.Mode mode = SeedSafetyGuard.decide(
                 Arrays.asList(environment.getActiveProfiles()),
                 properties.confirm(),

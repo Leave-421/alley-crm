@@ -23,7 +23,7 @@ import org.springframework.test.context.ActiveProfiles;
  * 기준: NFR-07 #1 · #3, 06-data STORE, 11-24 (5), 00-backlog 「같이 쓰는 것 규칙」 시드 · 시연 데이터.
  * NFR-07 #2(예약 날짜 9 ~ 11월)는 예약을 만드는 E16에서 확인한다.
  */
-@SpringBootTest
+@SpringBootTest(properties = "seed.close-after-run=false")
 @ActiveProfiles("seed")
 @Import(TestcontainersConfiguration.class)
 class SeedLoaderIntegrationTest {

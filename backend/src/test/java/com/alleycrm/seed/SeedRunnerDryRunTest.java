@@ -14,7 +14,7 @@ import org.springframework.test.context.ActiveProfiles;
  * seed 프로필을 확인 값 없이 켜면 dry-run으로 검사만 하고 정상 기동한다(Testcontainers, Docker 필요).
  * 실제 초기화 · 적재 통합 테스트는 D1(#12) 스키마가 머지된 뒤 더한다.
  */
-@SpringBootTest
+@SpringBootTest(properties = "seed.close-after-run=false")
 @ActiveProfiles("seed")
 @Import(TestcontainersConfiguration.class)
 class SeedRunnerDryRunTest {
