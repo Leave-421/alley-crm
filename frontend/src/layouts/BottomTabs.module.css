@@ -6,7 +6,7 @@
   left: 0;
   z-index: 10;
   width: calc(100% - 2 * var(--space-5));
-  max-width: calc(var(--layout-max-width) - 2 * var(--space-5));
+  max-width: var(--tabbar-max-width); /* 넓은 화면에서도 하단 탭 유지, 가운데 정렬(11-24 (7)) */
   height: var(--tabbar-height);
   margin: 0 auto;
   padding: 0 6px;

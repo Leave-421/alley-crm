@@ -10,7 +10,8 @@
   align-items: center;
   justify-content: space-between;
   min-height: 56px;
-  padding: 0 var(--space-1) 0 var(--space-5);
+  /* 휴대폰 왼쪽 20px · 오른쪽 4px(목업). 넓은 화면에서는 본문 여백(--layout-gutter)만큼 함께 넓어진다 */
+  padding: 0 calc(var(--layout-gutter) - var(--space-3)) 0 calc(var(--layout-gutter) + var(--space-1));
 }
 
 .title {
