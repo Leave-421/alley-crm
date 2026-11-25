@@ -1,0 +1,201 @@
+/* 시연 도구는 서비스 화면과 구분되게 점선 테두리 · 회색 바탕 · '시연 도구' 표시를 쓴다 */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: var(--layout-narrow-width);
+  margin: 0 auto;
+  padding: var(--space-4) var(--layout-gutter) var(--space-8);
+}
+
+.toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 2px dashed var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-gray-50);
+}
+
+.toolBadge {
+  align-self: flex-start;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-badge);
+  background: var(--color-ink-800);
+  color: var(--color-on-brand);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+}
+
+.toolNote {
+  color: var(--color-ink-800);
+  font-size: var(--text-md);
+}
+
+.current {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.sectionTitle {
+  color: var(--color-ink-800);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-bold);
+}
+
+.hint,
+.presetHint {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.notice {
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-gray-50);
+  font-size: var(--text-md);
+}
+
+.error {
+  color: var(--color-danger-text);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+}
+
+.error::before {
+  content: '! ';
+}
+
+.roles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.role {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+  height: 100%;
+  min-height: 72px;
+  padding: var(--space-3);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-white);
+  text-align: left;
+  cursor: pointer;
+}
+
+.role:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+/* 지금 역할은 테두리 · 바탕 · '지금' 표시로 함께 구분한다(색만으로 나누지 않음) */
+.roleCurrent {
+  border: 2px solid var(--color-primary);
+  background: var(--color-pink-50);
+}
+
+.roleLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
+}
+
+.roleDesc {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.currentMark {
+  padding: 1px 6px;
+  border-radius: var(--radius-badge);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-size: var(--text-xs);
+}
+
+.clock {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.clock dt {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.clock dd {
+  margin: 0;
+  font-weight: var(--weight-semibold);
+}
+
+.clockNow {
+  font-size: var(--text-xl);
+}
+
+.presets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3) var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.presets li {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  text-align: center;
+}
+
+.atForm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+}
+
+.atRow {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-white);
+}
+
+.back {
+  align-self: center;
+  font-size: var(--text-md);
+}
