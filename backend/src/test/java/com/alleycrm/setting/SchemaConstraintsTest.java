@@ -71,6 +71,33 @@ class SchemaConstraintsTest {
     }
 
     @Test
+    void 진행_중인_쿠폰_행사는_가게당_하나_중단하면_새_행사_가능() {
+        String sql = "INSERT INTO coupon_policy (store_id, benefit_type, discount_amount, total_quantity) VALUES (?, 'fixed_discount', 1000, 10)";
+        long first = insert(sql.replace("?", String.valueOf(storeA)));
+
+        assertThatThrownBy(() -> jdbc.update(sql, storeA))
+                .isInstanceOf(DataAccessException.class);
+
+        // 중단하면(11-25) 같은 가게에 새 행사를 만들 수 있다
+        jdbc.update("UPDATE coupon_policy SET stopped_at = NOW(6) WHERE id = ?", first);
+        jdbc.update(sql, storeA);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM coupon_policy WHERE store_id = ?", Integer.class, storeA)).isEqualTo(2);
+    }
+
+    @Test
+    void 쿠폰_기간은_1에서_30일_정률은_1에서_50퍼센트() {
+        String sql = "INSERT INTO coupon_policy (store_id, benefit_type, discount_rate, valid_days, total_quantity) VALUES (?, 'percent_discount', ?, ?, 10)";
+
+        assertThatThrownBy(() -> jdbc.update(sql, storeA, 10, 31))
+                .isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("ck_coupon_policy_valid_days");
+        assertThatThrownBy(() -> jdbc.update(sql, storeA, 51, 7))
+                .isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("ck_coupon_policy_rate");
+        jdbc.update(sql, storeA, 50, 30);
+    }
+
+    @Test
     void 지갑은_주인당_하나() {
         jdbc.update("INSERT INTO wallet (owner_type, owner_id) VALUES ('store', ?)", storeA);
 

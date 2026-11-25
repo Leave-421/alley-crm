@@ -41,7 +41,7 @@ D1(#12)에서 정한 enum 값의 **유일한 목록**이다. DB에는 이 문자
 | 추천 피드백 `feedback.type` | `reject` 거절 · `reroll` 리롤 |
 | 오늘의 코스 기록 `type` | `impression` 노출 · `click` 클릭 |
 | 요일 구분 `dayType` | `weekday` 평일 · `weekend` 주말 |
-| 쿠폰 혜택 `benefitType` | `fixed_discount` 정액 할인 · `service` 서비스 제공 (정률 할인 없음) |
+| 쿠폰 혜택 `benefitType` | `fixed_discount` 정액 할인 · `percent_discount` 정률 할인(정수 1 ~ 50%, 최대 할인액 선택, 1원 미만 버림) · `service` 서비스 제공 (11-25) |
 | 쿠폰 상태 `coupon.status` | `downloaded` 다운로드됨 · `applied` 예약에 적용됨 · `used` 사용 완료 · `expired` 기간 만료 · `apply_canceled` 적용 취소 |
 | 지갑 주인 `wallet.ownerType` | `customer` 회원 손님 · `store` 가게 · `fund` 상인회 기금 |
 | 거래 종류 `walletTx.type` | `charge` 충전 · `deposit_paid` 예약금 납부 · `deposit_refunded` 예약금 환불 · `referral_fee_charged` 소개 수수료 차감 · `fund_deposited` 기금 입금 |
