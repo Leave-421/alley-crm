@@ -300,7 +300,68 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 | 슬롯이 찼는지 | 같은 가게 · 같은 `start_at`의 `requested` · `confirmed` 예약 수가 `capacity_per_slot` 이상이면 참 | FR-RSV-01 #3, FR-RSV-05 #2 |
 | 동시 신청 | 가게 행을 잠가(`SELECT … FOR UPDATE`) 같은 가게 신청을 한 줄로 세운다. 자리를 넘겨 받지 않는다 | NFR-09 |
 | 승인 전 · 거절 · 탈퇴 가게 | 손님에게 없는 가게로 보고 `404 not_found` | FR-STO-01 |
-| D5가 단계 30에 더할 것 | 영업시간 · 휴무일 · 슬롯 단위 맞춤 · 한 팀 최대 인원(`invalid`) | D5 (#71) |
+| 단계 30의 D5 검사 | 한 팀 최대 인원 초과 → `invalid`. 영업시간 밖 · 휴무일 · 슬롯 단위에 안 맞는 시각 → `slot_unavailable` (아래 「슬롯 계산」) | D5 (#71) |
+
+### 예약 운영 설정 · 슬롯 (D5)
+
+#### 슬롯 계산 (서버 내부 `SlotRules`, 신청 검사 · 예약 가능 시간이 같이 씀)
+
+- 슬롯은 영업 시작 시각(`open_time`)부터 슬롯 단위(`slot_minutes`)로 나눈다. **마지막 슬롯은 영업 종료 시각까지 끝나야 한다**(10:00 ~ 22:00, 30분 → 21:30이 마지막).
+- 종료 시각이 시작 시각보다 이르거나 같으면 다음 날 새벽까지 영업한다(18:00 ~ 02:00). 자정 뒤 슬롯도 **시작한 날(영업일)**의 것이다.
+- 휴무일(`closed_days`)은 영업일의 요일로 판단한다. 영업시간이 비어 있는 가게는 슬롯이 없다.
+- 모든 날짜 · 요일은 운영 시간대(Asia/Seoul).
+
+#### `GET /api/v1/stores/{storeId}/available-slots?date=2026-11-28` — 예약 가능 시간 (G-02)
+
+- 역할: 누구나(로그인 불필요).
+- 응답 `200`:
+
+```json
+{
+  "date": "2026-11-28",
+  "acceptingReservations": true,
+  "maxPartySize": 4,
+  "depositPerPerson": 10000,
+  "slots": [ { "startAt": "2026-11-28T01:00:00Z", "available": false }, { "startAt": "2026-11-28T01:30:00Z", "available": true } ]
+}
+```
+
+  - `slots`: 그 영업일의 모든 슬롯(휴무일이면 빈 목록). `available`은 예약 받는 중 · 예약 가능 기간 안 · 지금 이후 · 자리 남음일 때 `true`.
+  - `acceptingReservations`: 영업 상태가 `open`이고 예약 받기가 켜져 있으면 `true`. `false`면 모든 슬롯이 `available: false`.
+  - `maxPartySize`: `null`이면 제한 없음. 화면은 인원 선택 상한으로 쓴다.
+  - 보였던 슬롯도 신청 순간 자리가 차면 신청이 `slot_unavailable`이 될 수 있다.
+- 실패: `not_found`(없거나 승인 전 가게) · `invalid`(date)
+
+#### `GET` · `PUT /api/v1/owner/reservation-settings` — 예약 운영 설정 (O-03)
+
+- 역할: 사장님(내 가게). `PUT`은 `X-XSRF-TOKEN` 필요. 영업시간 · 휴무일(O-12)과 영업 상태 · 예약 받기는 C22가 맡는다.
+- `PUT` 요청은 **모든 칸을 보낸다**(부분 수정 없음):
+
+```json
+{ "slotMinutes": 30, "capacityPerSlot": 2, "maxPartySize": 4, "bookingWindowDays": 30, "cancelDeadlineHours": 24, "lateCancelRefundRate": 0.5, "depositPerPerson": 10000 }
+```
+
+| 필드 | 범위 | 비고 |
+| --- | --- | --- |
+| `slotMinutes` | 10 ~ 240, 10분 단위 | |
+| `capacityPerSlot` | 1 ~ 50 | 같은 슬롯에 받는 예약 수 |
+| `maxPartySize` | 1 ~ 100 또는 `null` | `null` = 제한 없음 |
+| `bookingWindowDays` | 1 ~ 60 | 기본 30 (기획 11-25 (2)) |
+| `cancelDeadlineHours` | 0 ~ 24 | 예약 시각 몇 시간 전까지 취소. 24시간 전보다 이르게 못 잡음(FR-RSV-05 #1) |
+| `lateCancelRefundRate` | 0 ~ 1(소수 셋째 자리까지) 또는 `null` | `null` = 권역 설정값(`late_cancel_refund_rate`) |
+| `depositPerPerson` | 0 ~ 1,000,000 | 원. 0 = 예약금 없음 |
+
+- 응답 `200`(GET · PUT): 위 칸 + `effectiveLateCancelRefundRate`(실제로 쓰는 환불 비율 = 가게 값, 없으면 권역 값).
+- 바꾼 설정은 그 뒤 신청부터 적용된다. 이미 받은 예약은 그대로다.
+- 실패: `invalid`(범위 밖 · 칸 빠짐) · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+#### 정책에 따라 정한 것 (D5)
+
+| 항목 | 정한 것 | 근거 |
+| --- | --- | --- |
+| 마지막 슬롯 | 영업 종료 시각까지 끝나는 슬롯까지 | FR-RSV-05 '예약 가능 시간' |
+| 새벽 영업 | 종료 ≤ 시작이면 다음 날 새벽까지, 슬롯은 시작한 날 소속 | 주점 업종 |
+| 슬롯 단위 · 동시 예약 수 · 최대 인원 · 예약금 범위 | 위 표 (기획에 범위 없음, 화면 입력 상한용) | — |
 
 ### 사장님 예약 (D3 · D4)
 
