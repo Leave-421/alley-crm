@@ -34,6 +34,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/csrf").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/signup", "/api/v1/auth/login").permitAll()
+                        // 가게 가입 신청은 가게 · 사장님 계정을 같이 만든다(C5)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/store-joins").permitAll()
                         // 예약 신청은 비회원도 한다(D2). 회원 · 역할 판단은 신청 단계 20(C4)
                         .requestMatchers(HttpMethod.POST, "/api/v1/reservations").permitAll()
                         .anyRequest().authenticated())

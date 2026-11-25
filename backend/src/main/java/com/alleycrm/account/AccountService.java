@@ -38,6 +38,15 @@ public class AccountService {
         return saveNew(Account.association(loginId, passwordEncoder.encode(rawPassword), regionId)).toPrincipal();
     }
 
+    /** 사장님 계정 만들기(가게 가입 신청, C5). 가게당 1개 — 이미 있으면 409 conflict(FR-AUTH-04 #2). */
+    @Transactional
+    public AccountPrincipal createOwner(long storeId, String loginId, String rawPassword) {
+        if (accounts.existsByStoreId(storeId)) {
+            throw new ApiException(ErrorCode.CONFLICT, "이 가게에는 이미 사장님 계정이 있습니다.");
+        }
+        return saveNew(Account.owner(loginId, passwordEncoder.encode(rawPassword), storeId)).toPrincipal();
+    }
+
     /** 아이디가 없거나 비밀번호가 틀리면 둘을 구분하지 않고 401 unauthorized. */
     @Transactional(readOnly = true)
     public AccountPrincipal authenticate(String loginId, String rawPassword) {

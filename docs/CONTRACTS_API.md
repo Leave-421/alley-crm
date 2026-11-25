@@ -65,7 +65,7 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 - 요청: `{ "loginId": "string", "password": "string" }`
 - 응답 `200`: `Account` + 새 세션 쿠키(세션 ID 재발급)
 - 실패: `invalid`(빈 값) · `unauthorized`(아이디가 없거나 비밀번호가 틀림 — 둘을 구분하지 않는다) · `csrf_invalid`
-- 가게 가입이 승인되지 않은 사장님 계정의 처리는 C5(FR-AUTH-04)에서 정한다.
+- 가게 가입이 승인되지 않은(신청 · 거절) 사장님도 로그인할 수 있다. 가입 상태는 `GET /api/v1/store-joins/mine`으로 보고, 다른 사장님 기능은 승인 전에 `403 forbidden_role`이다(C5, FR-AUTH-04).
 
 ### `POST /api/v1/auth/logout` — 로그아웃 (C2)
 
@@ -78,6 +78,64 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 - 역할: 로그인한 누구나
 - 응답 `200`: `Account`
 - 실패: `unauthorized`
+
+### 가게 가입 (C5)
+
+사장님은 가게 가입을 신청하고, 그 권역 상인회가 승인 · 거절한다(FR-STO-01). 신청이 가게(`joinStatus: requested`)와 사장님 계정을 함께 만든다. 가게당 사장님 계정은 1개, 직원 계정은 없다(FR-AUTH-04).
+
+**가게 가입 `StoreJoin`**
+
+```json
+{
+  "storeId": "string", "regionId": "string", "name": "string",
+  "category": "cafe", "alley": "center",
+  "openTime": "10:00", "closeTime": "22:00", "closedDays": ["mon"],
+  "joinStatus": "requested"
+}
+```
+
+- `category` · `alley` · `closedDays` · `joinStatus`: `CONTRACTS.md` 「3」 `store.*`. `openTime` · `closeTime`: `HH:mm`(Asia/Seoul 벽시계). `closedDays` 빈 목록이면 연중무휴.
+- 가게 정보 요청 칸(아래 `StoreJoinInfo`): `name` 1 ~ 50자, `category` · `alley` 값 목록 안, `openTime` < `closeTime`, `closedDays`는 생략 가능(빈 목록), 같은 요일 중복 불가.
+- `alley`는 신청 때 사장님이 고르고, 지도 위치와 함께 상인회가 관리한다(C6).
+
+#### `POST /api/v1/store-joins` — 가게 가입 신청
+
+- 역할: 누구나(로그인 불필요). `X-XSRF-TOKEN` 필요.
+- 요청: `{ "loginId": "string", "password": "string", "regionId": "string", ...StoreJoinInfo }` — `StoreJoinInfo` = `{ "name", "category", "alley", "openTime", "closeTime", "closedDays" }`. `loginId` · `password` 규칙은 회원가입과 같다.
+- 응답 `201`: `StoreJoin`(`joinStatus: "requested"`). 로그인 세션은 만들지 않는다. 같은 아이디로 로그인하면 승인 전에도 이 가게의 가입 상태를 볼 수 있다.
+- 실패: `invalid` · `not_found`(없는 권역) · `conflict`(이미 쓰는 `loginId`) · `csrf_invalid`
+
+#### `GET /api/v1/store-joins/mine` — 내 가게 가입 상태
+
+- 역할: 사장님(승인 전 · 거절 포함). 손님 · 상인회는 `403 forbidden_role`.
+- 응답 `200`: `StoreJoin`
+- 실패: `unauthorized` · `forbidden_role`
+
+#### `POST /api/v1/store-joins/mine/reapply` — 거절된 가입 다시 신청
+
+- 역할: 사장님. 거절된(`rejected`) 가입만 고친 가게 정보로 다시 신청한다. 받아들일지는 상인회가 정한다.
+- 요청: `StoreJoinInfo`
+- 응답 `200`: `StoreJoin`(`joinStatus: "requested"`)
+- 실패: `invalid` · `conflict`(거절 상태가 아님) · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+#### `GET /api/v1/store-joins` — 권역의 가게 가입 목록
+
+- 역할: 상인회. 자기 권역 가게만. 사장님 · 손님은 `403 forbidden_role`.
+- 쿼리: `status`(선택, 기본 `requested`, `store.joinStatus` 값) + 페이지네이션(공통 규칙). 오래된 신청부터.
+- 응답 `200`: 공통 페이지, `items[]` = `StoreJoin`
+- 실패: `invalid` · `unauthorized` · `forbidden_role`
+
+#### `POST /api/v1/store-joins/{storeId}/approve` · `/reject` — 가입 승인 · 거절
+
+- 역할: 상인회. 자기 권역 가게만(다른 권역 가게는 `404`). `X-XSRF-TOKEN` 필요. 요청 본문 없음.
+- `requested`인 가입만 `approved` · `rejected`로 바꾼다. 커밋 뒤 `StoreJoinDecidedEvent(storeId, joinStatus)`를 내보내고, C14가 그 가게 사장님에게 `store_join_result` 알림(`payload: { "storeId", "joinStatus" }`)을 남긴다.
+- 응답 `200`: `StoreJoin`
+- 실패: `not_found` · `conflict`(신청 상태가 아님) · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+#### 서버 내부: 승인된 사장님 확인 (D · E가 씀)
+
+- 사장님 기능의 Controller는 `StoreService.requireApprovedOwnStore(me)`로 가게 ID를 얻는다. 사장님이 아니거나 가게가 `approved`가 아니면 `403 forbidden_role`(FR-AUTH-04 #1). 가게 ID는 세션 계정에서만 정하고 요청에서 받지 않는다.
+- 경로에 가게 ID가 있으면 `StoreService.requireApprovedOwnStore(me, storeId)` — 다른 가게면 `404 not_found`(IDOR).
 
 ## 2. 예약 · 잔액 · 수수료 · 정산 · 서버 시계 (담당 D)
 

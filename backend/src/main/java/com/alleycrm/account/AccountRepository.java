@@ -7,5 +7,7 @@ interface AccountRepository extends JpaRepository<Account, Long> {
 
     Optional<Account> findByLoginId(String loginId);
 
+    boolean existsByStoreId(long storeId);
+
     boolean existsByLoginId(String loginId);
 }
