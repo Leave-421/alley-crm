@@ -1,4 +1,5 @@
 import { HttpResponse } from 'msw/http';
+import { getMockAccount } from './session.js';
 
 // 목 핸들러가 같이 쓰는 응답 도구. 모양은 계약(docs/CONTRACTS.md 「1」 · 「4」 · 「6」)을 그대로 따른다.
 
@@ -17,4 +18,9 @@ export function rejectInvalidCsrf({ request, cookies }) {
     return errorResponse(403, 'csrf_invalid', 'CSRF 토큰이 없거나 맞지 않아요.');
   }
   return null;
+}
+
+/** '로그인한 누구나' API의 검사. 목에서 로그인하지 않았으면 `401 unauthorized`, 했으면 null. */
+export function rejectAnonymous() {
+  return getMockAccount() ? null : errorResponse(401, 'unauthorized', '로그인이 필요해요.');
 }
