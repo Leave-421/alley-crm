@@ -22,7 +22,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
-/** D9 가상 잔액 · 거래 내역: FR-STL-06 #1, NFR-02 #1, 기획 11-25 (3) 가게 잔액 마이너스. */
+/** D9 가상 잔액 · 거래 내역: FR-STL-06 #1, NFR-02 #1, 기획 11-25 (4) 가게 잔액 마이너스. */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)

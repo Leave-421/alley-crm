@@ -21,7 +21,7 @@ public record WalletOwner(String type, long id) {
         return new WalletOwner(FUND, regionId);
     }
 
-    /** 회원 잔액만 마이너스가 될 수 없다. 가게는 수수료로 마이너스가 될 수 있다(기획 11-25 (3)) */
+    /** 회원 잔액만 마이너스가 될 수 없다. 가게는 수수료로 마이너스가 될 수 있다(기획 11-25 (4)) */
     public boolean mayGoNegative() {
         return !CUSTOMER.equals(type);
     }
