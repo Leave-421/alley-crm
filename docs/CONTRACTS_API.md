@@ -39,7 +39,45 @@
 
 C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입 · 목록, 손님 식별 · 공유 동의 · 고객 카드, 알림 · SSE, 분석 지표.
 
-(아직 없음)
+### 계정 응답 `Account` (C2)
+
+로그인 · 내 계정 응답이 같이 쓴다.
+
+```json
+{ "id": "string", "loginId": "string", "role": "customer", "storeId": null, "regionId": null }
+```
+
+- `role`: `customer` · `owner` · `association` (`CONTRACTS.md` 「2. 역할」)
+- `storeId`: `owner`만 값이 있고 나머지는 `null`. `regionId`: `association`만 값이 있고 나머지는 `null`.
+
+### `POST /api/v1/auth/signup` — 손님 회원가입 (C2)
+
+- 역할: 누구나(로그인 불필요). 손님(`customer`) 계정만 만든다. 사장님 계정은 가게 가입(C5), 상인회 계정은 초기 데이터로만 생긴다.
+- 요청: `{ "loginId": "string", "password": "string", "name": "string", "gender": "string | null", "ageGroup": "string | null" }`
+  - `loginId` 4 ~ 30자 영문 소문자 · 숫자, `password` 8 ~ 64자, `name` 1 ~ 20자.
+  - `gender` · `ageGroup`은 생략 가능. 값 목록은 `CONTRACTS.md` 「3. Entity · 상태」(D1이 확정).
+- 응답 `201`: `Account`. 가입만 하고 로그인 세션은 만들지 않는다.
+- 실패: `invalid` · `conflict`(이미 쓰는 `loginId`) · `csrf_invalid`
+
+### `POST /api/v1/auth/login` — 로그인 (C2)
+
+- 역할: 누구나(로그인 불필요). 세 역할 모두 이 경로로 로그인한다.
+- 요청: `{ "loginId": "string", "password": "string" }`
+- 응답 `200`: `Account` + 새 세션 쿠키(세션 ID 재발급)
+- 실패: `invalid`(빈 값) · `unauthorized`(아이디가 없거나 비밀번호가 틀림 — 둘을 구분하지 않는다) · `csrf_invalid`
+- 가게 가입이 승인되지 않은 사장님 계정의 처리는 C5(FR-AUTH-04)에서 정한다.
+
+### `POST /api/v1/auth/logout` — 로그아웃 (C2)
+
+- 역할: 로그인한 누구나
+- 응답 `204`. 세션을 끝낸다.
+- 실패: `unauthorized` · `csrf_invalid`
+
+### `GET /api/v1/auth/me` — 내 계정 (C2)
+
+- 역할: 로그인한 누구나
+- 응답 `200`: `Account`
+- 실패: `unauthorized`
 
 ## 2. 예약 · 잔액 · 수수료 · 정산 · 서버 시계 (담당 D)
 
