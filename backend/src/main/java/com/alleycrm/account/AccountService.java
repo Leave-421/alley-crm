@@ -58,6 +58,14 @@ public class AccountService {
         return account.toPrincipal();
     }
 
+    /** 세션의 loginId로 계정을 다시 읽는다. 세션 뒤에 계정이 없어졌으면 401 unauthorized. */
+    @Transactional(readOnly = true)
+    public AccountPrincipal getByLoginId(String loginId) {
+        return accounts.findByLoginId(loginId)
+                .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED))
+                .toPrincipal();
+    }
+
     private Account saveNew(Account account) {
         if (accounts.existsByLoginId(account.getLoginId())) {
             throw new ApiException(ErrorCode.CONFLICT, "이미 쓰는 아이디입니다.");

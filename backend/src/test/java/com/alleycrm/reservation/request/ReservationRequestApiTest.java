@@ -1,12 +1,12 @@
 package com.alleycrm.reservation.request;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.alleycrm.TestcontainersConfiguration;
+import com.alleycrm.common.TestCsrf;
 import com.alleycrm.common.time.AppClock;
 import java.time.Instant;
 import java.util.Map;
@@ -15,9 +15,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -28,7 +26,7 @@ import tools.jackson.databind.ObjectMapper;
 /** D2 예약 신청: FR-RSV-01 인수 조건 #1 ~ #5(동의 기록 · 예약금 기록은 C8 · D10 단계가 생기면 더한다). */
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import({TestcontainersConfiguration.class, ReservationRequestApiTest.FakeCustomerStep.class})
+@Import(TestcontainersConfiguration.class)
 class ReservationRequestApiTest {
 
     /** 2026-11-27 10:00 Asia/Seoul */
@@ -48,25 +46,6 @@ class ReservationRequestApiTest {
     ReservationRequestService service;
 
     long storeId;
-
-    /** 손님 식별(20, C4)이 생기기 전까지 테스트에서만 쓰는 대역: 비회원 손님을 만든다. */
-    @TestConfiguration
-    static class FakeCustomerStep {
-        @Bean
-        ReservationRequestStep fakeIdentifyCustomer(JdbcTemplate jdbc) {
-            return new ReservationRequestStep() {
-                public int order() {
-                    return IDENTIFY_CUSTOMER;
-                }
-
-                public void apply(ReservationRequestContext ctx) {
-                    jdbc.update("INSERT INTO customer (type, name, phone) VALUES ('guest', ?, ?)",
-                            ctx.getBody().guest().name(), ctx.getBody().guest().phone());
-                    ctx.setCustomerId(jdbc.queryForObject("SELECT LAST_INSERT_ID()", Long.class));
-                }
-            };
-        }
-    }
 
     @BeforeEach
     void seed() {
@@ -185,7 +164,7 @@ class ReservationRequestApiTest {
     }
 
     private ResultActions request(Map<String, Object> body) throws Exception {
-        return mvc.perform(post("/api/v1/reservations").with(csrf())
+        return mvc.perform(post("/api/v1/reservations").with(TestCsrf.csrf(mvc))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsString(body)));
     }
