@@ -1,12 +1,13 @@
 package com.alleycrm.recommend.record;
 
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.alleycrm.TestcontainersConfiguration;
+import jakarta.servlet.http.Cookie;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,6 +20,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -46,6 +48,19 @@ class StoreClickControllerTest {
         long region = jdbc.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
         jdbc.update("INSERT INTO store (region_id, name, category, alley, join_status) VALUES (?, 'A', 'cafe', 'center', 'approved')", region);
         store = jdbc.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
+    }
+
+    /**
+     * 프론트와 같은 흐름: GET /api/v1/csrf의 XSRF-TOKEN 쿠키를 X-XSRF-TOKEN 헤더로 보낸다.
+     * spring-security-test의 csrf()는 공유 컨텍스트의 CSRF 저장소를 바꿔 다른 테스트를 깨뜨릴 수 있어 쓰지 않는다(AuthApiTest와 같음).
+     */
+    private RequestPostProcessor csrf() throws Exception {
+        Cookie token = mvc.perform(get("/api/v1/csrf")).andReturn().getResponse().getCookie("XSRF-TOKEN");
+        return request -> {
+            request.setCookies(token);
+            request.addHeader("X-XSRF-TOKEN", token.getValue());
+            return request;
+        };
     }
 
     @Test
