@@ -92,6 +92,9 @@ class StoreJoinApiTest {
                 .andExpect(jsonPath("$.openTime").value("10:00"))
                 .andExpect(jsonPath("$.closedDays[0]").value("mon"))
                 .andReturn().getResponse().getContentAsString().replaceAll(".*\"storeId\":\"(\\d+)\".*", "$1");
+        // 영업시간은 벽시계 그대로 저장된다(JVM 시간대만큼 밀리지 않음)
+        assertThat(jdbc.queryForMap("SELECT TIME_FORMAT(open_time, '%H:%i') AS o, TIME_FORMAT(close_time, '%H:%i') AS c FROM store WHERE id = ?",
+                Long.parseLong(storeId))).containsEntry("o", "10:00").containsEntry("c", "22:00");
 
         // 승인 전에도 로그인해서 가입 상태를 본다(O-11)
         MockHttpSession ownerSession = login(owner);
