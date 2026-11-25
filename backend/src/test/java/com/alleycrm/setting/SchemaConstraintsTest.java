@@ -98,6 +98,16 @@ class SchemaConstraintsTest {
     }
 
     @Test
+    void 예약_가능_기간은_기본_30일_1에서_60일() {
+        assertThat(jdbc.queryForObject("SELECT booking_window_days FROM store WHERE id = ?", Integer.class, storeA)).isEqualTo(30);
+
+        assertThatThrownBy(() -> jdbc.update("UPDATE store SET booking_window_days = 61 WHERE id = ?", storeA))
+                .isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("ck_store_booking_window");
+        jdbc.update("UPDATE store SET booking_window_days = 60 WHERE id = ?", storeA);
+    }
+
+    @Test
     void 지갑은_주인당_하나() {
         jdbc.update("INSERT INTO wallet (owner_type, owner_id) VALUES ('store', ?)", storeA);
 

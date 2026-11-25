@@ -152,6 +152,19 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 
 - 코드 모양(D2에서 확정): `interface ReservationRequestStep { int order(); void apply(ReservationRequestContext ctx); }` 구현을 스프링 빈으로 두면 D2가 `order` 순서대로 부른다. 아직 없는 단계는 건너뛴다.
 - 단계가 실패를 알릴 때는 `ApiException`(위 실패 코드)을 던진다.
+- 코드 위치: `com.alleycrm.reservation.request`. 순서 상수는 `ReservationRequestStep.VALIDATE` ~ `SAVE`. 단계끼리 주고받는 값은 `ReservationRequestContext`의 자기 칸에만 쓴다(칸 옆 주석에 담당). 같은 `order`가 둘이면 서버가 뜨지 않는다.
+- 단계 20(C4)이 `customerId`를 채워야 저장(80)이 된다. 로그인했는지는 `ctx.loggedIn()`, 회원 · 역할 판단(사장님 · 상인회 → `forbidden_role`)은 단계 20이 한다. C4가 들어오기 전까지 테스트는 대역 단계를 쓴다.
+- 커밋 뒤 알림: 저장되면 `ReservationRequestedEvent(reservationId, storeId, customerId)`를 내보낸다. C14 · C15는 `@TransactionalEventListener`로 받는다(커밋 뒤에만 실행).
+
+#### 정책에 따라 정한 것 (D2)
+
+| 항목 | 정한 것 | 근거 |
+| --- | --- | --- |
+| 예약 가능 기간 | 운영 시간대(Asia/Seoul) 기준 **오늘부터 `booking_window_days`일 뒤 날짜까지**(그 날짜 포함). 기본 30, 사장님은 1 ~ 60(DB CHECK) | FR-RSV-01 #4, FR-RSV-05, 기획 11-25 (2) |
+| 슬롯이 찼는지 | 같은 가게 · 같은 `start_at`의 `requested` · `confirmed` 예약 수가 `capacity_per_slot` 이상이면 참 | FR-RSV-01 #3, FR-RSV-05 #2 |
+| 동시 신청 | 가게 행을 잠가(`SELECT … FOR UPDATE`) 같은 가게 신청을 한 줄로 세운다. 자리를 넘겨 받지 않는다 | NFR-09 |
+| 승인 전 · 거절 · 탈퇴 가게 | 손님에게 없는 가게로 보고 `404 not_found` | FR-STO-01 |
+| D5가 단계 30에 더할 것 | 영업시간 · 휴무일 · 슬롯 단위 맞춤 · 한 팀 최대 인원(`invalid`) | D5 (#71) |
 
 ## 3. 추천 · 쿠폰 · 소개 판정 · 시드 (담당 E)
 
