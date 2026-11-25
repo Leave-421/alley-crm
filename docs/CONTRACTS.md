@@ -82,6 +82,14 @@ D1(#12)에서 정한 enum 값의 **유일한 목록**이다. DB에는 이 문자
 | 이유 종류 `reasonType` | `visit_data` 방문 데이터 · `colocation` 업종 동반 입지 · `time_band` 시간대 · `attractiveness` 매력도 · `demographic` 손님층 · `distance` 거리 |
 | 기준 시각 출처 `baseTimeSource` | `now` 현재 시각 · `reservation` 기준 가게 예약 시각 |
 
+### 쿠폰 (담당 E, `CONTRACTS_API.md` 3.4)
+
+쿠폰 혜택 `benefitType` · 쿠폰 상태 `coupon.status`는 위 표에 있다.
+
+| enum | 값 |
+| --- | --- |
+| 다운로드 가능 여부 `downloadStatus` | `available` 받을 수 있음 · `login_required` 로그인 필요 · `waiting` 30일 대기 · `applied_unused` 같은 행사의 미사용 적용 쿠폰 있음 · `unavailable` 받을 수 없음(행사 없음 · 소진 · 가게 영업 중 아님) |
+
 ## 4. 에러 코드
 
 | code | HTTP | 언제 |
