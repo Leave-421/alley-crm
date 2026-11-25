@@ -166,6 +166,75 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 | 승인 전 · 거절 · 탈퇴 가게 | 손님에게 없는 가게로 보고 `404 not_found` | FR-STO-01 |
 | D5가 단계 30에 더할 것 | 영업시간 · 휴무일 · 슬롯 단위 맞춤 · 한 팀 최대 인원(`invalid`) | D5 (#71) |
 
+### 사장님 예약 (D3 · D4)
+
+가게는 경로 · 요청으로 받지 않고 **로그인한 사장님 계정의 가게**로 정한다(IDOR). 다른 가게 예약은 `404 not_found`(존재 숨김). 사장님이 아니면 `403 forbidden_role`.
+
+#### `GET /api/v1/owner/reservations?date=2026-11-28` — 날짜별 예약 목록 (D4)
+
+- 역할: 사장님. `date`는 운영 시간대(Asia/Seoul) 날짜, 그 날짜에 시작하는 내 가게 예약을 시각 순으로. 하루치라 페이지를 나누지 않는다.
+- 응답 `200`:
+
+```json
+{
+  "date": "2026-11-28",
+  "items": [
+    {
+      "id": "string", "reservationNo": "K7Q2M9XA", "startAt": "2026-11-28T09:00:00Z", "partySize": 2,
+      "status": "requested", "cancelReason": null, "requestedAt": "2026-11-27T07:40:00Z", "requestNote": null,
+      "depositAmount": 10000, "customerType": "guest", "maskedName": "김*코", "fromRecommendation": true
+    }
+  ]
+}
+```
+
+  - `customerType`: `member` · `guest`(화면의 '회원 여부').
+  - `maskedName`: 가린 이름. 이름이 없으면 `null`. **전화번호 · 보낸 가게 id · 이름은 넣지 않는다**(FR-CUS-05, FR-RSV-04).
+  - `fromRecommendation`: 정식 코스 제안으로 온 예약이면 `true`.
+  - 손님 등급(FR-CUS-04)은 고객 카드(C)가 만든 뒤 더한다.
+- 실패: `invalid`(date 없음 · 형식) · `unauthorized` · `forbidden_role`
+
+#### `POST /api/v1/owner/reservations/{id}/confirm` — 승인 (D3)
+
+- 역할: 사장님. `X-XSRF-TOKEN` 필요. 본문 없음.
+- `requested` → `confirmed`(FR-RSV-03 #1). 응답 `200`: `Reservation`.
+- 실패: `not_found` · `conflict`(신청 상태가 아님, 또는 예약 시각이 이미 지남 — 자동 거절 대상) · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+#### `POST /api/v1/owner/reservations/{id}/reject` — 거절 (D3)
+
+- 역할: 사장님. `X-XSRF-TOKEN` 필요. 본문 없음. 거절 사유는 받지 않는다.
+- `requested` → `canceled`, `cancelReason: "store_rejected"`(FR-RSV-03 #2). 예약금 100% 환불 · 쿠폰 적용 취소는 아래 이벤트를 받는 쪽이 같은 트랜잭션에서 한다.
+- 응답 `200`: `Reservation`. 실패: 위와 같음(`conflict`: 신청 상태가 아님).
+
+#### 자동 거절 · 자동 취소 (서버 내부, D3 · D4 → 실행 주기는 D7)
+
+`ReservationStateService`의 두 메서드를 D7 스케줄이 주기적으로 부른다. 둘 다 서버 시계(D18)를 따른다.
+
+| 메서드 | 대상 | 결과 |
+| --- | --- | --- |
+| `autoRejectDue()` | `requested`이고 `startAt` ≤ 지금 | `canceled` · `store_rejected` (FR-RSV-03 #3, 거절과 같은 결과) |
+| `autoCancelDue()` | `confirmed`이고 예약일(운영 시간대) 다음 날이 끝남 = `startAt` < (오늘 − 1일) 00:00 | `canceled` · `auto_canceled` (FR-RSV-02 #1) |
+
+방문 처리된 예약은 바꾸지 않는다(FR-RSV-02 #2). 사장님 처리와 겹쳐도 행을 잠그고 상태를 다시 확인해 한 번만 바뀐다.
+
+#### 상태 변경 이벤트 `ReservationStatusChangedEvent` (서버 내부)
+
+상태를 바꾸는 곳은 `ReservationStateService` 하나다. 바꿀 때마다 `ReservationStatusChangedEvent(reservationId, storeId, customerId, fromStatus, toStatus, cancelReason, byScheduler)`를 상태를 바꾼 트랜잭션 안에서 내보낸다.
+
+| 받는 쪽 | 받는 방법 | 할 일 |
+| --- | --- | --- |
+| 예약금 환불 (D10 · D6) | `@EventListener` (같은 트랜잭션, 실패하면 상태 변경도 취소) | `store_rejected` → 100% 환불, `auto_canceled` → 환불 없음(05-policy 「예약 상태」). 손님 취소는 D6 |
+| 쿠폰 적용 취소 (E) | `@EventListener` | 방문 전 취소면 적용 쿠폰 → `apply_canceled`(30일 제한 유지) |
+| 알림 (C14 · C15) | `@TransactionalEventListener` (커밋 뒤) | 승인 · 거절 알림 |
+
+#### 정책에 따라 정한 것 (D3 · D4)
+
+| 항목 | 정한 것 | 근거 |
+| --- | --- | --- |
+| 가린 이름 | 첫 글자와 마지막 글자만 남기고 가운데를 `*`(김로코 → 김\*코). 두 글자면 첫 글자 + `*`(김코 → 김\*) | 07-screens O-01 · O-13 '가린 이름' |
+| 예약 시각이 지난 신청 승인 | 거절(`conflict`). 자동 거절 대상이다 | FR-RSV-03 "예약 시각까지 승인되지 않은 신청 예약은 자동 거절" |
+| 날짜 목록의 날짜 | 운영 시간대 기준 `startAt`의 날짜 | 05-policy "서비스 운영 시간대" |
+
 ### 가상 잔액 · 거래 내역 (D9)
 
 실제 결제는 없다(NFR-02). 잔액이 바뀔 때마다 거래 내역이 한 줄 남는다(FR-STL-06). 회원 잔액은 마이너스가 되지 않고, 가게 잔액은 소개 수수료로 마이너스가 될 수 있다(기획 11-25 (4)).
