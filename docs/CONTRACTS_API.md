@@ -137,6 +137,46 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 - 사장님 기능의 Controller는 `StoreService.requireApprovedOwnStore(me)`로 가게 ID를 얻는다. 사장님이 아니거나 가게가 `approved`가 아니면 `403 forbidden_role`(FR-AUTH-04 #1). 가게 ID는 세션 계정에서만 정하고 요청에서 받지 않는다.
 - 경로에 가게 ID가 있으면 `StoreService.requireApprovedOwnStore(me, storeId)` — 다른 가게면 `404 not_found`(IDOR).
 
+### 알림 (C14)
+
+앱 · 웹 안 알림함(G-11 손님 · O-10 사장님). 실제 문자 · 카카오 발송은 없다. 알림을 받는 쪽은 계정(회원 · 사장님) 또는 비회원 예약이다(`CONTRACTS.md` 「3」 `notification.recipientType`).
+
+**알림 `Notification`**
+
+```json
+{ "id": "string", "type": "reservation_requested", "payload": { "reservationId": "string" }, "readAt": null, "createdAt": "2026-11-27T01:00:00Z" }
+```
+
+- `type`: `CONTRACTS.md` 「3」 `notification.type`. 화면 문구는 프론트가 `type`으로 정한다.
+- `payload`: 종류마다 다른 JSON 객체. 화면이 이동 · 표시에 쓰는 ID와 값만 넣고 **손님 개인정보(이름 · 전화번호)와 보낸 가게는 넣지 않는다**(FR-CUS-05). ID는 문자열.
+- `readAt`: 읽은 시각, 안 읽었으면 `null`.
+
+| `type` | 받는 쪽 | `payload` | 만드는 곳 |
+| --- | --- | --- | --- |
+| `reservation_requested` | 그 가게 사장님 | `{ "reservationId" }` | 예약 신청 커밋 뒤(`ReservationRequestedEvent`) |
+| 나머지 종류 | — | 만드는 기능(D · E 이벤트)이 생길 때 C14에서 이 표에 더한다 | — |
+
+#### `GET /api/v1/notifications` — 내 알림 목록
+
+- 역할: 로그인한 계정(회원 · 사장님 · 상인회). 받는 쪽은 로그인 계정으로만 정하고 ID를 받지 않는다. 비회원 예약의 알림은 비회원 예약 조회 제한 세션(C13)에서 연다.
+- 페이지네이션(공통 규칙), 최근 것부터.
+- 응답 `200`: 공통 페이지 + `unreadCount`(종 아이콘 표시용, 전체 안 읽은 수)
+  `{ "items": [Notification], "page": 0, "size": 20, "totalElements": 3, "totalPages": 1, "unreadCount": 2 }`
+- 실패: `invalid`(page · size 범위) · `unauthorized`
+
+#### `POST /api/v1/notifications/{notificationId}/read` — 읽음 처리
+
+- 역할: 그 알림을 받은 계정. 이미 읽은 알림이면 그대로 둔다(처음 읽은 시각 유지).
+- 응답 `204`
+- 실패: `not_found`(없는 알림 · 남의 알림) · `unauthorized` · `csrf_invalid`
+
+#### 서버 내부: `NotificationService` (D · E가 씀)
+
+- 알림은 `NotificationService`로만 만든다. `notification` 테이블에 직접 넣지 않는다.
+- `notifyAccount(accountId, type, payload)` · `notifyGuestReservation(reservationId, type, payload)`. `payload`는 `Map<String, Object>`.
+- **트랜잭션 커밋 뒤에 만든다.** 기능 쪽은 이벤트를 내보내고, C14가 `@TransactionalEventListener`(커밋 뒤)로 받아 알림을 만든다. 롤백된 일에는 알림이 남지 않는다.
+- 생성 시각은 서버 시계(D18)를 따른다.
+
 ## 2. 예약 · 잔액 · 수수료 · 정산 · 서버 시계 (담당 D)
 
 D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약 · 방문 처리, 가상 잔액 · 예약금, 수수료 · 정산, 시연용 시각 조작.
