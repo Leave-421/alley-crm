@@ -166,6 +166,34 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 | 승인 전 · 거절 · 탈퇴 가게 | 손님에게 없는 가게로 보고 `404 not_found` | FR-STO-01 |
 | D5가 단계 30에 더할 것 | 영업시간 · 휴무일 · 슬롯 단위 맞춤 · 한 팀 최대 인원(`invalid`) | D5 (#71) |
 
+### 가상 잔액 · 거래 내역 (D9)
+
+실제 결제는 없다(NFR-02). 잔액이 바뀔 때마다 거래 내역이 한 줄 남는다(FR-STL-06). 회원 잔액은 마이너스가 되지 않고, 가게 잔액은 소개 수수료로 마이너스가 될 수 있다(기획 11-25 (4)).
+
+#### `GET /api/v1/wallets/me` — 내 가상 잔액
+
+- 역할: 로그인한 누구나. 회원은 자기 잔액, 사장님은 자기 가게 잔액, 상인회는 권역 공동 기금. 지갑 주인은 로그인 계정으로 정하고 ID를 받지 않는다.
+- 응답 `200`: `{ "ownerType": "customer | store | fund", "balance": 30000, "needsCharge": false }`
+  - `balance`: 원. 아직 거래가 없으면 0. 가게는 음수일 수 있다.
+  - `needsCharge`: 가게 잔액이 0보다 적으면 `true`(사장님 화면 '충전 필요' 안내). 회원 · 기금은 항상 `false`.
+- 실패: `unauthorized`
+
+#### `GET /api/v1/wallets/me/transactions` — 내 거래 내역
+
+- 역할: 위와 같음. 페이지네이션(공통 규칙), 최근 것부터.
+- 응답 `200`: 페이지 `items[]` = `{ "id": "string", "type": "charge", "amount": -1200, "reservationId": "string | null", "createdAt": "2026-11-27T01:00:00Z" }`
+  - `type`: `CONTRACTS.md` 「3」 `walletTx.type`. `amount`: 들어오면 +, 나가면 −.
+- 실패: `invalid`(page · size 범위) · `unauthorized`
+
+#### 서버 내부: `WalletService` (D10 · D6 · D15가 씀)
+
+- 잔액은 `WalletService`로만 바꾼다. `wallet` · `wallet_tx`를 직접 고치지 않는다.
+- `post(owner, type, amount, reservationId)`: 잔액을 바꾸고 거래 한 줄. 회원 잔액이 모자라면 `ApiException(insufficient_balance)`. 조건부 UPDATE 한 번이라 동시 요청에도 회원 잔액이 음수가 되지 않는다.
+- `transfer(from, fromType, to, toType, amount, reservationId)`: 가게 → 기금처럼 양쪽에 한 줄씩.
+- `recordGuest(phone, type, amount, reservationId)`: 비회원은 지갑 없이 전화번호에 묶은 기록만.
+- 거래 시각은 서버 시계(D18)를 따른다.
+- 충전 API(회원 · 가게)는 D10에서 이 절에 더한다.
+
 ## 3. 추천 · 쿠폰 · 소개 판정 · 시드 (담당 E)
 
 E1 ~ E17. 추천 API(E7은 계산보다 계약을 먼저), 노출 · 코스 제안 기록, 오늘의 코스, 쿠폰 행사 · 발급 · 적용 · 상태.
