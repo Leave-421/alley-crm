@@ -10,6 +10,8 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.crypto.factory.PasswordEncoderFactories;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.CsrfException;
 
@@ -27,10 +29,11 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.spa())
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
-                .logout(AbstractHttpConfigurer::disable) // 로그아웃은 C2에서 POST로 연다
+                .logout(AbstractHttpConfigurer::disable) // 로그아웃은 AuthController의 POST /api/v1/auth/logout
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, "/api/v1/csrf").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/signup", "/api/v1/auth/login").permitAll()
                         // 예약 신청은 비회원도 한다(D2). 회원 · 역할 판단은 신청 단계 20(C4)
                         .requestMatchers(HttpMethod.POST, "/api/v1/reservations").permitAll()
                         .anyRequest().authenticated())
@@ -42,6 +45,12 @@ public class SecurityConfig {
                                         ? ErrorCode.CSRF_INVALID
                                         : ErrorCode.FORBIDDEN_ROLE)));
         return http.build();
+    }
+
+    /** 비밀번호 해시(bcrypt, {bcrypt} 접두어). */
+    @Bean
+    PasswordEncoder passwordEncoder() {
+        return PasswordEncoderFactories.createDelegatingPasswordEncoder();
     }
 
     private static void writeError(HttpServletResponse response, ErrorCode code) throws IOException {
