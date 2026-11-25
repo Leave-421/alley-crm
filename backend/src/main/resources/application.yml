@@ -34,3 +34,7 @@ management:
     web:
       exposure:
         include: health
+
+app:
+  demo-tools:
+    enabled: ${DEMO_TOOLS_ENABLED:false}   # 시연용 시각 조작 API(D18). 실제 운영에서는 켜지 않는다

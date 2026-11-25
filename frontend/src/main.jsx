@@ -2,6 +2,8 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from '@/app/App.jsx';
 import { ensureCsrfToken } from '@/api/client.js';
+import '@/styles/tokens.css';
+import '@/styles/base.css';
 
 // 목 서버는 `npm run dev:mock`(Vite mode 'mock')일 때만 켠다. 다른 모드의 빌드에는 목 코드가 들어가지 않는다.
 async function enableMocking() {

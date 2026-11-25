@@ -1,0 +1,56 @@
+.badge {
+  display: inline-flex;
+  align-self: flex-start; /* flex 부모 안에서 폭이 늘어나지 않게 */
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-badge);
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.neutral {
+  background: var(--color-gray-50);
+  border-color: var(--color-border);
+  color: var(--color-text-muted);
+}
+
+/* 신청: 점선 테두리(아직 정해지지 않음) */
+.requested {
+  background: var(--status-requested-bg);
+  border-color: var(--status-requested-border);
+  border-style: dashed;
+  color: var(--status-requested-text);
+}
+
+/* 확정: 실선 테두리 */
+.confirmed {
+  background: var(--status-confirmed-bg);
+  border-color: var(--status-confirmed-border);
+  color: var(--status-confirmed-text);
+}
+
+/* 방문: 채운 배지 + 체크 표시 */
+.visited {
+  background: var(--status-visited-bg);
+  border-color: var(--status-visited-border);
+  color: var(--status-visited-text);
+}
+
+.visited::before {
+  content: '✓';
+  font-weight: var(--weight-bold);
+}
+
+/* 취소: 바탕 없음 + 가는 테두리 + 취소선 */
+.canceled {
+  background: var(--status-canceled-bg);
+  border-color: var(--status-canceled-border);
+  border-width: 1px;
+  color: var(--status-canceled-text);
+  text-decoration: line-through;
+}

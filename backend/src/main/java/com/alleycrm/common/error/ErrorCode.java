@@ -14,6 +14,8 @@ public enum ErrorCode {
     CSRF_INVALID(HttpStatus.FORBIDDEN, "csrf_invalid", "요청 보안 토큰이 없거나 맞지 않습니다."),
     NOT_FOUND(HttpStatus.NOT_FOUND, "not_found", "찾을 수 없습니다."),
     CONFLICT(HttpStatus.CONFLICT, "conflict", "현재 상태와 맞지 않는 요청입니다."),
+    SLOT_UNAVAILABLE(HttpStatus.CONFLICT, "slot_unavailable", "이 시간에는 예약할 수 없습니다."),
+    INSUFFICIENT_BALANCE(HttpStatus.CONFLICT, "insufficient_balance", "가상 잔액이 예약금보다 적습니다. 충전 후 다시 시도해 주세요."),
     INTERNAL(HttpStatus.INTERNAL_SERVER_ERROR, "internal", "서버에서 문제가 생겼습니다.");
 
     private final HttpStatus status;

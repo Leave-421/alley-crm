@@ -1,0 +1,54 @@
+.shell {
+  min-height: calc(100dvh - var(--demo-banner-height));
+  max-width: var(--layout-max-width);
+  margin: 0 auto;
+}
+
+/* 확정 목업: 높이 56px, 제목 19px · 800, 오른쪽 44px 아이콘 버튼 */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 56px;
+  padding: 0 var(--space-1) 0 var(--space-5);
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--color-text);
+  font-size: 19px;
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.3px;
+  line-height: var(--leading-tight);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 var(--space-2);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: var(--radius-badge);
+  background: linear-gradient(90deg, #d5c5ce 0%, #e1d4db 55%, #e9dfe4 100%);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0;
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-pill);
+  color: var(--color-text);
+}
+
+.content {
+  /* 좌우 여백은 화면이 정한다. 하단 탭에 가리지 않게 탭 높이 + 여백만큼 비운다 */
+  padding: 0 0 calc(var(--tabbar-height) + var(--tabbar-gap) + var(--space-6) + env(safe-area-inset-bottom, 0px));
+}
