@@ -33,6 +33,7 @@ D1(#12)에서 정한 enum 값의 **유일한 목록**이다. DB에는 이 문자
 | 손님 종류 `customer.type` | `member` 회원 · `guest` 비회원 |
 | 성별 `gender` | `female` 여성 · `male` 남성. **응답 안 함은 `null`** |
 | 연령대 `ageGroup` | `age_20_or_under` 20대 이하 · `age_30s` 30대 · `age_40s` 40대 · `age_50_or_over` 50대 이상. 모르면 `null` |
+| 공유 항목 `shareItem` | `name` 이름 · `phone` 연락처 · `visited_stores` 방문한 가게 목록 (이 셋은 항상 공유, 끌 수 없음) · `party_size` 인원 · `visit_datetime` 방문 일시 · `gender_age_group` 성별·연령대 (상인회가 켜고 끔, FR-CUS-06) |
 | 데이터 출처 `dataSource` | `real` 실제 운영 · `demo` 시연용 가상 · `public` 외부 공개 통계 (NFR-10) |
 | 예약 상태 `reservation.status` | `requested` 신청 → `confirmed` 확정 → `visited` 방문, 그리고 `canceled` 취소 (노쇼 상태 없음) |
 | 취소 사유 `reservation.cancelReason` | `customer_canceled` 손님 취소 · `store_rejected` 가게 거절(자동 거절 포함) · `auto_canceled` 자동 취소 |
