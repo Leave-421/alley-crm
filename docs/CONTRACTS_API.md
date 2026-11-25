@@ -39,7 +39,45 @@
 
 C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입 · 목록, 손님 식별 · 공유 동의 · 고객 카드, 알림 · SSE, 분석 지표.
 
-(아직 없음)
+### 계정 응답 `Account` (C2)
+
+로그인 · 내 계정 응답이 같이 쓴다.
+
+```json
+{ "id": "string", "loginId": "string", "role": "customer", "storeId": null, "regionId": null }
+```
+
+- `role`: `customer` · `owner` · `association` (`CONTRACTS.md` 「2. 역할」)
+- `storeId`: `owner`만 값이 있고 나머지는 `null`. `regionId`: `association`만 값이 있고 나머지는 `null`.
+
+### `POST /api/v1/auth/signup` — 손님 회원가입 (C2)
+
+- 역할: 누구나(로그인 불필요). 손님(`customer`) 계정만 만든다. 사장님 계정은 가게 가입(C5), 상인회 계정은 초기 데이터로만 생긴다.
+- 요청: `{ "loginId": "string", "password": "string", "name": "string", "gender": "string | null", "ageGroup": "string | null" }`
+  - `loginId` 4 ~ 30자 영문 소문자 · 숫자, `password` 8 ~ 64자, `name` 1 ~ 20자.
+  - `gender` · `ageGroup`은 생략 가능. 값 목록은 `CONTRACTS.md` 「3. Entity · 상태」(D1이 확정).
+- 응답 `201`: `Account`. 가입만 하고 로그인 세션은 만들지 않는다.
+- 실패: `invalid` · `conflict`(이미 쓰는 `loginId`) · `csrf_invalid`
+
+### `POST /api/v1/auth/login` — 로그인 (C2)
+
+- 역할: 누구나(로그인 불필요). 세 역할 모두 이 경로로 로그인한다.
+- 요청: `{ "loginId": "string", "password": "string" }`
+- 응답 `200`: `Account` + 새 세션 쿠키(세션 ID 재발급)
+- 실패: `invalid`(빈 값) · `unauthorized`(아이디가 없거나 비밀번호가 틀림 — 둘을 구분하지 않는다) · `csrf_invalid`
+- 가게 가입이 승인되지 않은 사장님 계정의 처리는 C5(FR-AUTH-04)에서 정한다.
+
+### `POST /api/v1/auth/logout` — 로그아웃 (C2)
+
+- 역할: 로그인한 누구나
+- 응답 `204`. 세션을 끝낸다.
+- 실패: `unauthorized` · `csrf_invalid`
+
+### `GET /api/v1/auth/me` — 내 계정 (C2)
+
+- 역할: 로그인한 누구나
+- 응답 `200`: `Account`
+- 실패: `unauthorized`
 
 ## 2. 예약 · 잔액 · 수수료 · 정산 · 서버 시계 (담당 D)
 
@@ -165,6 +203,34 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 | 동시 신청 | 가게 행을 잠가(`SELECT … FOR UPDATE`) 같은 가게 신청을 한 줄로 세운다. 자리를 넘겨 받지 않는다 | NFR-09 |
 | 승인 전 · 거절 · 탈퇴 가게 | 손님에게 없는 가게로 보고 `404 not_found` | FR-STO-01 |
 | D5가 단계 30에 더할 것 | 영업시간 · 휴무일 · 슬롯 단위 맞춤 · 한 팀 최대 인원(`invalid`) | D5 (#71) |
+
+### 가상 잔액 · 거래 내역 (D9)
+
+실제 결제는 없다(NFR-02). 잔액이 바뀔 때마다 거래 내역이 한 줄 남는다(FR-STL-06). 회원 잔액은 마이너스가 되지 않고, 가게 잔액은 소개 수수료로 마이너스가 될 수 있다(기획 11-25 (4)).
+
+#### `GET /api/v1/wallets/me` — 내 가상 잔액
+
+- 역할: 로그인한 누구나. 회원은 자기 잔액, 사장님은 자기 가게 잔액, 상인회는 권역 공동 기금. 지갑 주인은 로그인 계정으로 정하고 ID를 받지 않는다.
+- 응답 `200`: `{ "ownerType": "customer | store | fund", "balance": 30000, "needsCharge": false }`
+  - `balance`: 원. 아직 거래가 없으면 0. 가게는 음수일 수 있다.
+  - `needsCharge`: 가게 잔액이 0보다 적으면 `true`(사장님 화면 '충전 필요' 안내). 회원 · 기금은 항상 `false`.
+- 실패: `unauthorized`
+
+#### `GET /api/v1/wallets/me/transactions` — 내 거래 내역
+
+- 역할: 위와 같음. 페이지네이션(공통 규칙), 최근 것부터.
+- 응답 `200`: 페이지 `items[]` = `{ "id": "string", "type": "charge", "amount": -1200, "reservationId": "string | null", "createdAt": "2026-11-27T01:00:00Z" }`
+  - `type`: `CONTRACTS.md` 「3」 `walletTx.type`. `amount`: 들어오면 +, 나가면 −.
+- 실패: `invalid`(page · size 범위) · `unauthorized`
+
+#### 서버 내부: `WalletService` (D10 · D6 · D15가 씀)
+
+- 잔액은 `WalletService`로만 바꾼다. `wallet` · `wallet_tx`를 직접 고치지 않는다.
+- `post(owner, type, amount, reservationId)`: 잔액을 바꾸고 거래 한 줄. 회원 잔액이 모자라면 `ApiException(insufficient_balance)`. 조건부 UPDATE 한 번이라 동시 요청에도 회원 잔액이 음수가 되지 않는다.
+- `transfer(from, fromType, to, toType, amount, reservationId)`: 가게 → 기금처럼 양쪽에 한 줄씩.
+- `recordGuest(phone, type, amount, reservationId)`: 비회원은 지갑 없이 전화번호에 묶은 기록만.
+- 거래 시각은 서버 시계(D18)를 따른다.
+- 충전 API(회원 · 가게)는 D10에서 이 절에 더한다.
 
 ## 3. 추천 · 쿠폰 · 소개 판정 · 시드 (담당 E)
 
