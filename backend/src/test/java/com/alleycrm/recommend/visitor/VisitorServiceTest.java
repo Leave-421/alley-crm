@@ -70,6 +70,17 @@ class VisitorServiceTest {
     }
 
     @Test
+    void 한_요청_안에서_다시_불러도_새로_발급한_방문자를_쓴다() {
+        MockHttpServletResponse response = browse(null);
+
+        long first = service.currentVisitorId();
+        long second = service.currentVisitorId();
+
+        assertThat(second).isEqualTo(first);
+        assertThat(response.getHeaders(HttpHeaders.SET_COOKIE)).hasSize(1);
+    }
+
+    @Test
     void 서버에_없는_ID나_UUID가_아닌_값이면_새로_발급한다() {
         String unknown = UUID.randomUUID().toString();
         MockHttpServletResponse response = browse(unknown);

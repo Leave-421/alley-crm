@@ -1,6 +1,5 @@
 package com.alleycrm.recommend.visitor;
 
-import jakarta.servlet.http.HttpServletResponse;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -22,6 +21,8 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 @Service
 public class VisitorService {
 
+    private static final String ISSUED_IN_THIS_REQUEST = VisitorService.class.getName() + ".issuedAnonId";
+
     private final VisitorRepository visitors;
     private final VisitorCookie cookie;
     private final Clock clock;
@@ -39,11 +40,11 @@ public class VisitorService {
     @Transactional
     public long currentVisitorId() {
         ServletRequestAttributes http = currentHttp();
-        Optional<VisitorRepository.Visitor> known = cookie.read(http.getRequest()).flatMap(visitors::findByAnonId);
+        Optional<VisitorRepository.Visitor> known = currentAnonId(http).flatMap(visitors::findByAnonId);
         if (known.isPresent()) {
             return known.get().id();
         }
-        return issue(http.getResponse(), null);
+        return issue(http, null);
     }
 
     /**
@@ -54,7 +55,7 @@ public class VisitorService {
     @Transactional
     public void linkCurrentBrowser(long customerId) {
         ServletRequestAttributes http = currentHttp();
-        Optional<UUID> anonId = cookie.read(http.getRequest());
+        Optional<UUID> anonId = currentAnonId(http);
         if (anonId.isEmpty()) {
             return;
         }
@@ -73,7 +74,7 @@ public class VisitorService {
         if (linkedTo != null && linkedTo == customerId) {
             return;
         }
-        issue(http.getResponse(), customerId);
+        issue(http, customerId);
     }
 
     /** 이 브라우저의 방문자 쿠키를 지운다(로그아웃). 다음 탐색은 새 익명 방문자로 기록된다. */
@@ -81,11 +82,24 @@ public class VisitorService {
         cookie.clear(currentHttp().getResponse());
     }
 
-    private long issue(HttpServletResponse response, Long customerId) {
+    /**
+     * 새 방문자를 만들고 응답에 쿠키를 싣는다. 같은 요청 안에서 다시 부르면 이 방문자를 쓰도록 요청 속성에도 둔다
+     * (브라우저는 다음 요청부터 새 쿠키를 보낸다).
+     */
+    private long issue(ServletRequestAttributes http, Long customerId) {
         UUID anonId = UUID.randomUUID();
         long id = visitors.insert(anonId, customerId, customerId == null ? null : now());
-        cookie.write(response, anonId);
+        cookie.write(http.getResponse(), anonId);
+        http.getRequest().setAttribute(ISSUED_IN_THIS_REQUEST, anonId);
         return id;
+    }
+
+    /** 이 요청에서 발급한 방문자가 있으면 그것, 없으면 쿠키의 방문자. */
+    private Optional<UUID> currentAnonId(ServletRequestAttributes http) {
+        if (http.getRequest().getAttribute(ISSUED_IN_THIS_REQUEST) instanceof UUID issued) {
+            return Optional.of(issued);
+        }
+        return cookie.read(http.getRequest());
     }
 
     private LocalDateTime now() {
