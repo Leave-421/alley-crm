@@ -8,7 +8,7 @@ export default function ForbiddenPage() {
   const { role } = useSession();
   const home = ROLE_HOME[role] ?? '/';
   return (
-    <main className={styles.page}>
+    <main className={`${styles.page} ${styles.narrow}`}>
       <section className={styles.card}>
         <h1 className={styles.title}>이 화면은 볼 수 없어요</h1>
         <p className={styles.muted}>지금 로그인한 계정으로는 들어갈 수 없는 화면입니다.</p>

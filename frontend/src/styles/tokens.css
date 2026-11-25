@@ -116,13 +116,39 @@
   --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(63, 36, 42, 0.05), 0 8px 22px rgba(63, 36, 42, 0.06);
   --shadow-tabbar: 0 -8px 22px rgba(63, 36, 42, 0.25);
 
-  /* 레이아웃 */
-  --layout-max-width: 480px; /* 모바일 웹앱 폭. 상인회 데스크톱 전용 화면(A-06)은 여유 이슈 */
+  /*
+   * 레이아웃 — 모바일 우선 반응형(기획 결정 11-24 (6) · (7), B26).
+   * 폭 구간: 휴대폰 ~767px · 태블릿 768px~ · 데스크톱 1024px~. 값은 아래 @media에서 바꾼다.
+   * CSS 변수는 @media 조건에 쓸 수 없어서, 폭 구간 숫자(768px · 1024px)는 이 파일의 @media에만 둔다.
+   * 화면은 --layout-max-width · --layout-gutter를 쓰면 폭마다 저절로 맞춰진다.
+   */
+  --layout-max-width: 480px; /* 본문 최대 폭 */
+  --layout-gutter: var(--space-4); /* 본문 좌우 여백 */
+  --layout-narrow-width: 480px; /* 로그인 · 403 · 404처럼 폭이 넓을 필요 없는 화면 */
   --demo-banner-height: 24px;
   --tabbar-height: 64px;
   --tabbar-gap: 14px;
+  --tabbar-max-width: 440px; /* 넓은 화면에서도 하단 탭은 유지하고(11-24 (7)) 이 폭에서 가운데 둔다 */
 
   /* 움직임 — 애니메이션 감소 설정이면 base.css에서 0으로 줄인다 */
   --duration-fast: 120ms;
   --duration-normal: 200ms;
+}
+
+/* 태블릿 · 작은 노트북 */
+@media (min-width: 768px) {
+  :root {
+    --layout-max-width: 720px;
+    --layout-gutter: var(--space-6);
+    --tabbar-max-width: 520px;
+  }
+}
+
+/* 데스크톱 */
+@media (min-width: 1024px) {
+  :root {
+    --layout-max-width: 1120px;
+    --layout-gutter: var(--space-8);
+    --tabbar-max-width: 560px;
+  }
 }
