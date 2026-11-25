@@ -3,6 +3,7 @@ package com.alleycrm.account;
 import com.alleycrm.common.error.ApiException;
 import com.alleycrm.common.error.ErrorCode;
 import com.alleycrm.customer.CustomerService;
+import java.util.Optional;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -64,6 +65,12 @@ public class AccountService {
         return accounts.findByLoginId(loginId)
                 .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED))
                 .toPrincipal();
+    }
+
+    /** 가게의 사장님 계정 ID(가게당 1개). 아직 사장님 계정이 없으면 비어 있다. */
+    @Transactional(readOnly = true)
+    public Optional<Long> findOwnerAccountId(long storeId) {
+        return accounts.findByStoreId(storeId).map(Account::getId);
     }
 
     private Account saveNew(Account account) {
