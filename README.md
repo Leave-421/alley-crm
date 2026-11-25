@@ -38,6 +38,18 @@ npm run dev                      # :5173
 
 > 백엔드 · 프론트 뼈대는 아직 없다. 생기면 이 절을 실제 명령으로 고친다.
 
+### 시드 · 시연 데이터 (담당 E)
+
+```powershell
+cd backend
+.\gradlew.bat bootRun --args="--spring.profiles.active=seed"                               # 검사만(dry-run), DB 안 바꿈
+.\gradlew.bat bootRun --args="--spring.profiles.active=seed --seed.confirm=reset-all-data" # 로컬 DB를 모두 지우고 다시 넣음
+```
+
+- 로컬 DB(localhost · 127.0.0.1 · compose `mysql`)만 지운다. 운영 프로필(`prod`)과 함께 켜면 거부한다.
+- 직접 만든 계정, 상인회가 바꾼 설정값 · 공유 설정까지 **모든 데이터를 지운다**(마이그레이션 기록은 남김, 설정은 기본값으로 돌아감). 웹 서버(`bootRun`)를 끄고 돌린다.
+- 지금 넣는 것: 권역 1개 · 참여 가게 15곳(`backend/src/main/resources/seed/region-stores.json`). 계정 · 공공데이터 · 가상 데이터는 각 이슈에서 더한다.
+
 ## 4. 작업 흐름
 
 1. 이슈를 만든다(Feature · Bug · Task 템플릿). 담당자를 지정한다.
