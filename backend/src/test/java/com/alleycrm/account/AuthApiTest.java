@@ -7,7 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.alleycrm.TestcontainersConfiguration;
-import jakarta.servlet.http.Cookie;
+import com.alleycrm.common.TestCsrf;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,17 +40,8 @@ class AuthApiTest {
         return "u" + System.nanoTime();
     }
 
-    /**
-     * 프론트와 같은 흐름: GET /api/v1/csrf의 XSRF-TOKEN 쿠키를 X-XSRF-TOKEN 헤더로 보낸다.
-     * spring-security-test의 csrf()는 공유 컨텍스트의 CsrfFilter 저장소를 바꿔 다른 테스트(ApiBaseTest)를 깨뜨려서 쓰지 않는다.
-     */
     private RequestPostProcessor csrf() throws Exception {
-        Cookie token = mvc.perform(get("/api/v1/csrf")).andReturn().getResponse().getCookie("XSRF-TOKEN");
-        return request -> {
-            request.setCookies(token);
-            request.addHeader("X-XSRF-TOKEN", token.getValue());
-            return request;
-        };
+        return TestCsrf.csrf(mvc);
     }
 
     private void signup(String loginId, String extraJson) throws Exception {
@@ -202,10 +193,16 @@ class AuthApiTest {
         String loginId = newLoginId();
         accountService.createAssociation(regionId, loginId, "assocpass1");
 
-        MockHttpSession session = login(loginId, "assocpass1");
-        mvc.perform(get("/api/v1/auth/me").session(session))
-                .andExpect(jsonPath("$.role").value("association"))
-                .andExpect(jsonPath("$.regionId").value(String.valueOf(regionId)))
-                .andExpect(jsonPath("$.storeId").isEmpty());
+        try {
+            MockHttpSession session = login(loginId, "assocpass1");
+            mvc.perform(get("/api/v1/auth/me").session(session))
+                    .andExpect(jsonPath("$.role").value("association"))
+                    .andExpect(jsonPath("$.regionId").value(String.valueOf(regionId)))
+                    .andExpect(jsonPath("$.storeId").isEmpty());
+        } finally {
+            // 같은 DB를 쓰는 다른 테스트가 권역을 지울 수 있게 권역을 가리키는 계정을 치운다
+            jdbc.update("DELETE FROM account WHERE login_id = ?", loginId);
+            jdbc.update("DELETE FROM region WHERE id = ?", regionId);
+        }
     }
 }
