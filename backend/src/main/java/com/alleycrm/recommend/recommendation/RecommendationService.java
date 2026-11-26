@@ -86,15 +86,24 @@ public class RecommendationService {
     public RecommendationsResponse recommend(long baseStoreId, int page, Requester requester) {
         StoreInfo base = repository.findVisibleStore(baseStoreId).orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND));
         Ranking ranking = rank(base, requester);
-        int size = settings.getInt(regionOf(baseStoreId), SettingKey.RECOMMEND_COUNT);
+        Page p = page(ranking, page);
+        return new RecommendationsResponse(String.valueOf(baseStoreId), ranking.baseTime(), ranking.baseTimeSource(),
+                p.page(), p.pageCount(), p.cards(), p.publicData());
+    }
+
+    /** 한 묶음: 설정값 recommend_count씩, page를 pageCount로 나눈 나머지(FR-CRS-06). 묶음에 지역 인기 가게가 있으면 공공데이터 출처. */
+    record Page(int page, int pageCount, List<Card> cards, PublicData publicData) {
+    }
+
+    Page page(Ranking ranking, int page) {
+        int size = settings.getInt(regionOf(ranking.base().id()), SettingKey.RECOMMEND_COUNT);
         int pageCount = (ranking.all().size() + size - 1) / size;
         int actualPage = pageCount == 0 ? 0 : page % pageCount;
         List<Ranked> slice = ranking.all().stream().skip((long) actualPage * size).limit(size).toList();
         PublicData publicData = slice.stream().anyMatch(r -> r.badge() == RecommendationBadge.LOCAL_POPULAR)
-                ? repository.publicData().map(p -> new PublicData(p.source(), p.period())).orElse(null)
+                ? repository.publicData().map(d -> new PublicData(d.source(), d.period())).orElse(null)
                 : null;
-        return new RecommendationsResponse(String.valueOf(baseStoreId), ranking.baseTime(), ranking.baseTimeSource(),
-                actualPage, pageCount, slice.stream().map(RecommendationService::card).toList(), publicData);
+        return new Page(actualPage, pageCount, slice.stream().map(RecommendationService::card).toList(), publicData);
     }
 
     /**
@@ -125,20 +134,23 @@ public class RecommendationService {
     /** 전체 순위: 최종 점수 내림차순, 동점은 가게 ID 오름차순(3.1 「구현 기준」). 쿠폰 행사는 순위에 쓰지 않는다(FR-CPN-02). */
     Ranking rank(StoreInfo base, Requester requester) {
         Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
-        Instant baseTime = now;
-        String source = BASE_TIME_NOW;
+        if (requester.memberCustomerId() != null) {
+            Optional<LocalDateTime> upcoming = repository.nearestUpcomingReservation(requester.memberCustomerId(),
+                    base.id(), LocalDateTime.ofInstant(now, ZoneOffset.UTC));
+            if (upcoming.isPresent()) {
+                return rankAt(base, requester, upcoming.get().toInstant(ZoneOffset.UTC), BASE_TIME_RESERVATION);
+            }
+        }
+        return rankAt(base, requester, now, BASE_TIME_NOW);
+    }
+
+    /** 정해진 기준 시각으로 매긴 전체 순위. 회원이면 같은 날 예약 제외 · 성별 · 연령대를 쓴다. */
+    Ranking rankAt(StoreInfo base, Requester requester, Instant baseTime, String source) {
         CandidateRequester candidateRequester = CandidateRequester.UNIDENTIFIED;
         Profile profile = Profile.UNKNOWN;
         if (requester.memberCustomerId() != null) {
-            long customerId = requester.memberCustomerId();
-            candidateRequester = CandidateRequester.member(customerId);
-            profile = repository.memberProfile(customerId);
-            Optional<LocalDateTime> upcoming = repository.nearestUpcomingReservation(customerId, base.id(),
-                    LocalDateTime.ofInstant(now, ZoneOffset.UTC));
-            if (upcoming.isPresent()) {
-                baseTime = upcoming.get().toInstant(ZoneOffset.UTC);
-                source = BASE_TIME_RESERVATION;
-            }
+            candidateRequester = CandidateRequester.member(requester.memberCustomerId());
+            profile = repository.memberProfile(requester.memberCustomerId());
         }
         List<Long> candidateIds = candidates.findCandidates(base.id(), baseTime, candidateRequester);
         List<RecommendScore> scored = scores.score(base.id(), candidateIds, baseTime, profile).stream()
