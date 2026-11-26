@@ -889,3 +889,121 @@ DB가 막지 않는 것(유형별 필수 칸, 확정 뒤 변경 금지, 중단�
 | V-1 | 오늘의 코스 `timeBand` 값 목록 (`course_preview_event.time_band`) | 엔드포인트는 이 값이 정해진 뒤(E2) 구현한다. 목은 임의 문자열로 둔다 | E2 (#16, 팀 결정 P-1) |
 | V-2 | 이 절과 3.1의 비로그인 경로를 보안 설정 · `CONTRACTS.md` 「6」 목록에 더하기: `POST /api/v1/store-clicks`, `POST /api/v1/course-previews` (3.1 R-10의 두 경로와 함께) | — | C (#24) |
 | V-3 | 로그인 · 예약 신청에서 `VisitorService`를 부르는 것 | E3는 서비스만 제공하고 테스트는 서비스 단위로 한다 | C2 (#24) · C4 (#38) |
+
+### 3.4 쿠폰 상세 · 다운로드 (E12 #25 · 계약 #154)
+
+> 상태: **계약.** 구현은 #25에서, 동시 요청 검증은 E9(#106)에서 한다. 프론트 목(A6 #26)은 이 절을 따른다.
+> 기준: 기획 저장소 `05-policy.md` 「추천 쿠폰」 「발급 제한」, `03-requirements.md` FR-CPN-02 · 03 · 04 · 10, `06-data.md` COUPON, 결정 기록 11-25(30일 제한은 행사 단위). 표는 `coupon` · `coupon_policy`(D #134). 행사는 3.2, 추천 노출은 3.1 · 3.3.
+
+쿠폰은 **회원만** 받는다. 추천 카드의 '쿠폰 다운로드'를 누를 때만 발급하고, 가게 클릭 · 추천 노출로는 발급하지 않는다(FR-CPN-03). 다운로드는 **추천 노출 ID 하나만** 받고, 대상 가게와 출처(추천 기준 가게 · 노출)는 서버가 그 노출 기록에서 정한다(FR-CPN-10). 그래서 클라이언트가 출처를 바꿀 수 없다.
+
+### `GET /api/v1/coupon-offers/{storeId}` — 쿠폰 상세
+
+- 역할: 누구나(로그인 불필요). 사장님 · 상인회는 `403 forbidden_role`. 기록하지 않는다.
+- 추천 카드를 열었을 때 쿠폰 상세와 '쿠폰 다운로드' 버튼 상태를 그린다(FR-CPN-02). 가게를 누를 때마다 부르지 않는다.
+- 응답 `200`:
+
+  ```json
+  {
+    "storeId": "7",
+    "event": {
+      "eventId": "12",
+      "benefitType": "percent_discount",
+      "discountAmount": null,
+      "discountPercent": 10,
+      "maxDiscountAmount": 5000,
+      "serviceName": null,
+      "validDays": 7,
+      "conditions": "2인 이상 방문 시"
+    },
+    "downloadStatus": "waiting",
+    "nextDownloadableAt": "2026-12-31T09:00:00Z",
+    "myCoupons": [
+      { "couponId": "501", "eventId": "12", "status": "downloaded", "expiresAt": "2026-12-08T09:00:00Z" }
+    ]
+  }
+  ```
+
+  | 필드 | 뜻 |
+  | --- | --- |
+  | `event` | 그 가게의 진행 중인 행사(3.2). 없으면 `null`. 혜택 칸의 뜻은 3.2 CouponEvent와 같다. 서비스 환산 금액(`serviceValue`)은 쿠폰 비용 기록용이라 손님에게 주지 않는다 |
+  | `downloadStatus` | 지금 이 요청자가 받을 수 있는지(`CONTRACTS.md` 「3」 쿠폰). 아래 표 |
+  | `nextDownloadableAt` | `waiting`일 때만 값이 있다. 같은 행사의 가장 최근 다운로드 + 30 × 24시간 |
+  | `myCoupons` | 회원이 가진 이 가게의 쿠폰 중 '다운로드됨' · '예약에 적용됨'. 이전 행사 쿠폰과 새 행사 쿠폰이 함께 있을 수 있다(11-25). 비회원은 `[]` |
+
+  | `downloadStatus` | 때 (위에서부터 먼저 맞는 것) |
+  | --- | --- |
+  | `unavailable` | 진행 중인 행사가 없거나 총수량이 다 나감, 또는 가게가 영업 중이 아님(휴업 · 운영 중단) |
+  | `login_required` | 로그인하지 않음. 화면은 로그인(G-08) 뒤 이 가게로 돌아온다(FR-CPN-03) |
+  | `applied_unused` | 같은 행사의 쿠폰이 예약에 적용된 채 아직 사용 완료가 아님. 30일이 지나도 받을 수 없다(FR-CPN-04 #3) |
+  | `waiting` | 같은 행사 쿠폰을 받은 지 30 × 24시간이 안 됨('30일 대기', FR-CPN-04 #1 · #2 · #7) |
+  | `available` | 받을 수 있음 |
+
+- 실패: `forbidden_role` · `not_found`(없는 가게 · 승인 전 · 거절 · 탈퇴 가게)
+
+### `POST /api/v1/coupons` — 쿠폰 다운로드
+
+- 역할: 회원 손님. 비로그인 `401 unauthorized`(화면은 G-08로 보낸다), 사장님 · 상인회 `403 forbidden_role`. `X-XSRF-TOKEN` 필요.
+- 요청: `{ "exposureId": "123" }` — 그 카드를 그렸을 때 받은 3.1 `POST /api/v1/recommendation-exposures`의 `exposureId`
+- 검사 순서:
+  1. 노출이 없거나 **이 요청자의 노출이 아니면 `404 not_found`**. 이 브라우저의 방문자(3.3 쿠키)의 노출이거나, 이 회원에 이어진 방문자의 노출이어야 한다.
+  2. 대상 가게(노출의 추천 가게)가 손님에게 보이지 않으면 `404 not_found`.
+  3. 아래 발급 조건 중 하나라도 어긋나면 `409 conflict`, 아무것도 저장하지 않는다. 다음 다운로드 가능일은 쿠폰 상세(`GET`)의 `nextDownloadableAt`으로 보여준다(에러 응답에는 담지 않는다).
+- 발급 조건:
+  - 가게가 영업 중(`business_status = open`)
+  - 진행 중인 행사가 있고 남은 수량이 1 이상
+  - 같은 행사의 미사용 적용 쿠폰이 없음
+  - 같은 행사에서 받은 지 30 × 24시간이 지남(행사 단위, FR-CPN-04). 다른 기준 가게에서 추천받아도 같은 행사면 제한을 공유하고, 만료 · 적용 취소 뒤에도 유지한다
+- 응답 `201` (Coupon):
+
+  ```json
+  {
+    "couponId": "501",
+    "eventId": "12",
+    "storeId": "7",
+    "status": "downloaded",
+    "benefitType": "fixed_discount",
+    "discountAmount": 3000,
+    "discountPercent": null,
+    "maxDiscountAmount": null,
+    "serviceName": null,
+    "conditions": null,
+    "downloadedAt": "2026-12-01T09:00:00Z",
+    "expiresAt": "2026-12-08T09:00:00Z"
+  }
+  ```
+
+  - `status`는 `coupon.status`(`CONTRACTS.md` 「3」). 혜택 칸은 받은 행사의 값이다(행사는 확정 뒤 바뀌지 않는다, 3.2).
+  - `expiresAt` = `downloadedAt` + 행사의 `validDays` × 24시간(FR-CPN-05).
+- 저장(FR-CPN-10): 회원(손님 ID) · 행사 · 대상 가게 · 추천 기준 가게(노출의 기준 가게) · 추천 노출 ID · 다운로드 시각. 나중에 다른 가게에서 같은 가게를 추천받아도 바꾸지 않는다.
+- 실패: `unauthorized` · `forbidden_role` · `invalid`(exposureId 없음 · 숫자 아님) · `not_found` · `conflict` · `csrf_invalid`
+
+#### 원자 처리 (서버 내부)
+
+- 한 트랜잭션에서 **발급 수 조건부 UPDATE를 먼저** 한다(3.2 「다른 이슈가 쓰는 규칙」): `UPDATE coupon_policy SET issued_count = issued_count + 1 WHERE id = ? AND stopped_at IS NULL AND issued_count < total_quantity`. 바뀐 행이 0이면 `409`. 이 UPDATE가 행사 행을 잠가, 같은 행사의 다운로드가 커밋까지 한 줄로 선다.
+- 그다음 회원별 조건(30일 · 미사용 적용)을 **잠그는 읽기**로 확인한다. 걸리면 예외로 트랜잭션 전체(발급 수 포함)를 되돌린다.
+- 그래서 같은 회원의 동시 요청도, 총수량을 넘는 동시 요청도 1건만 발급된다(NFR-09). 검증 테스트는 E9(#106).
+
+#### 정책에 따라 정한 것 (3.4)
+
+| 항목 | 정한 것 | 근거 |
+| --- | --- | --- |
+| 30일 | 30 × 24시간. 같은 회원 · 같은 행사의 가장 최근 `downloaded_at`부터 | FR-CPN-04 "다운로드 시각부터 30일", 05-policy 설정값 '쿠폰 재발급 제한'(정해진 값) |
+| 휴업 뒤 제한 해제 | 가게의 `business_status_changed_at` 전에 받은 쿠폰은 30일 · 미사용 적용 계산에서 뺀다 | 06-data COUPON, FR-CPN-04 #5 |
+| 출처 | 클라이언트가 보내지 않는다. 노출 기록의 기준 가게 · 노출 ID | FR-CPN-10, 3.1 R-12 |
+
+#### 구현 기준 (정책에 명시 없음 — 관련 담당 확인 요청)
+
+| 항목 | 이 계약의 기준 | 정책 근거 | 확인할 담당 |
+| --- | --- | --- | --- |
+| 영업 중이 아닌 가게 | 다운로드 `409`, 상세는 `unavailable` | 05-policy "휴업 · 운영 중단이면 … 추천 후보에서 빠지며" | A6 · C22 |
+| 다음 다운로드 가능일 전달 | 쿠폰 상세의 `nextDownloadableAt`. 다운로드 거절(`409`)에는 담지 않음(공통 에러 모양 유지) | FR-CPN-04 #1 "다음 다운로드 가능일 반환" | A6 · C |
+| 노출 소유 확인 | 이 브라우저의 방문자 또는 이 회원에 이어진 방문자의 노출만 | FR-CPN-10 | A6 |
+| 노출이 오래된 경우 | 기한을 두지 않는다. 발급 조건은 다운로드 시각에 판단 | — | — |
+| 쿠폰 상세의 남은 수량 | 주지 않는다(받을 수 있는지만) | FR-CPN-11 "배지를 내리고" | A6 · B15 |
+
+#### 미확정 (3.4)
+
+| # | 내용 | 정해지지 않은 동안 | 결정 주체 |
+| --- | --- | --- | --- |
+| K-1 | 쿠폰 상세 `GET /api/v1/coupon-offers/{storeId}`를 로그인 없이 여는 보안 설정 · `CONTRACTS.md` 「6」 목록 | 로그인한 요청으로만 확인한다 | C (#24) |
