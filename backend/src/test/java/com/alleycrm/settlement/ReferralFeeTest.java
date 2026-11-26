@@ -2,7 +2,9 @@ package com.alleycrm.settlement;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.alleycrm.TestcontainersConfiguration;
@@ -154,6 +156,28 @@ class ReferralFeeTest {
         long r = referral();
         visit(r, 33333).andExpect(status().isOk());
         assertThat(fee(r).get("fee_amount")).isEqualTo(1333); // 1,333.32
+    }
+
+    @Test
+    void B8_방문_처리_응답과_목록_상세에_소개_확정과_수수료() throws Exception {
+        long r = referral();
+        visit(r, 30000).andExpect(status().isOk())
+                .andExpect(jsonPath("$.referralConfirmed").value(true))
+                .andExpect(jsonPath("$.referralFee").value(1200));
+        mvc.perform(get("/api/v1/owner/reservations/" + r).with(user("ownerB")))
+                .andExpect(jsonPath("$.referralConfirmed").value(true))
+                .andExpect(jsonPath("$.referralFee").value(1200))
+                .andExpect(jsonPath("$.senderStoreId").doesNotExist());
+        mvc.perform(get("/api/v1/owner/reservations").param("date", "2026-11-30").with(user("ownerB")))
+                .andExpect(jsonPath("$.items[?(@.id == '" + r + "')].referralFee").value(1200));
+    }
+
+    @Test
+    void B8_소개가_아니면_확정_아님_수수료_null() throws Exception {
+        long r = reservation(null, null);
+        visit(r, 30000).andExpect(status().isOk())
+                .andExpect(jsonPath("$.referralConfirmed").value(false))
+                .andExpect(jsonPath("$.referralFee").doesNotExist());
     }
 
     private long referral() {
