@@ -25,7 +25,11 @@ public class Coupon {
     @Column(name = "customer_id", nullable = false, updatable = false)
     private Long customerId;
 
-    @Column(name = "coupon_policy_id", nullable = false, updatable = false)
+    /** 발급 주체(D24). 가게 쿠폰은 store, 상인회 쿠폰(E20)은 association. */
+    @Column(name = "issuer_kind", nullable = false, updatable = false)
+    private CouponIssuer issuerKind;
+
+    @Column(name = "coupon_policy_id", updatable = false)
     private Long couponPolicyId;
 
     @Column(name = "target_store_id", nullable = false, updatable = false)
@@ -49,6 +53,13 @@ public class Coupon {
     @Column(name = "reservation_id")
     private Long reservationId;
 
+    /** 방문 처리 때 정한 실제 할인액(원). 서비스 제공 쿠폰은 0. */
+    @Column(name = "discount_applied")
+    private Integer discountApplied;
+
+    @Column(name = "used_at")
+    private LocalDateTime usedAt;
+
     protected Coupon() {
     }
 
@@ -71,6 +82,7 @@ public class Coupon {
             LocalDateTime now) {
         Coupon coupon = new Coupon();
         coupon.customerId = customerId;
+        coupon.issuerKind = CouponIssuer.STORE;
         coupon.couponPolicyId = event.getId();
         coupon.targetStoreId = event.getStoreId();
         coupon.sourceBaseStoreId = sourceBaseStoreId;
@@ -87,6 +99,10 @@ public class Coupon {
 
     public Long getCustomerId() {
         return customerId;
+    }
+
+    public CouponIssuer getIssuerKind() {
+        return issuerKind;
     }
 
     public Long getCouponPolicyId() {
@@ -117,7 +133,32 @@ public class Coupon {
         return status;
     }
 
+    /** 방문 처리 때 실제 할인액을 남긴다. 상태는 '예약에 적용됨' 그대로다(FR-CPN-08). */
+    public void recordDiscount(int discount) {
+        if (status != CouponStatus.APPLIED) {
+            throw new IllegalStateException("예약에 적용된 쿠폰만 할인액을 남긴다: " + status);
+        }
+        this.discountApplied = discount;
+    }
+
+    /** 사장님 사용 확인(FR-CPN-08 #1). 방문 처리됐는지는 부르는 쪽이 확인한다. */
+    public void markUsed(LocalDateTime now) {
+        if (status != CouponStatus.APPLIED) {
+            throw new IllegalStateException("예약에 적용된 쿠폰만 사용 확인한다: " + status);
+        }
+        this.status = CouponStatus.USED;
+        this.usedAt = now;
+    }
+
     public Long getReservationId() {
         return reservationId;
+    }
+
+    public Integer getDiscountApplied() {
+        return discountApplied;
+    }
+
+    public LocalDateTime getUsedAt() {
+        return usedAt;
     }
 }
