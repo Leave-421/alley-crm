@@ -392,6 +392,39 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 - 실패: `not_found` · `conflict`(신청 · 확정이 아님, 마감 지남) · `unauthorized` · `forbidden_role` · `csrf_invalid`
 - **비회원 취소:** 비회원 예약 조회 세션(C13)이 생기면 같은 서비스 `ReservationStateService.cancelByCustomer(customerId, reservationId)`를 부른다(규칙 · 응답 같음).
 
+### 내 예약 · 코스 묶음 (D13)
+
+#### `GET /api/v1/reservations/mine` — 내 예약 (G-04, FR-RSV-12)
+
+- 역할: 회원 손님(내 예약만). 비회원은 비회원 예약 조회(C13).
+- 응답 `200`: 묶음 목록. 묶음은 가장 이른 예약 시각 순, 묶음 안은 시간순.
+
+```json
+{
+  "items": [
+    {
+      "courseRootId": "10",
+      "reservations": [
+        { "id": "10", "reservationNo": "K7Q2M9XA", "storeId": "1", "storeName": "골목 카페", "startAt": "2026-11-28T09:00:00Z",
+          "partySize": 2, "status": "canceled", "cancelReason": "store_rejected", "requestedAt": "2026-11-25T00:00:00Z",
+          "depositAmount": 10000, "refundAmount": null, "visitAmount": null, "visitedAt": null, "courseRootId": null,
+          "coupon": null, "cancelable": false, "refundIfCanceled": null },
+        { "id": "11", "storeName": "골목 주점", "startAt": "2026-11-28T11:00:00Z", "status": "requested", "courseRootId": "10",
+          "cancelable": true, "refundIfCanceled": 10000 }
+      ]
+    },
+    { "courseRootId": null, "reservations": [ { "id": "12" } ] }
+  ]
+}
+```
+
+  - **묶음:** '다음 코스로 예약하기'로 만든 예약(`courseRootId` 있음)은 기준 예약과 한 묶음(묶음의 `courseRootId` = 기준 예약 id). 따로 한 일반 예약은 혼자 한 묶음(`courseRootId: null`)(#3).
+  - 기준 예약이 취소 · 거절돼도 묶음은 그대로이고 그 예약의 `status`가 `canceled`로 보인다. 다음 코스 예약은 자동 취소하지 않는다(#1 · #2). 거절 때 '다음 코스는 그대로' 알림은 C14가 `reservation_rejected`에서 보낸다.
+  - `cancelable` · `refundIfCanceled`: 지금 취소할 수 있는지와 그때 돌려받는 예약금(D6 규칙: 24시간 전 100%, 마감 전 가게 비율, 마감 뒤 취소 불가 → `false` · `null`). 화면의 '취소할 때 환불 금액' 안내(G-04).
+  - `refundAmount`: 이미 손님 취소한 예약의 실제 환불액.
+  - 보낸 가게 · 수수료는 넣지 않는다(FR-CUS-05, 11-25 (5)).
+- 실패: `unauthorized` · `forbidden_role`(회원이 아님)
+
 ### 예약 운영 설정 · 슬롯 (D5)
 
 #### 슬롯 계산 (서버 내부 `SlotRules`, 신청 검사 · 예약 가능 시간이 같이 씀)
