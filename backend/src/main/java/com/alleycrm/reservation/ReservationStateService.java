@@ -61,6 +61,28 @@ public class ReservationStateService {
         return r;
     }
 
+    /** 방문 금액 상한(원). 입력 실수를 막는 값이다 */
+    static final int MAX_VISIT_AMOUNT = 10_000_000;
+
+    /**
+     * 사장님 방문 처리: 확정 → 방문(FR-RSV-09 #1). 결제 금액(쿠폰 할인 전)이 없으면 거절(#2).
+     * 상태 변경 이벤트와 '방문 처리됨' 이벤트를 같은 트랜잭션에서 내보낸다. 쿠폰은 건드리지 않는다(#3).
+     */
+    @Transactional
+    public Reservation visit(long storeId, long reservationId, Integer visitAmount) {
+        if (visitAmount == null || visitAmount < 0 || visitAmount > MAX_VISIT_AMOUNT) {
+            throw new ApiException(ErrorCode.INVALID);
+        }
+        Reservation r = lockOwn(storeId, reservationId);
+        requireStatus(r, ReservationStatus.CONFIRMED);
+        Instant now = now();
+        r.visit(visitAmount, now);
+        publish(r, ReservationStatus.CONFIRMED, false);
+        events.publishEvent(new VisitProcessedEvent(r.getId(), r.getStoreId(), r.getCustomerId(), visitAmount, now,
+                r.getCourseProposalId(), r.getSenderStoreId()));
+        return r;
+    }
+
     /**
      * 자동 거절(FR-RSV-03 #3): 예약 시각이 된 신청 예약 → 취소(가게 거절). D7이 주기적으로 부른다.
      *

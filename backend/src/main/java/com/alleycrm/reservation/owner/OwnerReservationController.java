@@ -15,6 +15,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -42,6 +43,15 @@ class OwnerReservationController {
     @PostMapping("/api/v1/owner/reservations/{id}/reject")
     ReservationResponse reject(@PathVariable long id, Authentication auth) {
         return ReservationResponse.of(states.reject(owners.storeIdOf(auth), id), null);
+    }
+
+    /** 방문 처리(D11): 결제 금액(쿠폰 할인 전)을 받는다 */
+    @PostMapping("/api/v1/owner/reservations/{id}/visit")
+    ReservationResponse visit(@PathVariable long id, @RequestBody VisitRequest body, Authentication auth) {
+        return ReservationResponse.of(states.visit(owners.storeIdOf(auth), id, body == null ? null : body.visitAmount()), null);
+    }
+
+    record VisitRequest(Integer visitAmount) {
     }
 
     /** 운영 시간대 기준 그 날짜에 시작하는 내 가게 예약, 시각 순. 하루치라 페이지를 나누지 않는다 */
