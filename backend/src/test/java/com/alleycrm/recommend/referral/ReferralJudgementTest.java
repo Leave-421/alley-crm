@@ -126,7 +126,7 @@ class ReferralJudgementTest {
         Map<String, Object> row = reservation(b);
         assertThat(row.get("course_proposal_id")).isNull();
         assertThat(row.get("sender_store_id")).isNull();
-        visit(b);
+        confirmAndVisit(b);
         assertThat(feeCount(b)).isZero();
     }
 
@@ -145,7 +145,7 @@ class ReferralJudgementTest {
         long b = id(request(storeB, B_START, null, null, coupon).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.coupon.couponId").value(String.valueOf(coupon)))
                 .andExpect(jsonPath("$.fromRecommendation").value(false)));
-        visit(b);
+        confirmAndVisit(b);
 
         assertThat(jdbc.queryForObject("SELECT status FROM coupon WHERE id = ?", String.class, coupon)).isEqualTo("applied");
         assertThat(reservation(b).get("sender_store_id")).isNull();
@@ -233,12 +233,15 @@ class ReferralJudgementTest {
         return b;
     }
 
-    /** B 사장님 방문 처리(D11). 방문 처리 시각 제한은 없다. */
+    /** B 사장님 방문 처리(D11, 확정된 예약). 방문 처리 시각 제한은 없다. */
     private void visit(long reservationB) {
-        if ("requested".equals(reservation(reservationB).get("status"))) {
-            reservationStates.confirm(storeB, reservationB);
-        }
         reservationStates.visit(storeB, reservationB, 30000);
+    }
+
+    /** 신청 상태 예약을 B 사장님이 확정하고 방문 처리. */
+    private void confirmAndVisit(long reservationB) {
+        reservationStates.confirm(storeB, reservationB);
+        visit(reservationB);
     }
 
     private ResultActions request(long store, String startAt, Long rootId, Long proposalId, Long couponId)
@@ -256,7 +259,7 @@ class ReferralJudgementTest {
     }
 
     private Map<String, Object> reservation(long id) {
-        return jdbc.queryForMap("SELECT status, course_proposal_id, course_root_id, sender_store_id FROM reservation WHERE id = ?", id);
+        return jdbc.queryForMap("SELECT course_proposal_id, course_root_id, sender_store_id FROM reservation WHERE id = ?", id);
     }
 
     private int feeCount(long reservation) {
