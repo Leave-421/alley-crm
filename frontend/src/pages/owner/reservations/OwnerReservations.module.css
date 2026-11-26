@@ -279,3 +279,16 @@
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
+
+/* O-01에서 다른 사장님 화면으로 가는 진입 */
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+}
+
+.links a {
+  color: var(--color-heading);
+}

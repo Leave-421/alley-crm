@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { getClock } from '@/api/demoClock.js';
 import { getOwnerReservations } from '@/api/ownerReservations.js';
 import Button from '@/components/Button/Button.jsx';
@@ -135,6 +135,11 @@ export default function OwnerReservationsPage() {
       )}
 
       <p className={styles.rules}>{AUTO_RULES}</p>
+
+      {/* O-01 → O-03 '예약 운영 설정'(07-screens O-01 이동, B10) */}
+      <nav className={styles.links} aria-label="예약 관리 바로가기">
+        <Link to="/owner/settings">예약 운영 설정 ›</Link>
+      </nav>
 
       {notice && (
         <p className={styles.notice} role="status">

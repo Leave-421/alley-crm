@@ -44,6 +44,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/reservations").permitAll()
                         // 예약 가능 시간 조회(D5)도 비회원이 본다
                         .requestMatchers(HttpMethod.GET, "/api/v1/stores/*/available-slots").permitAll()
+                        // 비로그인 손님의 추천 · 탐색 기록 · 쿠폰 상세 · 오늘의 코스(#222, CONTRACTS_API R-10 · V-2 · K-1 · T-1)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/recommendations", "/api/v1/today-courses",
+                                "/api/v1/coupon-offers/*").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/recommendation-exposures", "/api/v1/store-clicks").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((request, response, e) ->
