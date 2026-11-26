@@ -23,6 +23,11 @@ class StoreController {
         this.stores = stores;
     }
 
+    @GetMapping("/api/v1/regions")
+    Map<String, List<RegionResponse>> regions() {
+        return Map.of("items", stores.regions());
+    }
+
     @GetMapping("/api/v1/stores")
     Map<String, List<StoreResponse>> list(@RequestParam @Min(1) long regionId) {
         return Map.of("items", stores.participatingStores(regionId).stream().map(StoreResponse::of).toList());

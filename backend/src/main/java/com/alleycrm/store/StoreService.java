@@ -40,6 +40,13 @@ public class StoreService {
         return store.getId();
     }
 
+    /** 권역 목록, ID순(로그인 불필요). v1은 권역 1개라 화면이 권역 ID를 여기서 얻는다(#214). */
+    @Transactional(readOnly = true)
+    public List<RegionResponse> regions() {
+        return jdbc.query("SELECT id, name FROM region ORDER BY id",
+                (rs, n) -> new RegionResponse(String.valueOf(rs.getLong("id")), rs.getString("name")));
+    }
+
     /** 권역의 참여 가게(승인 · 탈퇴 신청), ID순. 없는 권역은 404. */
     @Transactional(readOnly = true)
     public List<Store> participatingStores(long regionId) {
