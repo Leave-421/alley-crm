@@ -949,7 +949,7 @@ DB가 막지 않는 것(유형별 필수 칸, 확정 뒤 변경 금지, 중단�
 
   - `type`: `impression` · `click`(`CONTRACTS.md` 「3」 오늘의 코스 기록)
   - `storeIds`: 코스의 가게 3곳, 순서대로, 중복 없음
-  - `dayType` · `timeBand`: 그 코스를 고른 칸. 오늘의 코스 응답(E8 #49)에 있는 값을 그대로 보낸다. `timeBand` 값 목록은 E2(#16)가 정한다 — **미확정 V-1**
+  - `dayType` · `timeBand`: 그 코스를 고른 칸. 오늘의 코스 응답(E8 #49)에 있는 값을 그대로 보낸다. `timeBand` 값은 `CONTRACTS.md` 「3」(E2 #16에서 정함, V-1 닫힘)
 - 응답 `204`. 쿠키가 없었으면 `Set-Cookie: alley_vid=…`.
 - 실패: `invalid`(type · dayType · timeBand가 정해진 값이 아님, storeIds가 3개가 아니거나 중복) · `not_found`(없는 가게 · 승인 전 · 거절 · 탈퇴 가게) · `csrf_invalid`
 
@@ -980,7 +980,7 @@ DB가 막지 않는 것(유형별 필수 칸, 확정 뒤 변경 금지, 중단�
 
 | # | 내용 | 정해지지 않은 동안 | 결정 주체 |
 | --- | --- | --- | --- |
-| V-1 | 오늘의 코스 `timeBand` 값 목록 (`course_preview_event.time_band`) | 엔드포인트는 이 값이 정해진 뒤(E2) 구현한다. 목은 임의 문자열로 둔다 | E2 (#16, 팀 결정 P-1) |
+| V-1 | (닫힘) 오늘의 코스 `timeBand` 값 목록 → `CONTRACTS.md` 「3」 `timeBand`(E2 #16, 결정 11-26) | — | E2 (#16) |
 | V-2 | 이 절과 3.1의 비로그인 경로를 보안 설정 · `CONTRACTS.md` 「6」 목록에 더하기: `POST /api/v1/store-clicks`, `POST /api/v1/course-previews` (3.1 R-10의 두 경로와 함께) | — | C (#24) |
 | V-3 | 로그인 · 예약 신청에서 `VisitorService`를 부르는 것 | E3는 서비스만 제공하고 테스트는 서비스 단위로 한다 | C2 (#24) · C4 (#38) |
 

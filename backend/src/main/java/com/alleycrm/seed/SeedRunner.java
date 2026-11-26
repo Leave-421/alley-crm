@@ -83,7 +83,9 @@ class SeedRunner implements ApplicationRunner {
 
         SeedRegionData regionStores = SeedDataLoader.loadRegionStores();
         SeedDataValidator.validate(regionStores);
+        int publicStatRows = PublicStatFile.load().size(); // 검사도 여기서 한다(dry-run 포함)
         logPlan(regionStores);
+        log.info("[seed] 공공데이터 기본값 {}행 ({})", publicStatRows, PublicStatFile.LOCATION);
 
         if (mode == SeedSafetyGuard.Mode.DRY_RUN) {
             log.info("[seed] dry-run: 검사만 했고 DB는 바꾸지 않았습니다. 다시 넣으려면 --seed.confirm={} 를 주세요.",
@@ -94,6 +96,7 @@ class SeedRunner implements ApplicationRunner {
         log.info("[seed] 지운 표 {}개 {}", result.clearedTables().size(), result.clearedTables());
         log.info("[seed] 권역 1개, 가게 {}곳을 넣었습니다.", result.regionStores().storeIdsByCode().size());
         log.info("[seed] 시연 계정 {}", result.demoAccounts());
+        log.info("[seed] 공공데이터 기본값 {}행", result.publicStats());
         DemoReservationSeeder.Result demo = result.demoReservations();
         log.info("[seed] 가상 손님 {}명, 예약 {}건(방문 {} · 취소 {})", demo.customers(), demo.reservations(), demo.visited(),
                 demo.canceled());
