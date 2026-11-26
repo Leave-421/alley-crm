@@ -252,7 +252,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 
 `app.demo-tools.enabled=true`(환경 변수 `DEMO_TOOLS_ENABLED=true`)일 때만 있다. 기본은 꺼져 있고, 꺼져 있으면 `404 not_found`. 실제 운영에서는 켜지 않는다. 서버의 모든 시간 규칙(자동 거절 · 자동 취소 · 쿠폰 만료 · 리마인드 · 파기)이 이 시계를 따른다.
 
-응답 `ClockResponse`: `{ "now": "2026-11-28T09:00:00Z", "offsetSeconds": 86400 }` — 지금 서버 시각과 실제 시각과의 차이(초)
+응답 `ClockResponse`: `{ "now": "2026-11-28T09:00:00Z", "offsetSeconds": 86400, "jobs": { "auto_reject": 1, "auto_cancel": 0 } }` — 지금 서버 시각, 실제 시각과의 차이(초), 시각을 바꾼 뒤 바로 돈 자동 작업(D7)의 처리 건수(조회 · 되돌리기는 빈 객체, 실패한 작업은 -1)
 
 #### `GET /api/v1/demo/clock` — 지금 서버 시각
 
@@ -498,6 +498,20 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 | `autoCancelDue()` | `confirmed`이고 예약일(운영 시간대) 다음 날이 끝남 = `startAt` < (오늘 − 1일) 00:00 | `canceled` · `auto_canceled` (FR-RSV-02 #1) |
 
 방문 처리된 예약은 바꾸지 않는다(FR-RSV-02 #2). 사장님 처리와 겹쳐도 행을 잠그고 상태를 다시 확인해 한 번만 바뀐다.
+
+#### 자동 작업 스케줄 (서버 내부, D7, NFR-06)
+
+`ScheduledJob`(이름 · `run()` → 처리 건수) 빈을 `ScheduledJobRunner`가 **1분마다** 모두 돈다(`app.scheduler.enabled` · `interval`, 환경 변수 `SCHEDULER_ENABLED`, 기본 켜짐). 한 작업이 실패해도 나머지는 돈다. 각 작업은 서버 시계(D18)로 대상을 찾고, 여러 번 돌아도 결과가 같다.
+
+| 이름 | 하는 일 | 담당 |
+| --- | --- | --- |
+| `auto_reject` | `autoRejectDue()` | D3 |
+| `auto_cancel` | `autoCancelDue()` | D4 |
+| `coupon_expiry` | `CouponExpiryService.expireDue()` | E14 |
+| `fund_budget_release` | `FundBudgetService.releaseDue()` | D20 |
+| (C12) | 비회원 정보 파기 — C가 자기 패키지에 `ScheduledJob` 빈을 하나 더하면 같이 돈다 | C12 |
+
+시연 시계(D18)를 바꾸면 그 자리에서 한 번 더 돈다(아래 「시연용 시각 조작」의 `jobs`). 테스트에서는 주기 실행을 끄고 `runAll()`을 직접 부른다.
 
 #### 상태 변경 이벤트 `ReservationStatusChangedEvent` (서버 내부)
 

@@ -38,3 +38,6 @@ management:
 app:
   demo-tools:
     enabled: ${DEMO_TOOLS_ENABLED:false}   # 시연용 시각 조작 API(D18). 실제 운영에서는 켜지 않는다
+  scheduler:
+    enabled: ${SCHEDULER_ENABLED:true}   # 자동 거절 · 자동 취소 · 쿠폰 만료 · 예산 해제(D7, NFR-06)
+    interval: PT1M
