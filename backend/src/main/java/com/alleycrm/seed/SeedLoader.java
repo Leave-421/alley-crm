@@ -11,8 +11,8 @@ import org.springframework.transaction.annotation.Transactional;
  * 같은 DB에 두 실행기가 동시에 돌지 않도록 MySQL 이름 잠금을 잡는다.
  *
  * <p>넣는 순서: ① 초기화 → ② 권역 · 가게(E1) → ③ 시연용 고정 계정(#141, {@link DemoAccountSeeder})
- * → ⑤ 가상 데이터 1: 손님 · 예약 · 취소 · 방문(E16, {@link DemoReservationSeeder}).
- * ④ 공공데이터(E2) · ⑥ 가상 데이터 2(E17)는 각 이슈에서 이 메서드에 더한다.
+ * → ④ 공공데이터 기본값(E2, {@link PublicStatSeeder}) → ⑤ 가상 데이터 1: 손님 · 예약 · 취소 · 방문(E16, {@link DemoReservationSeeder}).
+ * ⑥ 가상 데이터 2(E17)는 그 이슈에서 이 메서드에 더한다.
  */
 @Component
 @Profile("seed")
@@ -24,19 +24,21 @@ class SeedLoader {
     private final SeedTableCleaner cleaner;
     private final RegionStoreSeeder regionStores;
     private final DemoAccountSeeder demoAccounts;
+    private final PublicStatSeeder publicStats;
     private final DemoReservationSeeder demoReservations;
 
     SeedLoader(JdbcTemplate jdbc, SeedTableCleaner cleaner, RegionStoreSeeder regionStores, DemoAccountSeeder demoAccounts,
-            DemoReservationSeeder demoReservations) {
+            PublicStatSeeder publicStats, DemoReservationSeeder demoReservations) {
         this.jdbc = jdbc;
         this.cleaner = cleaner;
         this.regionStores = regionStores;
         this.demoAccounts = demoAccounts;
+        this.publicStats = publicStats;
         this.demoReservations = demoReservations;
     }
 
     record Result(List<String> clearedTables, RegionStoreSeeder.Result regionStores, List<String> demoAccounts,
-            DemoReservationSeeder.Result demoReservations) {
+            int publicStats, DemoReservationSeeder.Result demoReservations) {
     }
 
     @Transactional
@@ -46,8 +48,9 @@ class SeedLoader {
             List<String> cleared = cleaner.deleteAll();
             RegionStoreSeeder.Result stores = regionStores.insert(regionStoreData);
             List<String> accounts = demoAccounts.insert(stores);
+            int stats = publicStats.insert(PublicStatFile.load());
             DemoReservationSeeder.Result reservations = demoReservations.insert(regionStoreData, stores);
-            return new Result(cleared, stores, accounts, reservations);
+            return new Result(cleared, stores, accounts, stats, reservations);
         } finally {
             releaseLock();
         }

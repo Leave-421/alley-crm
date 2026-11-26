@@ -213,6 +213,21 @@ class SeedLoaderIntegrationTest {
                 """, Integer.class)).isZero();
     }
 
+    @Test
+    void 공공데이터_기본값을_출처_기준_기간과_함께_넣는다_NFR_10() {
+        SeedLoader.Result result = loader.resetAndLoad(data);
+
+        assertThat(result.publicStats()).isEqualTo(PublicStatFile.load().size());
+        assertThat(count("public_stat")).isEqualTo(result.publicStats());
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM public_stat WHERE TRIM(source) = '' OR TRIM(period) = ''", Integer.class)).isZero();
+        assertThat(jdbc.queryForList("SELECT DISTINCT kind FROM public_stat", String.class))
+                .containsExactlyInAnyOrder("attractiveness", "clq", "day_share", "time_band_share", "gender_share", "age_share");
+
+        loader.resetAndLoad(data);
+        assertThat(count("public_stat")).isEqualTo(result.publicStats()); // 다시 넣어도 쌓이지 않는다
+    }
+
     /** 시드 · 시연 데이터가 아닌 행(테스트가 직접 넣은 것) 수. */
     private int countReal(String table) {
         return jdbc.queryForObject("SELECT COUNT(*) FROM " + table + " WHERE data_source <> 'demo'", Integer.class);
