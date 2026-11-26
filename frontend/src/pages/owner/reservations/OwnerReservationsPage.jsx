@@ -71,14 +71,17 @@ export default function OwnerReservationsPage() {
     setSearchParams(nextKey === todayKey ? {} : { date: nextKey });
   }
 
-  /** 승인 · 거절(B7) 결과를 목록에 반영한다. 응답 Reservation에는 손님 이름 · 회원 여부가 없어 상태 칸만 바꾼다. */
+  /**
+   * 승인 · 거절(B7) · 방문 처리(B8) 결과를 목록에 반영한다. 응답 Reservation에는 손님 이름 · 회원 여부가 없어
+   * 상태 · 방문 칸만 바꾼다. 쿠폰 사용 확인처럼 예약이 바뀌지 않으면 reservation 없이 안내만 한다.
+   */
   function handleDecided(reservation, message) {
     setNotice(message);
+    if (!reservation) return;
+    const { id, status, cancelReason, visitAmount = null, visitedAt = null } = reservation;
     setResult((previous) => ({
       ...previous,
-      items: previous.items.map((item) =>
-        item.id === reservation.id ? { ...item, status: reservation.status, cancelReason: reservation.cancelReason } : item,
-      ),
+      items: previous.items.map((item) => (item.id === id ? { ...item, status, cancelReason, visitAmount, visitedAt } : item)),
     }));
   }
 

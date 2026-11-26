@@ -228,3 +228,10 @@
 .error::before {
   content: '! ';
 }
+
+/* 방문 처리(B8): 소개 수수료 안내 */
+.feeNote {
+  color: var(--color-ink-800);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+}
