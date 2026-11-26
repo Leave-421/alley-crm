@@ -78,6 +78,7 @@ class IdentifyCustomerStepTest {
     @AfterEach
     void clean() {
         clock.reset();
+        jdbc.update("DELETE FROM share_consent");
         jdbc.update("DELETE FROM reservation");
         jdbc.update("DELETE FROM customer");
         jdbc.update("DELETE FROM account WHERE store_id IN (?, ?) OR region_id = ?", storeA, storeB, regionId);

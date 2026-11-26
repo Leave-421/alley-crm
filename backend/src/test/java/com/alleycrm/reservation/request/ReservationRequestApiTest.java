@@ -23,7 +23,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.ObjectMapper;
 
-/** D2 예약 신청: FR-RSV-01 인수 조건 #1 ~ #5(동의 기록 · 예약금 기록은 C8 · D10 단계가 생기면 더한다). */
+/** D2 예약 신청: FR-RSV-01 인수 조건 #1 ~ #5, 공유 동의 기록 FR-CUS-01 #1(C8). 예약금 기록은 D10 단계가 생기면 더한다. */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
@@ -63,15 +63,17 @@ class ReservationRequestApiTest {
     @AfterEach
     void clean() {
         clock.reset();
+        jdbc.update("DELETE FROM share_consent");
         jdbc.update("DELETE FROM reservation");
         jdbc.update("DELETE FROM customer");
+        jdbc.update("DELETE FROM share_policy");
         jdbc.update("DELETE FROM store");
         jdbc.update("DELETE FROM region");
     }
 
     @Test
     void 단계는_order_순서로_등록된다() {
-        assertThat(service.stepOrders()).containsExactly(10, 20, 30, 60, 80, 90);
+        assertThat(service.stepOrders()).containsExactly(10, 20, 30, 60, 80, 85, 90);
     }
 
     @Test
@@ -146,6 +148,32 @@ class ReservationRequestApiTest {
     }
 
     @Test
+    void FR_CUS_01_1_예약하면_그_예약의_동의_시각과_공유_항목이_저장된다() throws Exception {
+        request(body(Map.of())).andExpect(status().isCreated());
+
+        Map<String, Object> consent = jdbc.queryForMap("""
+                SELECT DATE_FORMAT(c.consented_at, '%Y-%m-%dT%H:%i:%s') AS at, c.items
+                FROM share_consent c JOIN reservation r ON r.id = c.reservation_id
+                WHERE r.store_id = ?""", storeId);
+        // 동의 시각 = 신청 시각(서버 시계), UTC
+        assertThat(consent.get("at")).isEqualTo("2026-11-27T01:00:00");
+        assertThat(json.readValue(consent.get("items").toString(), String[].class)).containsExactly(
+                "name", "phone", "visited_stores", "party_size", "visit_datetime", "gender_age_group");
+    }
+
+    @Test
+    void 상인회가_끈_공유_항목은_동의_기록에서_빠진다() throws Exception {
+        jdbc.update("INSERT INTO share_policy (region_id, item, enabled) SELECT region_id, 'gender_age_group', FALSE FROM store WHERE id = ?",
+                storeId);
+
+        request(body(Map.of())).andExpect(status().isCreated());
+
+        String items = jdbc.queryForObject("SELECT items FROM share_consent", String.class);
+        assertThat(json.readValue(items, String[].class))
+                .containsExactly("name", "phone", "visited_stores", "party_size", "visit_datetime");
+    }
+
+    @Test
     void 실패하면_아무것도_저장되지_않는다() throws Exception {
         request(body(Map.of())).andExpect(status().isCreated());
         int customersBefore = jdbc.queryForObject("SELECT COUNT(*) FROM customer", Integer.class);
@@ -154,6 +182,7 @@ class ReservationRequestApiTest {
         request(body(Map.of("guest", Map.of("name", "다른 손님", "phone", "01099998888"))))
                 .andExpect(status().isConflict());
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM customer", Integer.class)).isEqualTo(customersBefore);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM share_consent", Integer.class)).isEqualTo(1);
     }
 
     @Test

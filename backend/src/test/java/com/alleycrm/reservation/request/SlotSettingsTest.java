@@ -67,7 +67,7 @@ class SlotSettingsTest {
     @AfterEach
     void clean() {
         clock.reset();
-        for (String t : new String[] {"reservation", "customer", "account", "store", "region"}) {
+        for (String t : new String[] {"share_consent", "reservation", "customer", "account", "store", "region"}) {
             jdbc.update("DELETE FROM " + t);
         }
     }
