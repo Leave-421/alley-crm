@@ -446,11 +446,14 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 ```json
 {
   "date": "2026-11-28",
+  "referralFeeRate": 0.04,
   "items": [
     {
       "id": "string", "reservationNo": "K7Q2M9XA", "startAt": "2026-11-28T09:00:00Z", "partySize": 2,
       "status": "requested", "cancelReason": null, "requestedAt": "2026-11-27T07:40:00Z", "requestNote": null,
-      "depositAmount": 10000, "customerType": "guest", "maskedName": "김*코", "fromRecommendation": true
+      "depositAmount": 10000, "customerType": "guest", "maskedName": "김*코", "fromRecommendation": true,
+      "visitAmount": null, "visitedAt": null,
+      "coupon": { "couponId": "string", "benefitType": "fixed_discount", "discountAmount": 5000, "discountPercent": null, "maxDiscountAmount": null, "serviceName": null }
     }
   ]
 }
@@ -459,13 +462,22 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
   - `customerType`: `member` · `guest`(화면의 '회원 여부').
   - `maskedName`: 가린 이름. 이름이 없으면 `null`. **전화번호 · 보낸 가게 id · 이름은 넣지 않는다**(FR-CUS-05, FR-RSV-04).
   - `fromRecommendation`: 정식 코스 제안으로 온 예약이면 `true`.
+  - `visitAmount` · `visitedAt`: 방문 처리(D11) 뒤에만 값. 방문 전이면 `null`.
+  - `coupon`: 적용 · 사용된 쿠폰(`Reservation.coupon`과 같은 모양, E14 `appliedCouponFor`). 없으면 `null`. 여기의 `discountAmount`는 **쿠폰 행사의 할인 금액**이고 실제로 깎은 금액이 아니다(방문 처리 응답의 `couponDiscountAmount`). O-01 '쿠폰 사용 확인' 버튼 표시에 쓴다.
+  - `referralFeeRate`: 소개 수수료율(설정값, NFR-04). 방문 처리 화면의 수수료 미리보기용. 상세에도 있다.
   - 손님 등급(FR-CUS-04)은 고객 카드(C)가 만든 뒤 더한다.
 - 실패: `invalid`(date 없음 · 형식) · `unauthorized` · `forbidden_role`
+
+#### `GET /api/v1/owner/reservations/{id}` — 예약 상세 (D4)
+
+- 역할: 사장님(내 가게 예약).
+- 응답 `200`: 목록 항목과 같은 모양 + `referralFeeRate`.
+- 실패: `not_found`(없거나 다른 가게 예약) · `unauthorized` · `forbidden_role`
 
 #### `POST /api/v1/owner/reservations/{id}/confirm` — 승인 (D3)
 
 - 역할: 사장님. `X-XSRF-TOKEN` 필요. 본문 없음.
-- `requested` → `confirmed`(FR-RSV-03 #1). 응답 `200`: `Reservation`.
+- `requested` → `confirmed`(FR-RSV-03 #1). 응답 `200`: `Reservation`(적용 쿠폰이 있으면 `coupon`이 채워짐).
 - 실패: `not_found` · `conflict`(신청 상태가 아님, 또는 예약 시각이 이미 지남 — 자동 거절 대상) · `unauthorized` · `forbidden_role` · `csrf_invalid`
 
 #### `POST /api/v1/owner/reservations/{id}/reject` — 거절 (D3)
@@ -499,7 +511,8 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 
 - 역할: 사장님(내 가게 예약). `X-XSRF-TOKEN` 필요.
 - 요청: `{ "visitAmount": 30000 }` — 손님이 낸 결제 금액(**쿠폰 할인 전**, 원). 쿠폰 할인 · 수수료는 서버가 계산한다(FR-RSV-09).
-- `confirmed` → `visited`. `visitAmount` · `visitedAt`을 남긴다. 응답 `200`: `Reservation`.
+- `confirmed` → `visited`. `visitAmount` · `visitedAt`을 남긴다.
+- 응답 `200`: `Reservation`(`coupon` 채움) + **`couponDiscountAmount`**: 이 방문 금액에 실제로 깎은 쿠폰 할인액(원, E14 `discountFor`). 쿠폰이 없으면 `null`. 예: 정액 5,000원 쿠폰, 방문 금액 4,000원 → 4,000(FR-CPN-07). 소개 여부 · 수수료는 E15 · D15 뒤에 더한다.
 - 쿠폰은 바꾸지 않는다. 적용된 쿠폰은 '예약에 적용됨' 그대로이고, 사용 완료는 사장님이 따로 확인한다(FR-RSV-09 #3, FR-CPN-08).
 - 실패:
   - `invalid` — `visitAmount` 없음 · 음수 · 10,000,000 초과(FR-RSV-09 #2)
