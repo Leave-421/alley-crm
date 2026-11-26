@@ -157,6 +157,12 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 - `openTime` · `closeTime`: `HH:mm`(Asia/Seoul 벽시계). 승인 전 값이 없으면 `null`.
 - `reservable`: 지금 예약을 받는 가게인지 — `businessStatus`가 `open`이고 `reservationEnabled`가 `true`. 저장하지 않고 계산한다. 슬롯 · 영업시간 계산은 D5.
 
+#### `GET /api/v1/regions` — 권역 목록
+
+- 역할: 누구나(로그인 불필요). 권역 선택은 v1 제외라, 화면(가게 가입 신청 O-11 · 손님 지도 G-01)은 고르는 UI 없이 이 목록에서 권역 ID를 얻는다. v1은 권역이 1개다(#214).
+- 응답 `200`: `{ "items": [{ "id": "string", "name": "string" }] }` — ID순, 페이지 없음(공통 페이지네이션 규칙의 예외).
+- 실패: 없음
+
 #### `GET /api/v1/stores` — 권역의 참여 가게 목록
 
 - 역할: 누구나(로그인 불필요).
