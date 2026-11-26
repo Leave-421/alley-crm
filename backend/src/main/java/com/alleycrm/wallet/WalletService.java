@@ -38,6 +38,11 @@ public class WalletService {
      * @throws ApiException 회원 잔액이 모자라면 {@code insufficient_balance}
      */
     public long post(WalletOwner owner, String txType, long amount, Long reservationId) {
+        return post(owner, txType, amount, reservationId, null);
+    }
+
+    /** 상인회 쿠폰 행사 예산 거래(D20)처럼 행사 id를 같이 남길 때 */
+    public long post(WalletOwner owner, String txType, long amount, Long reservationId, Long associationEventId) {
         if (amount == 0) {
             throw new IllegalArgumentException("0원 거래는 남기지 않는다");
         }
@@ -50,9 +55,9 @@ public class WalletService {
             throw new ApiException(ErrorCode.INSUFFICIENT_BALANCE);
         }
         jdbc.update("""
-                INSERT INTO wallet_tx (wallet_id, type, amount, reservation_id, created_at)
-                VALUES (?, ?, ?, ?, ?)
-                """, walletId, txType, amount, reservationId, now());
+                INSERT INTO wallet_tx (wallet_id, type, amount, reservation_id, association_event_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, walletId, txType, amount, reservationId, associationEventId, now());
         return balance(owner);
     }
 
