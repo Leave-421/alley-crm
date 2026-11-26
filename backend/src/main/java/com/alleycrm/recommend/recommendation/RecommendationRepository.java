@@ -78,6 +78,16 @@ class RecommendationRepository {
                 """, LocalDateTime.class, customerId, storeId, nowUtc).stream().filter(t -> t != null).findFirst();
     }
 
+    /** 기준 예약: 손님 · 가게 · 시작 시각(UTC). */
+    record BaseReservation(long id, long customerId, long storeId, LocalDateTime startAt) {
+    }
+
+    Optional<BaseReservation> findReservation(long reservationId) {
+        return jdbc.query("SELECT id, customer_id, store_id, start_at FROM reservation WHERE id = ?",
+                (rs, n) -> new BaseReservation(rs.getLong("id"), rs.getLong("customer_id"), rs.getLong("store_id"),
+                        rs.getObject("start_at", LocalDateTime.class)), reservationId).stream().findFirst();
+    }
+
     long regionOf(long storeId) {
         return jdbc.queryForObject("SELECT region_id FROM store WHERE id = ?", Long.class, storeId);
     }

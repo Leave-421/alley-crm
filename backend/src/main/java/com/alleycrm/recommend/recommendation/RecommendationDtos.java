@@ -36,4 +36,19 @@ public final class RecommendationDtos {
 
     public record ExposuresResponse(List<ExposureItemResponse> items) {
     }
+
+    /** {@code GET /api/v1/course-proposals} 응답. {@code applyDeadline}은 소개 예약 신청 마감(표시용). */
+    public record CourseProposalsResponse(String baseReservationId, String baseStoreId, Instant baseTime,
+            Instant applyDeadline, int page, int pageCount, List<Card> items, PublicData publicData) {
+    }
+
+    /** {@code POST /api/v1/course-proposals} 요청. 값 검사는 컨트롤러. */
+    public record CourseProposalRequest(String baseReservationId, List<String> storeIds) {
+    }
+
+    public record CourseProposalItem(String storeId, String courseProposalId, Instant firstShownAt) {
+    }
+
+    public record CourseProposalsRecorded(List<CourseProposalItem> items) {
+    }
 }
