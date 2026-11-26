@@ -1,0 +1,117 @@
+/* 이 화면은 B2 레이아웃(.content)처럼 평범하게 세로로 흐른다(내부 overflow 컨테이너 없음).
+   보드(AlleyCorridor)만 길게 늘어난 블록이고, 구역 표시·선택 패널은 하단 탭(B2)처럼
+   position: fixed로 화면에 떠 있는다. */
+.page {
+  position: relative;
+}
+
+.topBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--layout-gutter);
+}
+
+.backLink {
+  color: var(--color-text-muted);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  color: var(--color-heading);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.boardArea {
+  position: relative;
+}
+
+/* 하단 탭(B2, position: fixed) 바로 위에 뜨는 구역 표시 · 이동 버튼 */
+.navBar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--tabbar-height) + var(--tabbar-gap) + var(--space-3) + env(safe-area-inset-bottom, 0px));
+  z-index: 9;
+  width: calc(100% - 2 * var(--space-5));
+  max-width: var(--tabbar-max-width);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.navLabel {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.navButtons {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* 가게를 고르면 화면 전체를 덮는 자리표시 패널(상세는 A4). 아래 보드 · 머리말이 비치지
+   않게 바탕 화면과 같은 불투명 배경을 쓴다(카드용 --color-surface는 반투명이라 못 씀) */
+.selectedPanel {
+  position: fixed;
+  inset: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: var(--layout-max-width);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--layout-gutter);
+  background: var(--color-bg) var(--gradient-bg) fixed;
+  overflow-y: auto;
+}
+
+.closeButton {
+  align-self: flex-start;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  padding: 0;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.selectedName {
+  margin: 0;
+  font-size: var(--text-3xl);
+  font-weight: var(--weight-heavy);
+  color: var(--color-text);
+}
+
+.selectedMeta {
+  margin: 0;
+  font-size: var(--text-base);
+  color: var(--color-text-muted);
+}
+
+.selectedNote {
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-base);
+  color: var(--color-text-muted);
+}
