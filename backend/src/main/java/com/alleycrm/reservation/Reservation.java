@@ -73,6 +73,10 @@ public class Reservation {
     @Column(name = "visited_at")
     private Instant visitedAt;
 
+    /** 돌려준(돌려줄) 예약금. 손님 취소 때 정한다(D6) */
+    @Column(name = "refund_amount")
+    private Integer refundAmount;
+
     /** 방문 처리 때 사장님이 넣은 결제 금액(쿠폰 할인 전) */
     @Column(name = "visit_amount")
     private Integer visitAmount;
@@ -95,6 +99,12 @@ public class Reservation {
         this.status = ReservationStatus.CANCELED;
         this.cancelReason = reason;
         this.canceledAt = now;
+    }
+
+    /** 손님 취소(D6): 돌려줄 예약금을 같이 남긴다. 실제 환불은 DepositRefundListener가 이 금액으로 한다 */
+    void cancelByCustomer(int refund, Instant now) {
+        cancel(CancelReason.CUSTOMER_CANCELED, now);
+        this.refundAmount = refund;
     }
 
     /** 신청 상태의 새 예약. 값 검사는 신청 단계들이 끝낸 뒤 부른다. */

@@ -292,7 +292,8 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
   "courseRootId": null,
   "fromRecommendation": false,
   "visitAmount": null,
-  "visitedAt": null
+  "visitedAt": null,
+  "refundAmount": null
 }
 ```
 
@@ -302,6 +303,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 - `coupon`: 적용된 쿠폰이 없으면 `null`(비회원은 항상 `null`). 혜택 칸의 뜻은 3.2 CouponEvent와 같다(정률 할인은 `discountAmount: null`). 실제 할인액은 방문 처리 때 결제 금액으로 정한다(E14, FR-CPN-07).
 - `courseRootId`: '다음 코스로 예약하기'로 만든 예약만 기준 가게 예약 id(D12). 아니면 `null`.
 - `fromRecommendation`: 사장님 화면의 '추천으로 왔어요' 표시용. **보낸 가게 id · 이름은 어떤 응답에도 넣지 않는다**(FR-CUS-05).
+- `refundAmount`: 손님 취소(D6) 때 돌려준 예약금(원). 손님 취소가 아니면 `null`.
 - `visitAmount` · `visitedAt`: 방문 처리(D11) 때 사장님이 넣은 결제 금액(쿠폰 할인 전, 원)과 처리 시각. 방문 전이면 `null`.
 - 응답에 손님 이름 · 전화번호는 넣지 않는다. 사장님용 목록(D4)은 가린 이름만 따로 정한다.
 
@@ -372,6 +374,23 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 | 동시 신청 | 가게 행을 잠가(`SELECT … FOR UPDATE`) 같은 가게 신청을 한 줄로 세운다. 자리를 넘겨 받지 않는다 | NFR-09 |
 | 승인 전 · 거절 · 탈퇴 가게 | 손님에게 없는 가게로 보고 `404 not_found` | FR-STO-01 |
 | 단계 30의 D5 검사 | 한 팀 최대 인원 초과 → `invalid`. 영업시간 밖 · 휴무일 · 슬롯 단위에 안 맞는 시각 → `slot_unavailable` (아래 「슬롯 계산」) | D5 (#71) |
+
+### 손님 예약 취소 (D6)
+
+#### `POST /api/v1/reservations/{id}/cancel` — 회원 손님 취소 (G-04, FR-RSV-06)
+
+- 역할: 회원 손님(내 예약). `X-XSRF-TOKEN` 필요. 본문 없음. 다른 손님 예약은 `404 not_found`(#5).
+- `requested` · `confirmed` → `canceled`, `cancelReason: "customer_canceled"`, `refundAmount` 기록. 응답 `200`: `Reservation`.
+
+| 취소 시각 | 환불 |
+| --- | --- |
+| 예약 시각 24시간 전까지 | 예약금 100%(#1). 가게 취소 마감과 상관없이 보장(#4) |
+| 그 뒤, 가게 취소 마감(예약 시각 − `cancelDeadlineHours`) 전 | 예약금 × 가게 비율(`lateCancelRefundRate`, 없으면 권역 설정값 0.5), 1원 미만 버림(#2) |
+| 마감이 지남 | 거절 `409 conflict`(#3) |
+
+- 환불은 상태 변경 이벤트를 받은 예약금 환불(D10)이 같은 트랜잭션에서 한다. 회원은 잔액으로, 비회원은 전화번호 기록으로. 쿠폰 적용 취소(E) · 알림(C)도 같은 이벤트로.
+- 실패: `not_found` · `conflict`(신청 · 확정이 아님, 마감 지남) · `unauthorized` · `forbidden_role` · `csrf_invalid`
+- **비회원 취소:** 비회원 예약 조회 세션(C13)이 생기면 같은 서비스 `ReservationStateService.cancelByCustomer(customerId, reservationId)`를 부른다(규칙 · 응답 같음).
 
 ### 예약 운영 설정 · 슬롯 (D5)
 
@@ -684,7 +703,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 | --- | --- |
 | `store_rejected`(가게 거절 · 자동 거절) | 낸 예약금 100%(FR-RSV-03 #2 · #3) |
 | `auto_canceled` | 없음(FR-RSV-02 #1) |
-| `customer_canceled` | D6이 가게 비율로 |
+| `customer_canceled` | 취소 때 정한 `refundAmount`만큼(D6) |
 
 회원은 잔액으로, 비회원은 전화번호 기록으로 돌려준다. 이 예약의 '납부 − 환불' 합만큼만 돌려줘서 두 번 불려도 한 번만 환불된다.
 
