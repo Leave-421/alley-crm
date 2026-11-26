@@ -18,7 +18,7 @@ export const OWNER_MENU = Object.freeze({
   areaChip: '사장님',
   notificationsTo: '/owner/notifications', // O-10 알림함(A)
   tabs: [
-    { to: '/owner', label: '예약', icon: 'calendar', end: true, also: ['/owner/settings'] }, // O-01 (운영 설정 O-03 · 변경 요청 O-02는 예약 안)
+    { to: '/owner', label: '예약', icon: 'calendar', end: true, also: ['/owner/settings', '/owner/store'] }, // O-01 (운영 설정 O-03 · 변경 요청 O-02 · 가게 정보 O-12는 예약 안)
     { to: '/owner/customers', label: '고객', icon: 'people' }, // O-04 · O-06
     { to: '/owner/flow', label: '손님 흐름', icon: 'flow' }, // O-07(A)
     { to: '/owner/settlement', label: '소개·정산', icon: 'money' }, // O-08

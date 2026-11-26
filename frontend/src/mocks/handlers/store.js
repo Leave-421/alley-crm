@@ -81,6 +81,8 @@ function ownApprovedStore() {
 }
 
 const BUSINESS_STATUSES = ['open', 'paused', 'closed'];
+const WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+const HOURS_TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 function decideJoin(nextStatus) {
   return (info) => {
@@ -113,6 +115,22 @@ export const storeHandlers = [
       return errorResponse(400, 'invalid', '영업 상태와 예약 받기를 확인해 주세요.');
     }
     const updated = { ...own, businessStatus: body.businessStatus, reservationEnabled: body.reservationEnabled };
+    stores = stores.map((item) => (item.id === own.id ? updated : item));
+    return HttpResponse.json(toStore(updated));
+  }),
+
+  // PUT /api/v1/owner/store/hours (C22) — 영업시간 · 휴무일. 규칙은 StoreJoinInfo와 같고 휴무일은 요일 순(mon → sun)으로 저장
+  http.put('/api/v1/owner/store/hours', async (info) => {
+    const csrf = rejectInvalidCsrf(info);
+    if (csrf) return csrf;
+    const { blocked, store: own } = ownApprovedStore();
+    if (blocked) return blocked;
+    const body = await info.request.json().catch(() => null);
+    const closedDays = body?.closedDays ?? [];
+    const validTimes = HOURS_TIME.test(body?.openTime ?? '') && HOURS_TIME.test(body?.closeTime ?? '') && body.openTime < body.closeTime;
+    const validDays = Array.isArray(closedDays) && closedDays.every((day) => WEEKDAYS.includes(day)) && new Set(closedDays).size === closedDays.length;
+    if (!validTimes || !validDays) return errorResponse(400, 'invalid', '영업시간과 휴무일을 확인해 주세요.');
+    const updated = { ...own, openTime: body.openTime, closeTime: body.closeTime, closedDays: WEEKDAYS.filter((day) => closedDays.includes(day)) };
     stores = stores.map((item) => (item.id === own.id ? updated : item));
     return HttpResponse.json(toStore(updated));
   }),

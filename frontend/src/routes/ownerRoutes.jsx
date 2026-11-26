@@ -4,6 +4,7 @@ import { ROLES } from '@/auth/roles.js';
 import AppLayout from '@/layouts/AppLayout.jsx';
 import { OWNER_MENU } from '@/layouts/menus.js';
 import ReservationSettingsPage from '@/pages/owner/settings/ReservationSettingsPage.jsx';
+import StoreInfoPage from '@/pages/owner/store/StoreInfoPage.jsx';
 import PlaceholderPage from '@/pages/PlaceholderPage.jsx';
 import CouponSettingsPage from '@/pages/owner/coupon/CouponSettingsPage.jsx';
 import OwnerReservationsPage from '@/pages/owner/reservations/OwnerReservationsPage.jsx';
@@ -30,6 +31,7 @@ export const ownerRoutes = [
           { path: 'settlement', element: <PlaceholderPage screenId="O-08" title="소개 · 수수료" /> },
           { path: 'coupons', handle: { title: '쿠폰 설정' }, element: <CouponSettingsPage /> }, // O-09 B15
           { path: 'settings', handle: { title: '가게 · 예약 설정' }, element: <ReservationSettingsPage /> }, // O-03 B10, 진입은 O-01 '예약 운영 설정'
+          { path: 'store', handle: { title: '가게 정보' }, element: <StoreInfoPage /> }, // O-12 B24, 진입은 O-01 · O-03 '가게 정보'
           { path: 'notifications', handle: { title: '알림함' }, element: <PlaceholderPage screenId="O-10" title="알림함" /> },
         ],
       },

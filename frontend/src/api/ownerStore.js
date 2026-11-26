@@ -12,3 +12,11 @@ export function getMyStore() {
 export function updateMyStoreStatus({ businessStatus, reservationEnabled }) {
   return api.put('/api/v1/owner/store/status', { businessStatus, reservationEnabled });
 }
+
+/**
+ * 영업시간 · 휴무일(C22). openTime < closeTime(HH:mm, Asia/Seoul), closedDays 빈 목록이면 연중무휴.
+ * 예약 가능 시간(D5)과 예약 신청 검사가 바로 쓴다. 응답은 Store(휴무일은 요일 순).
+ */
+export function updateMyStoreHours({ openTime, closeTime, closedDays }) {
+  return api.put('/api/v1/owner/store/hours', { openTime, closeTime, closedDays });
+}

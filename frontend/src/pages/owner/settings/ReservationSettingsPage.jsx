@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router';
 import { getMyStore } from '@/api/ownerStore.js';
 import { getReservationSettings } from '@/api/reservationSettings.js';
 import Button from '@/components/Button/Button.jsx';
@@ -45,7 +46,9 @@ export default function ReservationSettingsPage() {
     <main className={styles.page}>
       <header className={styles.intro}>
         <h1 className={styles.title}>가게 · 예약 설정</h1>
-        <p className={styles.lead}>영업 상태와 예약 받는 방식을 가게에 맞게 정해요. 영업시간 · 휴무일은 가게 정보에서 정해요.</p>
+        <p className={styles.lead}>
+          영업 상태와 예약 받는 방식을 가게에 맞게 정해요. 영업시간 · 휴무일은 <Link to="/owner/store">가게 정보</Link>에서 정해요.
+        </p>
       </header>
 
       {notice && (
