@@ -76,3 +76,11 @@ export const accountHandlers = [
   // GET /api/v1/auth/me (C2)
   http.get('/api/v1/auth/me', () => rejectAnonymous() ?? HttpResponse.json(getMockAccount())),
 ];
+
+/** 다른 목(가게 가입 신청 C5)이 사장님 계정을 만들 때 쓴다. 이미 쓰는 아이디면 null. */
+export function addMockAccount({ loginId, password, role, storeId = null, regionId = null }) {
+  if (accounts.some((item) => item.account.loginId === loginId)) return null;
+  const account = { id: String(accounts.length + 1), loginId, role, storeId, regionId };
+  accounts = [...accounts, { account, password }];
+  return account;
+}
