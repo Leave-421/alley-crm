@@ -3,7 +3,7 @@ package com.alleycrm.coupon.repository;
 import com.alleycrm.coupon.domain.Coupon;
 import com.alleycrm.coupon.domain.CouponStatus;
 import jakarta.persistence.LockModeType;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -21,15 +21,37 @@ public interface CouponRepository extends JpaRepository<Coupon, Long> {
 
     /** 예약 화면의 사용 가능한 쿠폰: 그 가게의 이 회원 쿠폰 중 한 상태이고 기한이 남은 것, 만료가 가까운 순. */
     List<Coupon> findByCustomerIdAndTargetStoreIdAndStatusAndExpiresAtAfterOrderByExpiresAtAscIdAsc(
-            Long customerId, Long targetStoreId, CouponStatus status, LocalDateTime now);
+            Long customerId, Long targetStoreId, CouponStatus status, Instant now);
 
     /** 예약 신청의 쿠폰: 이 회원의 것만 찾고 행을 잠근다. 같은 쿠폰으로 동시에 신청해도 한 신청만 통과한다. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<Coupon> findWithLockByIdAndCustomerId(Long id, Long customerId);
 
-    /** 예약에 적용된 쿠폰을 '적용 취소'로(방문 전 취소 · 거절). 바뀐 행 수. */
-    @Modifying(flushAutomatically = true, clearAutomatically = true)
-    @Query("UPDATE Coupon c SET c.status = :canceled WHERE c.reservationId = :reservationId AND c.status = :applied")
-    int cancelApplied(@Param("reservationId") Long reservationId,
-            @Param("applied") CouponStatus applied, @Param("canceled") CouponStatus canceled);
+    /** 예약의 쿠폰(그 상태 중 하나)을 잠가 찾는다. 예약 한 건에 적용 · 사용된 쿠폰은 하나다. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<Coupon> findWithLockByReservationIdAndStatusIn(Long reservationId, Collection<CouponStatus> statuses);
+
+    /** 예약의 쿠폰(그 상태 중 하나). 잠그지 않는다. */
+    Optional<Coupon> findByReservationIdAndStatusIn(Long reservationId, Collection<CouponStatus> statuses);
+
+    // 아래 일괄 변경은 다른 담당의 트랜잭션(예약 상태 변경 · 가게 상태 변경) 안에서도 불린다.
+    // 그 트랜잭션이 들고 있는 엔티티를 떼어 내지 않도록 영속성 컨텍스트를 비우지 않는다(clearAutomatically = false).
+
+    /** 예약의 쿠폰을 from → to로(방문 전 취소: 적용됨 → 적용 취소, 늦은 방문 처리: 적용 취소 → 적용됨). 바뀐 행 수. */
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE Coupon c SET c.status = :to WHERE c.reservationId = :reservationId AND c.status = :from")
+    int changeStatusOfReservation(@Param("reservationId") Long reservationId,
+            @Param("from") CouponStatus from, @Param("to") CouponStatus to);
+
+    /** 기한이 지난 '다운로드됨' 쿠폰을 '기간 만료'로. 바뀐 행 수. */
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE Coupon c SET c.status = :expired WHERE c.status = :downloaded AND c.expiresAt <= :now")
+    int expireDue(@Param("now") Instant now,
+            @Param("downloaded") CouponStatus downloaded, @Param("expired") CouponStatus expired);
+
+    /** 가게가 대상인 쿠폰 중 그 상태들을 '적용 취소'로(운영 중단 · 탈퇴). 바뀐 행 수. */
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE Coupon c SET c.status = :canceled WHERE c.targetStoreId = :storeId AND c.status IN :statuses")
+    int cancelForStore(@Param("storeId") Long storeId, @Param("statuses") Collection<CouponStatus> statuses,
+            @Param("canceled") CouponStatus canceled);
 }

@@ -21,10 +21,10 @@ import org.springframework.test.context.ActiveProfiles;
 /**
  * 시드 초기화 · 적재를 실제 MySQL 8.4(Testcontainers)에서 확인한다. Docker 필요.
  * 기준: NFR-07 #1 · #3, 06-data STORE, 11-24 (5), 00-backlog 「같이 쓰는 것 규칙」 시드 · 시연 데이터.
- * NFR-07 #2(예약 날짜 9 ~ 11월)는 예약을 만드는 E16에서 확인한다.
+ * NFR-07 #2(예약 날짜 9 ~ 11월)는 가상 데이터 1(E16)을 넣은 뒤 확인한다. 가상 손님 수는 테스트를 빠르게 하려고 줄인다.
  */
 // 루트 .env에 시연 비밀번호가 있어도 이 테스트는 시연 계정 없이 돈다(계정 수 확인).
-@SpringBootTest(properties = {"seed.close-after-run=false",
+@SpringBootTest(properties = {"seed.close-after-run=false", "seed.demo.customers=80",
         "DEMO_CUSTOMER_PASSWORD=", "DEMO_OWNER_PASSWORD=", "DEMO_ASSOCIATION_PASSWORD="})
 @ActiveProfiles("seed")
 @Import(TestcontainersConfiguration.class)
@@ -110,7 +110,7 @@ class SeedLoaderIntegrationTest {
         SeedLoader.Result second = loader.resetAndLoad(data);
 
         assertThat(count("account")).isZero();
-        assertThat(count("customer")).isZero();
+        assertThat(countReal("customer")).isZero();
         assertThat(count("visitor")).isZero();
         assertThat(count("setting")).isZero();
         assertThat(count("store")).isEqualTo(15);
@@ -141,9 +141,9 @@ class SeedLoaderIntegrationTest {
 
         loader.resetAndLoad(data);
 
-        assertThat(count("reservation")).isZero();
+        assertThat(countReal("reservation")).isZero();
         assertThat(count("course_proposal")).isZero();
-        assertThat(count("customer")).isZero();
+        assertThat(countReal("customer")).isZero();
         assertThat(count("store")).isEqualTo(15);
     }
 
@@ -183,6 +183,54 @@ class SeedLoaderIntegrationTest {
 
             st.executeQuery("SELECT RELEASE_LOCK('" + SeedLoader.LOCK_NAME + "')").close();
         }
+    }
+
+    @Test
+    void 가상_데이터_1은_시연_데이터로_9월에서_11월_예약과_취소_방문을_넣는다_NFR_07_2() {
+        SeedLoader.Result result = loader.resetAndLoad(data);
+
+        assertThat(result.demoReservations().customers()).isEqualTo(80);
+        assertThat(count("customer")).isEqualTo(80);
+        assertThat(count("reservation")).isEqualTo(result.demoReservations().reservations()).isPositive();
+        assertThat(countReal("customer")).isZero();
+        assertThat(countReal("reservation")).isZero();
+        // 시각 칸은 UTC. 운영 시간대(KST)로 바꿔 학기 중 9 ~ 11월인지 본다
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM reservation
+                WHERE DATE(DATE_ADD(start_at, INTERVAL 9 HOUR)) NOT BETWEEN '2026-09-01' AND '2026-11-30'
+                """, Integer.class)).isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM reservation WHERE status = 'visited' AND (visit_amount IS NULL OR visited_at IS NULL)",
+                Integer.class)).isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM reservation WHERE status = 'canceled' AND (cancel_reason IS NULL OR canceled_at IS NULL)",
+                Integer.class)).isZero();
+        assertThat(jdbc.queryForList("SELECT DISTINCT status FROM reservation", String.class))
+                .containsExactlyInAnyOrder("visited", "canceled");
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM reservation r JOIN customer c ON c.id = r.customer_id
+                WHERE r.status = 'visited' AND (c.last_visit_at IS NULL OR c.last_visit_at < r.visited_at)
+                """, Integer.class)).isZero();
+    }
+
+    @Test
+    void 공공데이터_기본값을_출처_기준_기간과_함께_넣는다_NFR_10() {
+        SeedLoader.Result result = loader.resetAndLoad(data);
+
+        assertThat(result.publicStats()).isEqualTo(PublicStatFile.load().size());
+        assertThat(count("public_stat")).isEqualTo(result.publicStats());
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM public_stat WHERE TRIM(source) = '' OR TRIM(period) = ''", Integer.class)).isZero();
+        assertThat(jdbc.queryForList("SELECT DISTINCT kind FROM public_stat", String.class))
+                .containsExactlyInAnyOrder("attractiveness", "clq", "day_share", "time_band_share", "gender_share", "age_share");
+
+        loader.resetAndLoad(data);
+        assertThat(count("public_stat")).isEqualTo(result.publicStats()); // 다시 넣어도 쌓이지 않는다
+    }
+
+    /** 시드 · 시연 데이터가 아닌 행(테스트가 직접 넣은 것) 수. */
+    private int countReal(String table) {
+        return jdbc.queryForObject("SELECT COUNT(*) FROM " + table + " WHERE data_source <> 'demo'", Integer.class);
     }
 
     private int count(String table) {

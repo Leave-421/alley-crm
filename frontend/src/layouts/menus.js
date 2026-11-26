@@ -1,5 +1,5 @@
 // 하단 탭과 위쪽 머리말. 탭 구성은 07-screens 「메뉴 (하단 탭)」(11-24 (4) 확정), 아이콘은 확정 목업을 따른다.
-// end: true면 하위 주소에서는 켜지지 않는다(영역 첫 화면 탭).
+// end: true면 하위 주소에서는 켜지지 않는다(영역 첫 화면 탭). also: 그래도 같이 켜질 하위 주소(그 탭 안의 화면).
 // defaultTitle: 화면이 route handle.title을 주지 않을 때 머리말 제목. areaChip: 제목 옆 역할 표시.
 
 export const CUSTOMER_MENU = Object.freeze({
@@ -18,7 +18,7 @@ export const OWNER_MENU = Object.freeze({
   areaChip: '사장님',
   notificationsTo: '/owner/notifications', // O-10 알림함(A)
   tabs: [
-    { to: '/owner', label: '예약', icon: 'calendar', end: true }, // O-01 (운영 설정 O-03 · 변경 요청 O-02는 예약 안)
+    { to: '/owner', label: '예약', icon: 'calendar', end: true, also: ['/owner/settings', '/owner/store'] }, // O-01 (운영 설정 O-03 · 변경 요청 O-02 · 가게 정보 O-12는 예약 안)
     { to: '/owner/customers', label: '고객', icon: 'people' }, // O-04 · O-06
     { to: '/owner/flow', label: '손님 흐름', icon: 'flow' }, // O-07(A)
     { to: '/owner/settlement', label: '소개·정산', icon: 'money' }, // O-08

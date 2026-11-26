@@ -38,10 +38,16 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/store-joins").permitAll()
                         // 참여 가게 목록은 지도에서 로그인 없이 본다(C6)
                         .requestMatchers(HttpMethod.GET, "/api/v1/stores").permitAll()
+                        // 권역 목록(#214): 가입 신청 · 손님 지도가 권역 ID를 얻는다
+                        .requestMatchers(HttpMethod.GET, "/api/v1/regions").permitAll()
                         // 예약 신청은 비회원도 한다(D2). 회원 · 역할 판단은 신청 단계 20(C4)
                         .requestMatchers(HttpMethod.POST, "/api/v1/reservations").permitAll()
                         // 예약 가능 시간 조회(D5)도 비회원이 본다
                         .requestMatchers(HttpMethod.GET, "/api/v1/stores/*/available-slots").permitAll()
+                        // 비로그인 손님의 추천 · 탐색 기록 · 쿠폰 상세 · 오늘의 코스(#222, CONTRACTS_API R-10 · V-2 · K-1 · T-1)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/recommendations", "/api/v1/today-courses",
+                                "/api/v1/coupon-offers/*").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/recommendation-exposures", "/api/v1/store-clicks").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((request, response, e) ->

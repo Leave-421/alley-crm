@@ -1,12 +1,12 @@
 package com.alleycrm.reservation.owner;
 
 /** 사장님 화면의 가린 이름(예: 김로코 → 김*코, 김코 → 김*). 이름이 없으면 null */
-final class NameMask {
+public final class NameMask {
 
     private NameMask() {
     }
 
-    static String mask(String name) {
+    public static String mask(String name) {
         if (name == null || name.isBlank()) {
             return null;
         }

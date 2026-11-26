@@ -9,3 +9,7 @@ server:
 seed:
   confirm: ""
   close-after-run: true
+  # 가상 데이터(E16 · E17). 가상 손님 수는 기획에서 미결(NFR-07)이라 임시 값. 바꾸려면 --seed.demo.customers=N
+  demo:
+    customers: 600
+    random-seed: 20261211
