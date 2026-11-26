@@ -4,6 +4,7 @@ import { storeHandlers } from './store.js';
 import { reservationHandlers } from './reservation.js';
 import { recommendationHandlers } from './recommendation.js';
 import { couponHandlers } from './coupon.js';
+import { reservationSettingsHandlers } from './reservationSettings.js'; // 2의 D5 예약 운영 설정
 
 // 목 핸들러는 CONTRACTS_API.md 절(담당)별 파일로 나눈다. 이 파일은 합치기만 한다.
 // account.js = 1의 계정(C2), store.js = 1의 가게 가입 · 목록 · 위치(C5 · C6).
@@ -15,4 +16,5 @@ export const handlers = [
   ...reservationHandlers,
   ...recommendationHandlers,
   ...couponHandlers,
+  ...reservationSettingsHandlers,
 ];
