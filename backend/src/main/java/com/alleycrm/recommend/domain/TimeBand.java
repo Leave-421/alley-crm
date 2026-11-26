@@ -39,6 +39,11 @@ public enum TimeBand {
         return Arrays.stream(values()).filter(b -> hour >= b.startHour && hour < b.endHour).findFirst().orElseThrow();
     }
 
+    /** 다음 구간. 21 ~ 24시 다음은 00 ~ 06시. */
+    public TimeBand next() {
+        return values()[(ordinal() + 1) % values().length];
+    }
+
     public static Optional<TimeBand> fromCode(String code) {
         return Arrays.stream(values()).filter(b -> b.code.equals(code)).findFirst();
     }
