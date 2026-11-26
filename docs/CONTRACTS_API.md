@@ -1192,17 +1192,18 @@ DB가 막지 않는 것(유형별 필수 칸, 확정 뒤 변경 금지, 중단�
 
 - E14는 '방문 처리됨' 이벤트 `VisitProcessedEvent`를 `@EventListener`(같은 트랜잭션)로 받아 할인액을 쿠폰의 `discount_applied`에 기록한다. 상태는 `applied` 그대로다.
 - **D15(수수료 · 쿠폰 비용)는 이벤트 처리 순서에 기대지 않고** 같은 계산을 E의 서비스에서 받는다:
-  `CouponVisitService.discountFor(long reservationId, int visitAmount)` → `Optional<VisitCouponDiscount(long couponId, int discountAmount, int couponCost)>`. 적용된 쿠폰이 없으면 빈 값. 수수료 계산 금액은 `방문 금액 − discountAmount`(서비스 제공은 원래 방문 금액), `coupon_cost`는 `couponCost`(FR-STL-02, 06-data FEE).
+  `CouponVisitService.discountFor(long reservationId, int visitAmount)` → `Optional<VisitCouponDiscount(long couponId, CouponIssuer issuerKind, int discountAmount, int couponCost)>`. 적용된 쿠폰이 없으면 빈 값. 수수료 계산 금액은 `방문 금액 − discountAmount`(서비스 제공은 원래 방문 금액), `coupon_cost`는 `couponCost`(FR-STL-02, 06-data FEE). `issuerKind`(`CONTRACTS.md` 「3」 `coupon.issuerKind`)로 쿠폰 비용을 가게(`store`)가 낼지 공동 기금(`association`)이 낼지 구분한다(11-25 (5)).
 
 ### 만료 작업 (서버 내부 → 실행 주기는 D7)
 
 - `CouponExpiryService.expireDue()`: `downloaded`이고 `expires_at` ≤ 지금(서버 시계)인 쿠폰을 `expired`로 바꾸고 바꾼 수를 돌려준다(FR-CPN-05 #2 · #5). `applied`는 방문일이 기한을 넘어도 그대로다(FR-CPN-05 #3).
 - D7 스케줄이 `autoRejectDue()` · `autoCancelDue()`와 같이 주기적으로 부른다. 사용 가능한 쿠폰 목록(3.5)은 작업 전이라도 기한이 지난 쿠폰을 빼고 보여준다.
 
-### 가게 운영 중단 · 탈퇴 → 적용 취소 (서버 내부, C가 부름)
+### 가게 운영 중단 · 탈퇴 → 적용 취소 (서버 내부)
 
 - `CouponStatusService.cancelUnusedForStore(long storeId)`: 그 가게가 대상인 `downloaded` · `applied` 쿠폰을 `apply_canceled`로 바꾼다(FR-CPN-07 #4). 30일 제한 해제는 `business_status_changed_at`으로 이미 처리된다(3.4).
-- 영업 상태를 휴업 · 중단으로 바꾸는 곳(C22 #116)과 탈퇴를 처리하는 곳이 **같은 트랜잭션에서** 부른다. 예약 받기 '잠시 멈춤'이나 쿠폰 행사 중단(FR-CPN-11)에는 부르지 않는다.
+- **휴업 · 운영 중단**: C22(#116)가 영업 상태를 바꾼 트랜잭션 안에서 내보내는 `StoreBusinessStatusChangedEvent(storeId, businessStatus)`를 E14가 `@EventListener`로 받아, `businessStatus`가 `paused` · `closed`면 위 메서드를 부른다(FR-STO-02 #1). 예약 받기 '잠시 멈춤'(이벤트 없음)이나 쿠폰 행사 중단(FR-CPN-11)에는 바뀌지 않는다.
+- **탈퇴**: 탈퇴를 처리하는 곳(C)이 같은 트랜잭션에서 위 메서드를 부른다.
 
 ### 늦은 방문 처리 → 되돌리기 (서버 내부, 11-25 (5))
 
@@ -1221,5 +1222,5 @@ DB가 막지 않는 것(유형별 필수 칸, 확정 뒤 변경 금지, 중단�
 | # | 내용 | 정해지지 않은 동안 | 결정 주체 |
 | --- | --- | --- | --- |
 | S-1 | 사장님 예약 응답(D3 · D4 · D11 · O-13)의 `coupon` 칸 채우기 — E가 `CouponApplyService.appliedCouponFor(reservationId)`(3.5 모양)를 제공하고 D가 응답에 넣는다. 지금은 `null` | 사장님 화면은 사용 확인 API의 `conflict`로 판단 | D (#14 · #19) |
-| S-2 | 가게 운영 중단 · 탈퇴 때 `cancelUnusedForStore` 부르기 | 상태 변경 API가 생기면 C가 붙인다 | C (C22 #116) |
+| S-2 | 휴업 · 운영 중단 이벤트(`StoreBusinessStatusChangedEvent`, C22 PR #190)를 받는 E14 리스너 · 탈퇴 처리 때 `cancelUnusedForStore` 부르기 | 이벤트가 머지되면 E가 리스너를 붙인다. 탈퇴는 그 기능이 생길 때 C가 부른다 | E (#45) · C (C22 #116) |
 | S-3 | 만료 작업 실행 주기 | 메서드만 둔다 | D (D7 #103) |
