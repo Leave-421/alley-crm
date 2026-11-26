@@ -111,6 +111,9 @@ class AssociationCouponClaimConcurrencyTest {
                 } catch (ApiException e) {
                     assertThat(e.errorCode()).isEqualTo(ErrorCode.CONFLICT);
                     return false;
+                } catch (RuntimeException e) {
+                    // 잠금 · 교착이면 어느 SQL인지 실패 메시지에 남긴다(CI 로그에는 예외 이름만 찍힌다)
+                    throw new AssertionError("예상하지 못한 예외: " + e, e);
                 }
             }));
         }

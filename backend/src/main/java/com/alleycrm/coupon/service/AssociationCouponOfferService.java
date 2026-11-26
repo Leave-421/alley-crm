@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Optional;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -58,8 +59,10 @@ public class AssociationCouponOfferService {
     /**
      * 선착순 받기. 없는 행사 404, 이미 받음 · 다 나감 · 중단 · 받는 기간 밖은 409이고 아무것도 남기지 않는다.
      * 받은 수 조건부 UPDATE를 먼저 해 행사 행을 잠그고, 같은 회원 동시 요청은 유일 제약으로 한 장만 남긴다.
+     * 가게 쿠폰 다운로드(E12)와 같이 READ COMMITTED로 돌려 갭 잠금을 잡지 않는다(기본 REPEATABLE READ에서는 동시 받기
+     * 테스트가 잠금 획득 실패로 깨졌다). 같은 행사 안의 순서는 행사 행 잠금이 지킨다.
      */
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public AssociationCouponResponse claim(long eventId, long customerId) {
         if (!events.existsById(eventId)) {
             throw new ApiException(ErrorCode.NOT_FOUND);
