@@ -48,7 +48,8 @@ cd backend
 
 - 로컬 DB(localhost · 127.0.0.1 · compose `mysql`)만 지운다. 운영 프로필(`prod`)과 함께 켜면 거부한다.
 - 직접 만든 계정, 상인회가 바꾼 설정값 · 공유 설정까지 **모든 데이터를 지운다**(마이그레이션 기록은 남김, 설정은 기본값으로 돌아감). 웹 서버(`bootRun`)를 끄고 돌린다.
-- 지금 넣는 것: 권역 1개 · 참여 가게 15곳(`backend/src/main/resources/seed/region-stores.json`). 계정 · 공공데이터 · 가상 데이터는 각 이슈에서 더한다.
+- 지금 넣는 것: 권역 1개 · 참여 가게 15곳(`backend/src/main/resources/seed/region-stores.json`), 시연 계정 3개. 공공데이터 · 가상 데이터는 각 이슈에서 더한다.
+- 시연 계정: 손님 `democustomer` · 사장님 `demoowner`(S01 아침볕 커피) · 상인회 `demoassoc`. 비밀번호는 루트 `.env`의 `DEMO_CUSTOMER_PASSWORD` · `DEMO_OWNER_PASSWORD` · `DEMO_ASSOCIATION_PASSWORD`로 정한다(비어 있으면 그 계정은 건너뜀).
 
 ## 4. 작업 흐름
 
