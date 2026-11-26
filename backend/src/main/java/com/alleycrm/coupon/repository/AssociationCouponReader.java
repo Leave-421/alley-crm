@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -29,6 +30,19 @@ public class AssociationCouponReader {
         return new HashSet<>(jdbc.queryForList("""
                 SELECT id FROM store WHERE region_id = :regionId AND join_status = 'approved' AND id IN (:ids)
                 """, new MapSqlParameterSource("regionId", regionId).addValue("ids", ids), Long.class));
+    }
+
+    /** 가게 ID → 이름(ID 순). 쓸 수 있는 가게를 회원 카드에 보여줄 때(3.9). */
+    public Map<Long, String> storeNames(Collection<Long> ids) {
+        Map<Long, String> names = new TreeMap<>();
+        if (ids.isEmpty()) {
+            return names;
+        }
+        jdbc.query("SELECT id, name FROM store WHERE id IN (:ids)", new MapSqlParameterSource("ids", ids),
+                rs -> {
+                    names.put(rs.getLong("id"), rs.getString("name"));
+                });
+        return names;
     }
 
     /**

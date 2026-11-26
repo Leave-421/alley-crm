@@ -25,6 +25,9 @@ public interface CouponRepository extends JpaRepository<Coupon, Long> {
 
     /** 예약 신청의 쿠폰: 이 회원의 것만 찾고 행을 잠근다. 같은 쿠폰으로 동시에 신청해도 한 신청만 통과한다. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    /** 이 회원이 받은 상인회 쿠폰(한 행사에 한 장, uk_coupon_association_member). */
+    Optional<Coupon> findByAssociationEventIdAndCustomerId(Long associationEventId, Long customerId);
+
     Optional<Coupon> findWithLockByIdAndCustomerId(Long id, Long customerId);
 
     /** 예약의 쿠폰(그 상태 중 하나)을 잠가 찾는다. 예약 한 건에 적용 · 사용된 쿠폰은 하나다. */
