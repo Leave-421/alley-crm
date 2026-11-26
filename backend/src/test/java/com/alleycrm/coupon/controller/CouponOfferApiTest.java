@@ -201,7 +201,7 @@ class CouponOfferApiTest {
         mvc.perform(download(exposure(visitorId, storeA, storeB)).session(member))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("conflict"));
-        assertThat(issuedCount(eventB)).isEqualTo(1);
+        // 거절 때 발급 수가 되돌아가는지는 테스트 트랜잭션 없이 CouponDownloadCommitTest가 본다
         assertThat(couponCount()).isEqualTo(1);
 
         mvc.perform(get("/api/v1/coupon-offers/" + storeB).session(member))
@@ -232,7 +232,7 @@ class CouponOfferApiTest {
 
         mvc.perform(download(exposure(visitorId, storeA, storeB)).session(member))
                 .andExpect(status().isConflict());
-        assertThat(issuedCount(eventB)).isZero();
+        assertThat(couponCount()).isEqualTo(1);
         mvc.perform(get("/api/v1/coupon-offers/" + storeB).session(member))
                 .andExpect(jsonPath("$.downloadStatus").value("applied_unused"))
                 .andExpect(jsonPath("$.myCoupons[0].status").value("applied"));
@@ -262,7 +262,8 @@ class CouponOfferApiTest {
 
     @Test
     void 이전_행사_쿠폰은_새_행사_다운로드를_막지_않고_두_장을_가진다_FR_CPN_04_6_8() throws Exception {
-        pastCoupon(eventB, storeB, now().minusDays(10), "downloaded");
+        // 이전 행사 쿠폰: 30일 안에 받았고 아직 기한 안(쿠폰 기간 7일)
+        pastCoupon(eventB, storeB, now().minusDays(3), "downloaded");
         jdbc.update("UPDATE coupon_policy SET stopped_at = UTC_TIMESTAMP(6) WHERE id = ?", eventB);
         long newEvent = fixedEvent(storeB, 10, 0, 7);
 
