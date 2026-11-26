@@ -3,6 +3,7 @@ import { accountHandlers } from './account.js';
 import { storeHandlers } from './store.js';
 import { storeJoinHandlers } from './storeJoin.js'; // 1의 권역 조회 · 사장님 쪽 가게 가입(C5)
 import { reservationHandlers } from './reservation.js';
+import { walletHandlers } from './wallet.js'; // 2의 가상 잔액 · 충전 · 소개 수수료 내역(D9 · D10 · D16)
 import { recommendationHandlers } from './recommendation.js';
 import { couponHandlers } from './coupon.js';
 import { reservationSettingsHandlers } from './reservationSettings.js'; // 2의 D5 예약 운영 설정
@@ -16,6 +17,7 @@ export const handlers = [
   ...storeHandlers,
   ...storeJoinHandlers,
   ...reservationHandlers,
+  ...walletHandlers,
   ...recommendationHandlers,
   ...couponHandlers,
   ...reservationSettingsHandlers,
