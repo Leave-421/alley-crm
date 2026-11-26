@@ -68,3 +68,31 @@ export function approveStoreJoin(storeId) {
 export function rejectStoreJoin(storeId) {
   return api.post(`/api/v1/store-joins/${encodeURIComponent(storeId)}/reject`);
 }
+
+// ── 사장님 쪽 가게 가입(C5) · 공개 권역 조회(C6) ──
+
+/** 가게 가입 신청 입력 규칙(C5 StoreJoinInfo). 아이디 · 비밀번호 규칙은 회원가입(SIGNUP_RULES)과 같다. */
+export const STORE_JOIN_RULES = Object.freeze({ nameMax: 50 });
+
+/** 권역 목록(로그인 불필요). v1은 권역이 1개라 items[0].id를 쓴다(권역 선택 없음). */
+export function getRegions() {
+  return api.get('/api/v1/regions');
+}
+
+/**
+ * 가게 가입 신청: 가게(requested)와 사장님 계정을 같이 만든다. 로그인 세션은 만들지 않는다.
+ * 실패: invalid · not_found(없는 권역) · conflict(이미 쓰는 아이디).
+ */
+export function applyStoreJoin({ loginId, password, regionId, name, category, alley, openTime, closeTime, closedDays }) {
+  return api.post('/api/v1/store-joins', { loginId, password, regionId, name, category, alley, openTime, closeTime, closedDays });
+}
+
+/** 내 가게 가입 상태(사장님, 승인 전 · 거절 포함). */
+export function getMyStoreJoin() {
+  return api.get('/api/v1/store-joins/mine');
+}
+
+/** 거절된 가입을 고친 가게 정보로 다시 신청. 거절 상태가 아니면 409 conflict. */
+export function reapplyStoreJoin({ name, category, alley, openTime, closeTime, closedDays }) {
+  return api.post('/api/v1/store-joins/mine/reapply', { name, category, alley, openTime, closeTime, closedDays });
+}

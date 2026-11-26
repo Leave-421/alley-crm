@@ -1,6 +1,7 @@
 import { commonHandlers } from './common.js';
 import { accountHandlers } from './account.js';
 import { storeHandlers } from './store.js';
+import { storeJoinHandlers } from './storeJoin.js'; // 1의 권역 조회 · 사장님 쪽 가게 가입(C5)
 import { reservationHandlers } from './reservation.js';
 import { recommendationHandlers } from './recommendation.js';
 import { couponHandlers } from './coupon.js';
@@ -13,6 +14,7 @@ export const handlers = [
   ...commonHandlers,
   ...accountHandlers,
   ...storeHandlers,
+  ...storeJoinHandlers,
   ...reservationHandlers,
   ...recommendationHandlers,
   ...couponHandlers,
