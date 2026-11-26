@@ -259,7 +259,9 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
   "depositAmount": 10000,
   "coupon": { "couponId": "string", "discountAmount": 1000 },
   "courseRootId": null,
-  "fromRecommendation": false
+  "fromRecommendation": false,
+  "visitAmount": null,
+  "visitedAt": null
 }
 ```
 
@@ -269,6 +271,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 - `coupon`: 적용된 쿠폰이 없으면 `null`(비회원은 항상 `null`).
 - `courseRootId`: '다음 코스로 예약하기'로 만든 예약만 기준 가게 예약 id(D12). 아니면 `null`.
 - `fromRecommendation`: 사장님 화면의 '추천으로 왔어요' 표시용. **보낸 가게 id · 이름은 어떤 응답에도 넣지 않는다**(FR-CUS-05).
+- `visitAmount` · `visitedAt`: 방문 처리(D11) 때 사장님이 넣은 결제 금액(쿠폰 할인 전, 원)과 처리 시각. 방문 전이면 `null`.
 - 응답에 손님 이름 · 전화번호는 넣지 않는다. 사장님용 목록(D4)은 가린 이름만 따로 정한다.
 
 ### `POST /api/v1/reservations` — 예약 신청 (D2)
@@ -459,6 +462,32 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 | 쿠폰 적용 취소 (E) | `@EventListener` | 방문 전 취소면 적용 쿠폰 → `apply_canceled`(30일 제한 유지) |
 | 알림 (C14 · C15) | `@TransactionalEventListener` (커밋 뒤) | 승인 · 거절 알림 |
 
+#### `POST /api/v1/owner/reservations/{id}/visit` — 방문 처리 (D11)
+
+- 역할: 사장님(내 가게 예약). `X-XSRF-TOKEN` 필요.
+- 요청: `{ "visitAmount": 30000 }` — 손님이 낸 결제 금액(**쿠폰 할인 전**, 원). 쿠폰 할인 · 수수료는 서버가 계산한다(FR-RSV-09).
+- `confirmed` → `visited`. `visitAmount` · `visitedAt`을 남긴다. 응답 `200`: `Reservation`.
+- 쿠폰은 바꾸지 않는다. 적용된 쿠폰은 '예약에 적용됨' 그대로이고, 사용 완료는 사장님이 따로 확인한다(FR-RSV-09 #3, FR-CPN-08).
+- 실패:
+  - `invalid` — `visitAmount` 없음 · 음수 · 10,000,000 초과(FR-RSV-09 #2)
+  - `not_found` — 없는 예약 · 다른 가게 예약
+  - `conflict` — `confirmed`가 아님(신청 · 취소 · 이미 방문)
+  - `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+#### '방문 처리됨' 이벤트 `VisitProcessedEvent` (서버 내부, D11)
+
+방문 처리하면 `ReservationStatusChangedEvent`(`confirmed` → `visited`)와 함께 `VisitProcessedEvent(reservationId, storeId, customerId, visitAmount, visitedAt, courseProposalId, senderStoreId)`를 같은 트랜잭션에서 내보낸다. 받는 쪽은 D11 코드를 고치지 않는다.
+
+| 받는 쪽 | 받는 방법 | 할 일 |
+| --- | --- | --- |
+| 소개 판정 (E15) | `@EventListener` (같은 트랜잭션) | `courseProposalId`가 있으면 소개 확정(예약 건당 1번), 수락률 분자 |
+| 소개 수수료 (D15) | `@EventListener` | 소개 확정이면 (방문 금액 − 쿠폰 할인) × 수수료율 → 가게 → 기금(FR-STL-02) |
+| 쿠폰 할인 계산 (E14) | `@EventListener` | 적용 쿠폰의 실제 할인액 기록(사용 완료로 바꾸지 않음) |
+| 방문 금액 알림 (D21 · C14) | `@TransactionalEventListener` (커밋 뒤) | 회원에게 방문 금액 알림(FR-STL-07) |
+| 고객 카드 · 방문 횟수 (C) | `@EventListener` 또는 커밋 뒤 | 마지막 방문 · 방문 횟수 |
+
+`senderStoreId`는 서버 안에서만 쓴다. 응답 · 알림에 내보내지 않는다(FR-CUS-05).
+
 #### 정책에 따라 정한 것 (D3 · D4)
 
 | 항목 | 정한 것 | 근거 |
@@ -466,6 +495,8 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 | 가린 이름 | 첫 글자와 마지막 글자만 남기고 가운데를 `*`(김로코 → 김\*코). 두 글자면 첫 글자 + `*`(김코 → 김\*) | 07-screens O-01 · O-13 '가린 이름' |
 | 예약 시각이 지난 신청 승인 | 거절(`conflict`). 자동 거절 대상이다 | FR-RSV-03 "예약 시각까지 승인되지 않은 신청 예약은 자동 거절" |
 | 날짜 목록의 날짜 | 운영 시간대 기준 `startAt`의 날짜 | 05-policy "서비스 운영 시간대" |
+| 방문 금액 범위 (D11) | 0 ~ 10,000,000원. 0원 방문도 기록할 수 있다(쿠폰으로 전액 할인 등) | 입력 실수 방지. 기획에 상한 없음 |
+| 방문 처리 시각 제한 (D11) | 두지 않는다. 확정 예약이면 예약 시각 전 · 후 언제든(자동 취소되기 전까지) | FR-RSV-09 "손님이 왔을 때" |
 
 ### 가상 잔액 · 거래 내역 (D9)
 

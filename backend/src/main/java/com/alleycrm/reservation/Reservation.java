@@ -70,6 +70,20 @@ public class Reservation {
     @Column(name = "canceled_at")
     private Instant canceledAt;
 
+    @Column(name = "visited_at")
+    private Instant visitedAt;
+
+    /** 방문 처리 때 사장님이 넣은 결제 금액(쿠폰 할인 전) */
+    @Column(name = "visit_amount")
+    private Integer visitAmount;
+
+    /** 확정 → 방문(D11). 상태 확인은 부르는 쪽(ReservationStateService)이 한다 */
+    void visit(int amount, Instant now) {
+        this.status = ReservationStatus.VISITED;
+        this.visitAmount = amount;
+        this.visitedAt = now;
+    }
+
     /** 신청 → 확정(D3). 상태 확인은 부르는 쪽(ReservationStateService)이 한다 */
     void confirm(Instant now) {
         this.status = ReservationStatus.CONFIRMED;

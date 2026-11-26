@@ -18,7 +18,9 @@ public record ReservationResponse(
         int depositAmount,
         AppliedCoupon coupon,
         String courseRootId,
-        boolean fromRecommendation) {
+        boolean fromRecommendation,
+        Integer visitAmount,
+        Instant visitedAt) {
 
     public record AppliedCoupon(String couponId, int discountAmount) {
     }
@@ -37,6 +39,8 @@ public record ReservationResponse(
                 r.getDepositAmount(),
                 coupon,
                 r.getCourseRootId() == null ? null : String.valueOf(r.getCourseRootId()),
-                r.getCourseProposalId() != null);
+                r.getCourseProposalId() != null,
+                r.getVisitAmount(),
+                r.getVisitedAt());
     }
 }
