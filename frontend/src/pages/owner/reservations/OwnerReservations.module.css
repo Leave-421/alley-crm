@@ -235,3 +235,47 @@
   font-size: var(--text-md);
   line-height: var(--leading-normal);
 }
+
+/* 적용된 쿠폰: 글자 + 앞 표시로도 구분(NFR-11) */
+.couponTag {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border: 1px dashed var(--color-berry-500);
+  border-radius: var(--radius-pill);
+  color: var(--color-ink-800);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+}
+
+.couponTag::before {
+  content: '◇ ';
+}
+
+/* 방문 처리 미리보기: 방문 금액 → 쿠폰 할인 → 할인 후 금액 → 소개 수수료 */
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-gray-50);
+  font-size: var(--text-md);
+}
+
+.preview div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.preview dt {
+  color: var(--color-text-muted);
+}
+
+.preview dd {
+  margin: 0;
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
