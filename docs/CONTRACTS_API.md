@@ -561,6 +561,43 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 | 방문 금액 범위 (D11) | 0 ~ 10,000,000원. 0원 방문도 기록할 수 있다(쿠폰으로 전액 할인 등) | 입력 실수 방지. 기획에 상한 없음 |
 | 방문 처리 시각 제한 (D11) | 두지 않는다. 확정 예약이면 예약 시각 전 · 후 언제든(자동 취소되기 전까지) | FR-RSV-09 "손님이 왔을 때" |
 
+### 사장님 소개 수수료 내역 · 소개 실적 (D16)
+
+내 가게는 로그인 계정으로 정한다. **보낸 가게 id · 이름은 넣지 않는다**(FR-CUS-05). 수수료 행은 D15가 방문 처리 때 만든다.
+
+#### `GET /api/v1/owner/referral-fees?month=2026-11` — 월별 수수료 내역 (O-08 · O-15, FR-STL-03)
+
+- 역할: 사장님. `month`(필수, `YYYY-MM`)는 정산 달 = 방문 처리된 달.
+- 응답 `200`:
+
+```json
+{
+  "month": "2026-11",
+  "settlementStatus": null,
+  "referralFeeRate": 0.04,
+  "count": 1,
+  "totalFee": 1000,
+  "totalCouponCost": 5000,
+  "items": [
+    { "reservationId": "string", "reservationNo": "K7Q2M9XA", "maskedName": "김*코", "visitedAt": "2026-11-10T10:00:00Z",
+      "visitAmount": 30000, "couponDiscount": 5000, "feeBase": 25000, "feeRate": 0.04, "feeAmount": 1000, "couponCost": 5000 }
+  ]
+}
+```
+
+  - `settlementStatus`: 그 달 월 정산(D17) 상태 `aggregated` · `confirmed`, 아직 없으면 `null`(화면의 '잠정').
+  - `referralFeeRate`: 지금 설정값. 건별 `feeRate`는 그 수수료가 생길 때 값이다(NFR-04).
+  - `couponCost`: 내 가게가 낸 쿠폰 비용(수수료와 따로, FR-STL-02).
+- 실패: `invalid`(month 형식) · `unauthorized` · `forbidden_role`
+
+#### `GET /api/v1/owner/referral-stats?month=2026-11` — 소개 실적 (O-08, FR-STL-04)
+
+- 역할: 사장님. `month`는 선택(없으면 전체 기간).
+- 응답 `200`: `{ "month": "2026-11 | null", "sentCount": 3, "receivedCount": 1 }`
+  - `sentCount`: 내 가게 예약에서 만든 코스 제안으로 확정된 소개 수. 내 예약이 취소 · 미방문이어도 센다. 보낸 가게는 돈을 받지 않는다.
+  - `receivedCount`: 내 가게가 받은(수수료를 낸) 확정 소개 수.
+- 실패: `invalid` · `unauthorized` · `forbidden_role`
+
 ### 가상 잔액 · 거래 내역 (D9)
 
 실제 결제는 없다(NFR-02). 잔액이 바뀔 때마다 거래 내역이 한 줄 남는다(FR-STL-06). 회원 잔액은 마이너스가 되지 않고, 가게 잔액은 소개 수수료로 마이너스가 될 수 있다(기획 11-25 (4)).
