@@ -6,8 +6,11 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.math.BigDecimal;
 import java.time.LocalTime;
 import lombok.AccessLevel;
+import org.hibernate.annotations.JdbcType;
+import org.hibernate.type.descriptor.jdbc.LocalTimeJdbcType;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -17,6 +20,9 @@ import lombok.NoArgsConstructor;
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Store {
+
+    /** 영업 상태 `store.businessStatus` 값 중 영업(CONTRACTS.md 「3」) */
+    static final String BUSINESS_OPEN = "open";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -37,15 +43,44 @@ public class Store {
     @Column(name = "join_status", nullable = false, length = 20)
     private String joinStatus;
 
+    // 영업시간은 시간대 없는 벽시계(Asia/Seoul). jdbc.time_zone=UTC 변환을 타면 JVM 시간대만큼 밀려서 드라이버에 그대로 넘긴다
+    @JdbcType(LocalTimeJdbcType.class)
     @Column(name = "open_time")
     private LocalTime openTime;
 
+    @JdbcType(LocalTimeJdbcType.class)
     @Column(name = "close_time")
     private LocalTime closeTime;
 
     /** 휴무 요일 mon,tue,... 빈 값이면 연중무휴 */
     @Column(name = "closed_days", nullable = false, length = 40)
     private String closedDays;
+
+    // 위치 · 주소: 상인회가 관리(C6)
+    @Column(name = "map_x", precision = 7, scale = 4)
+    private BigDecimal mapX;
+
+    @Column(name = "map_y", precision = 7, scale = 4)
+    private BigDecimal mapY;
+
+    @Column(name = "real_lat", precision = 9, scale = 6)
+    private BigDecimal realLat;
+
+    @Column(name = "real_lng", precision = 9, scale = 6)
+    private BigDecimal realLng;
+
+    @Column(name = "real_verified", nullable = false, insertable = false)
+    private boolean realVerified;
+
+    @Column(name = "address", length = 200)
+    private String address;
+
+    // 영업 상태 · 예약 받기: 사장님이 바꾼다(C22). 새 가게는 DB 기본값(open · 받는 중)
+    @Column(name = "business_status", nullable = false, length = 20, insertable = false)
+    private String businessStatus;
+
+    @Column(name = "reservation_enabled", nullable = false, insertable = false)
+    private boolean reservationEnabled;
 
     static Store requested(long regionId, StoreJoinInfo info) {
         Store s = new Store();
@@ -63,6 +98,18 @@ public class Store {
 
     void decide(String status) {
         joinStatus = status;
+    }
+
+    void moveTo(String address, String alley, BigDecimal mapX, BigDecimal mapY) {
+        this.address = address;
+        this.alley = alley;
+        this.mapX = mapX;
+        this.mapY = mapY;
+    }
+
+    /** 지금 예약을 받는 가게: 영업 중이고 예약 받기가 켜져 있음(FR-STO-02). 저장하지 않고 계산한다. */
+    boolean isReservable() {
+        return BUSINESS_OPEN.equals(businessStatus) && reservationEnabled;
     }
 
     private void applyInfo(StoreJoinInfo info) {

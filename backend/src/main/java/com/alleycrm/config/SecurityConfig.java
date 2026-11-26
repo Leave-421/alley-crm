@@ -36,6 +36,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/signup", "/api/v1/auth/login").permitAll()
                         // 가게 가입 신청은 가게 · 사장님 계정을 같이 만든다(C5)
                         .requestMatchers(HttpMethod.POST, "/api/v1/store-joins").permitAll()
+                        // 참여 가게 목록은 지도에서 로그인 없이 본다(C6)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/stores").permitAll()
                         // 예약 신청은 비회원도 한다(D2). 회원 · 역할 판단은 신청 단계 20(C4)
                         .requestMatchers(HttpMethod.POST, "/api/v1/reservations").permitAll()
                         // 예약 가능 시간 조회(D5)도 비회원이 본다

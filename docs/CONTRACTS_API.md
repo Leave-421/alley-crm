@@ -137,6 +137,41 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 - 사장님 기능의 Controller는 `StoreService.requireApprovedOwnStore(me)`로 가게 ID를 얻는다. 사장님이 아니거나 가게가 `approved`가 아니면 `403 forbidden_role`(FR-AUTH-04 #1). 가게 ID는 세션 계정에서만 정하고 요청에서 받지 않는다.
 - 경로에 가게 ID가 있으면 `StoreService.requireApprovedOwnStore(me, storeId)` — 다른 가게면 `404 not_found`(IDOR).
 
+### 가게 목록 · 위치 (C6)
+
+권역의 참여 가게 목록(FR-STO-02). 손님 지도(G-01)와 상인회 가게 관리(A-05)가 같이 쓴다. 목록 · 지도 위치 · 주소는 상인회가 관리하고, 영업 상태 · 예약 받기 · 영업시간 · 휴무일은 사장님이 바꾼다(C22).
+
+**가게 `Store`**
+
+```json
+{
+  "id": "string", "regionId": "string", "name": "string", "category": "cafe", "alley": "center",
+  "mapX": 30.0, "mapY": 30.0, "realLat": null, "realLng": null, "address": "string | null",
+  "openTime": "10:00", "closeTime": "22:00", "closedDays": ["mon"],
+  "businessStatus": "open", "reservationEnabled": true, "reservable": true, "joinStatus": "approved"
+}
+```
+
+- `category` · `alley` · `closedDays` · `businessStatus` · `joinStatus`: `CONTRACTS.md` 「3」 `store.*`.
+- `mapX` · `mapY`: 골목 안 표시 좌표(비어 있으면 `null`). `realLat` · `realLng`: 검증된 실제 좌표만, 아니면 `null`.
+- `openTime` · `closeTime`: `HH:mm`(Asia/Seoul 벽시계). 승인 전 값이 없으면 `null`.
+- `reservable`: 지금 예약을 받는 가게인지 — `businessStatus`가 `open`이고 `reservationEnabled`가 `true`. 저장하지 않고 계산한다. 슬롯 · 영업시간 계산은 D5.
+
+#### `GET /api/v1/stores` — 권역의 참여 가게 목록
+
+- 역할: 누구나(로그인 불필요).
+- 쿼리: `regionId`(필수).
+- 참여 가게만: `joinStatus`가 `approved` · `withdraw_requested`. ID순.
+- 응답 `200`: `{ "items": [Store] }` — 권역 가게 전체를 한 번에 준다(페이지 없음, 권역당 수십 곳이라 지도가 전부 필요). 공통 페이지네이션 규칙의 예외.
+- 실패: `invalid`(`regionId` 없음 · 형식) · `not_found`(없는 권역)
+
+#### `PUT /api/v1/stores/{storeId}/location` — 가게 위치 · 주소 수정
+
+- 역할: 상인회. 자기 권역 가게만(다른 권역 가게는 `404`). 사장님 · 손님은 `403 forbidden_role`(FR-STO-02 #3). `X-XSRF-TOKEN` 필요.
+- 요청: `{ "address": "string | null", "alley": "center", "mapX": 30.0, "mapY": 30.0 }` — `address` 200자 이하, `alley` 값 목록 안, `mapX` · `mapY` −999.9999 ~ 999.9999(소수 넷째 자리까지) 또는 `null`.
+- 응답 `200`: `Store`
+- 실패: `invalid` · `not_found` · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
 ### 알림 (C14)
 
 앱 · 웹 안 알림함(G-11 손님 · O-10 사장님). 실제 문자 · 카카오 발송은 없다. 알림을 받는 쪽은 계정(회원 · 사장님) 또는 비회원 예약이다(`CONTRACTS.md` 「3」 `notification.recipientType`).
