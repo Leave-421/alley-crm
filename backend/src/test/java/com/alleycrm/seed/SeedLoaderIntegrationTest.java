@@ -200,16 +200,16 @@ class SeedLoaderIntegrationTest {
                 WHERE DATE(DATE_ADD(start_at, INTERVAL 9 HOUR)) NOT BETWEEN '2026-09-01' AND '2026-11-30'
                 """, Integer.class)).isZero();
         assertThat(jdbc.queryForObject(
-                "SELECT COUNT(*) FROM reservation WHERE status = visited AND (visit_amount IS NULL OR visited_at IS NULL)",
+                "SELECT COUNT(*) FROM reservation WHERE status = 'visited' AND (visit_amount IS NULL OR visited_at IS NULL)",
                 Integer.class)).isZero();
         assertThat(jdbc.queryForObject(
-                "SELECT COUNT(*) FROM reservation WHERE status = canceled AND (cancel_reason IS NULL OR canceled_at IS NULL)",
+                "SELECT COUNT(*) FROM reservation WHERE status = 'canceled' AND (cancel_reason IS NULL OR canceled_at IS NULL)",
                 Integer.class)).isZero();
         assertThat(jdbc.queryForList("SELECT DISTINCT status FROM reservation", String.class))
                 .containsExactlyInAnyOrder("visited", "canceled");
         assertThat(jdbc.queryForObject("""
                 SELECT COUNT(*) FROM reservation r JOIN customer c ON c.id = r.customer_id
-                WHERE r.status = visited AND (c.last_visit_at IS NULL OR c.last_visit_at < r.visited_at)
+                WHERE r.status = 'visited' AND (c.last_visit_at IS NULL OR c.last_visit_at < r.visited_at)
                 """, Integer.class)).isZero();
     }
 
