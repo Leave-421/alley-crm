@@ -1,0 +1,237 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: var(--layout-max-width);
+  margin: 0 auto;
+  padding: var(--space-2) var(--layout-gutter) var(--space-6);
+}
+
+.dayHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.dayNav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.navButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-ink-800);
+  font-size: var(--text-xl);
+  cursor: pointer;
+}
+
+.dayTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-heading);
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-tight);
+}
+
+.todayChip {
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+}
+
+.summary {
+  color: var(--color-ink-800);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+}
+
+.rules {
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-gray-50);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.kpi {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-surface-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.kpi dt {
+  color: var(--color-text-muted);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+}
+
+.kpi dd {
+  margin: 0;
+  color: var(--color-heading);
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-bold);
+}
+
+.message {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-4);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+}
+
+/* 넓은 화면에서는 카드를 두 줄 이상으로 놓는다 */
+.list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  height: 100%;
+  padding: var(--space-4);
+  border: 1px solid var(--color-surface-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+/* 취소 예약은 흐리게(배지 글자 · 취소선으로도 구분) */
+.cardCanceled {
+  box-shadow: none;
+  opacity: 0.75;
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.cardWho {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  color: var(--color-ink-900);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+}
+
+.cardTime {
+  color: var(--color-heading);
+  font-size: var(--text-xl);
+  font-variant-numeric: tabular-nums;
+}
+
+.cardMeta {
+  color: var(--color-text-muted);
+  font-size: var(--text-md);
+}
+
+.cancelReason {
+  color: var(--color-ink-800);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+}
+
+/* 추천 경유는 글자 + 앞 표시로도 구분한다(색만으로 나누지 않음, NFR-11) */
+.fromRecommendation {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--color-peach-100);
+  color: var(--color-rust-600);
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+}
+
+.fromRecommendation::before {
+  content: '★ ';
+}
+
+.notice {
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-pink-50);
+  color: var(--color-ink-800);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+}
+
+/* 신청 예약의 승인 · 거절(B7) */
+.decision {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: auto;
+  padding-top: var(--space-2);
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.warning {
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--color-berry-500);
+  border-radius: var(--radius-sm);
+  background: var(--color-pink-50);
+  color: var(--color-ink-800);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+}
+
+.error {
+  color: var(--color-danger-text);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.error::before {
+  content: '! ';
+}
+
+/* 방문 처리(B8): 소개 수수료 안내 */
+.feeNote {
+  color: var(--color-ink-800);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+}

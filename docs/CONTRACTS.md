@@ -44,6 +44,8 @@ D1(#12)에서 정한 enum 값의 **유일한 목록**이다. DB에는 이 문자
 | 추천 피드백 `feedback.type` | `reject` 거절 · `reroll` 리롤 |
 | 오늘의 코스 기록 `type` | `impression` 노출 · `click` 클릭 |
 | 요일 구분 `dayType` | `weekday` 평일 · `weekend` 주말 |
+| 시간대 `timeBand` | `night` 00 ~ 06시 · `morning` 06 ~ 11시 · `lunch` 11 ~ 14시 · `afternoon` 14 ~ 17시 · `evening` 17 ~ 21시 · `late` 21 ~ 24시 (운영 시간대, 서울시 추정매출 6구간 그대로. E2) |
+| 공공데이터 종류 `publicStat.kind` | `attractiveness` 매력도(업종 매출 비중) · `clq` 업종 동반 입지(A → B) · `day_share` 요일 비중 · `time_band_share` 시간대 비중 · `gender_share` 성별 비중 · `age_share` 연령대 비중. 모두 관측값이고, 교차값(요일 × 시간대 · 성별 × 연령대)은 저장하지 않고 추천 계산 때 곱해 추정한다(결정 11-26). 표 `public_stat` 행은 모두 외부 공개 통계(`dataSource = public`)이고 행마다 `source` · `period`(화면 출처 표시)가 있다. E2 |
 | 쿠폰 혜택 `benefitType` | `fixed_discount` 정액 할인 · `percent_discount` 정률 할인(정수 1 ~ 50%, 최대 할인액 선택, 1원 미만 버림) · `service` 서비스 제공 (11-25) |
 | 쿠폰 상태 `coupon.status` | `downloaded` 다운로드됨 · `applied` 예약에 적용됨 · `used` 사용 완료 · `expired` 기간 만료 · `apply_canceled` 적용 취소 |
 | 쿠폰 발급 주체 `coupon.issuerKind` | `store` 가게 쿠폰(가게 부담) · `association` 상인회 쿠폰(공동 기금 부담) (11-25 (5)) |
@@ -57,7 +59,6 @@ D1(#12)에서 정한 enum 값의 **유일한 목록**이다. DB에는 이 문자
 | 알림 받는 쪽 `notification.recipientType` | `account` 계정(회원 · 사장님) · `guest_reservation` 비회원 예약 |
 | 알림 종류 `notification.type` | `reservation_requested` 새 예약 · `reservation_confirmed` 확정 · `reservation_rejected` 거절 · `reservation_canceled` 취소 · `change_requested` 변경 요청 · `change_approved` 변경 승인 · `change_rejected` 변경 거절 · `reminder` 리마인드 · `delay_reported` 지연 입력 · `next_store_recommended` 다음 가게 추천 · `coupon_status` 쿠폰 상태 · `store_join_result` 가게 가입 결과. 종류를 늘리는 것은 C14에서 이 표를 고친다 11-25 (5)로 더함: `visit_amount_recorded` 방문 금액(회원) · `association_coupon_opened` 상인회 쿠폰 행사(회원) · `visit_report_check_requested` 신고 확인 요청(사장님). |
 
-- 공공데이터 통계의 `kind` · 시간대 `timeBand` 값은 E2에서 이 표에 더한다.
 - API JSON 필드 이름은 camelCase(`joinStatus`), DB 칸 이름은 snake_case(`join_status`)다. 값은 둘 다 위 문자열 그대로다.
 
 ### 설정값 키
