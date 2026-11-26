@@ -1,5 +1,6 @@
 import { http, HttpResponse } from 'msw/http';
 import { errorResponse, rejectAnonymous, rejectInvalidCsrf } from '../responses.js';
+import { getMockAccount } from '../session.js';
 
 // CONTRACTS_API.md 「2. 예약 · 잔액 · 수수료 · 정산 · 서버 시계 (담당 D)」의 목.
 // 계약이 main에 머지된 엔드포인트만 더한다. 계약이 없는 API의 목은 지어내지 않는다.
@@ -16,7 +17,56 @@ function clockResponse(realNowMs = Date.now()) {
   });
 }
 
+/** 사장님 API의 역할 검사: 로그인 안 함 401, 사장님이 아니면 403 forbidden_role. 통과하면 null. */
+function rejectNonOwner() {
+  return rejectAnonymous() ?? (getMockAccount().role === 'owner' ? null : errorResponse(403, 'forbidden_role', '사장님만 볼 수 있어요.'));
+}
+
+// 날짜별 예약 목록(D4)의 목 예약. 어느 날짜를 열어도 상태 · 취소 사유 · 추천 여부 · 회원 여부를 모두 볼 수 있게
+// 같은 하루치를 그 날짜 시각으로 만든다. 시각은 운영 시간대(Asia/Seoul) 벽시계.
+const MOCK_DAY = [
+  { time: '17:30', partySize: 2, status: 'visited', cancelReason: null, customerType: 'member', maskedName: '이*우', fromRecommendation: false, requestNote: null, depositAmount: 0 },
+  { time: '18:00', partySize: 3, status: 'confirmed', cancelReason: null, customerType: 'member', maskedName: '김*연', fromRecommendation: true, requestNote: null, depositAmount: 15000 },
+  { time: '18:30', partySize: 2, status: 'canceled', cancelReason: 'customer_canceled', customerType: 'member', maskedName: '박*율', fromRecommendation: false, requestNote: null, depositAmount: 10000 },
+  { time: '19:00', partySize: 2, status: 'confirmed', cancelReason: null, customerType: 'guest', maskedName: '김*코', fromRecommendation: false, requestNote: '창가 자리면 좋겠어요', depositAmount: 0 },
+  { time: '19:30', partySize: 4, status: 'canceled', cancelReason: 'store_rejected', customerType: 'guest', maskedName: '정*늘', fromRecommendation: true, requestNote: null, depositAmount: 20000 },
+  { time: '20:00', partySize: 1, status: 'canceled', cancelReason: 'auto_canceled', customerType: 'guest', maskedName: null, fromRecommendation: false, requestNote: null, depositAmount: 0 },
+  { time: '20:30', partySize: 2, status: 'requested', cancelReason: null, customerType: 'member', maskedName: '최*아', fromRecommendation: true, requestNote: '아이 의자 1개', depositAmount: 10000 },
+];
+
+function mockOwnerReservations(date) {
+  const day = date.replaceAll('-', '');
+  return MOCK_DAY.map((item, index) => {
+    const startAt = new Date(`${date}T${item.time}:00+09:00`);
+    return {
+      id: `${day}-${index + 1}`,
+      reservationNo: `K7Q2M9X${'ABCDEFG'[index]}`, // 8자, 헷갈리는 0 O 1 I 없음(계약)
+      startAt: startAt.toISOString(),
+      partySize: item.partySize,
+      status: item.status,
+      cancelReason: item.cancelReason,
+      requestedAt: new Date(startAt.getTime() - 26 * 3_600_000).toISOString(),
+      requestNote: item.requestNote,
+      depositAmount: item.depositAmount,
+      customerType: item.customerType,
+      maskedName: item.maskedName,
+      fromRecommendation: item.fromRecommendation,
+    };
+  });
+}
+
 export const reservationHandlers = [
+  // GET /api/v1/owner/reservations?date= (D4) — 로그인한 사장님 가게의 그 날짜 예약, 시각 순
+  http.get('/api/v1/owner/reservations', ({ request }) => {
+    const blocked = rejectNonOwner();
+    if (blocked) return blocked;
+    const date = new URL(request.url).searchParams.get('date');
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date))) {
+      return errorResponse(400, 'invalid', '날짜를 확인해 주세요.');
+    }
+    return HttpResponse.json({ date, items: mockOwnerReservations(date) });
+  }),
+
   http.get('/api/v1/demo/clock', () => rejectAnonymous() ?? clockResponse()),
 
   http.post('/api/v1/demo/clock', async (info) => {
