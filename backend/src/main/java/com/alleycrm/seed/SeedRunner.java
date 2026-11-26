@@ -94,6 +94,9 @@ class SeedRunner implements ApplicationRunner {
         log.info("[seed] 지운 표 {}개 {}", result.clearedTables().size(), result.clearedTables());
         log.info("[seed] 권역 1개, 가게 {}곳을 넣었습니다.", result.regionStores().storeIdsByCode().size());
         log.info("[seed] 시연 계정 {}", result.demoAccounts());
+        DemoReservationSeeder.Result demo = result.demoReservations();
+        log.info("[seed] 가상 손님 {}명, 예약 {}건(방문 {} · 취소 {})", demo.customers(), demo.reservations(), demo.visited(),
+                demo.canceled());
     }
 
     private void logPlan(SeedRegionData data) {
