@@ -13,9 +13,10 @@ export const customerRoutes = [
     element: <AppLayout menu={CUSTOMER_MENU} />,
     children: [
       { index: true, element: <PlaceholderPage screenId="G-14" title="홈" /> },
-      // 골목 고르기(G-15, A25)는 아직 자리표시. 골목 3D 스크롤(G-01, A1)만 이 이슈에서 만든다
+      // 골목 고르기(G-15, A25)는 아직 자리표시
       { path: 'alleys', handle: { title: '골목 고르기' }, element: <PlaceholderPage screenId="G-15" title="골목 고르기" /> },
-      { path: 'alleys/:alley', element: <AlleyScreen /> },
+      // 예약하기(G-02)는 A4의 '예약하기' 바가 가리키는 자리표시. 실제 화면은 A8(#28)에서 만든다
+      { path: 'alleys/:alley/reserve', handle: { title: '예약하기' }, element: <PlaceholderPage screenId="G-02" title="예약하기" /> },
       { path: 'reservations', handle: { title: '내 예약' }, element: <PlaceholderPage screenId="G-04" title="내 예약" /> },
       { path: 'my', handle: { title: '마이' }, element: <PlaceholderPage screenId="G-10" title="마이" /> },
       { path: 'notifications', handle: { title: '알림함' }, element: <PlaceholderPage screenId="G-11" title="알림함" /> },
@@ -23,4 +24,6 @@ export const customerRoutes = [
       { path: 'guest-reservation', handle: { title: '비회원 예약 조회' }, element: <PlaceholderPage screenId="G-13" title="비회원 예약 조회" /> },
     ],
   },
+  // 골목(G-01, A1 · A4)은 확정 목업처럼 화면 전체를 3D 골목으로 쓰고 자체 머리말을 둔다(공통 머리말 · 하단 탭 없음)
+  { path: '/alleys/:alley', element: <AlleyScreen /> },
 ];

@@ -45,8 +45,9 @@ class OwnerReservationController {
     private static final String ITEM_COLUMNS = """
             SELECT r.id, r.reservation_no, r.start_at, r.party_size, r.status, r.cancel_reason, r.requested_at,
                    r.request_note, r.deposit_amount, r.course_proposal_id, r.visit_amount, r.visited_at,
-                   c.type AS customer_type, c.name
+                   c.type AS customer_type, c.name, f.fee_amount AS referral_fee
             FROM reservation r JOIN customer c ON c.id = r.customer_id
+            LEFT JOIN referral_fee f ON f.reservation_id = r.id
             """;
 
     private final ReservationStateService states;
@@ -93,6 +94,10 @@ class OwnerReservationController {
                 ReservationResponse.of(r, couponApply.appliedCouponFor(r.getId())), Map.class));
         out.put("couponDiscountAmount", couponVisit.discountFor(r.getId(), r.getVisitAmount())
                 .map(VisitCouponDiscount::discountAmount).orElse(null));
+        // 소개 확정 · 수수료: 방문 처리와 같은 트랜잭션에서 D15가 만든 수수료 행
+        Integer fee = referralFee(r.getId());
+        out.put("referralConfirmed", fee != null);
+        out.put("referralFee", fee);
         return out;
     }
 
@@ -132,6 +137,13 @@ class OwnerReservationController {
         return out;
     }
 
+    /** 확정된 소개 수수료(원). 소개가 아니면 null */
+    private Integer referralFee(long reservationId) {
+        List<Integer> fees = jdbc.queryForList("SELECT fee_amount FROM referral_fee WHERE reservation_id = ?",
+                Integer.class, reservationId);
+        return fees.isEmpty() ? null : fees.get(0);
+    }
+
     /** 소개 수수료율(설정값, NFR-04). 화면의 수수료 미리보기용 */
     private BigDecimal referralFeeRate(long storeId) {
         Long regionId = jdbc.queryForObject("SELECT region_id FROM store WHERE id = ?", Long.class, storeId);
@@ -155,7 +167,9 @@ class OwnerReservationController {
                 rs.getObject("course_proposal_id") != null,
                 (Integer) rs.getObject("visit_amount"),
                 instant(rs.getObject("visited_at", LocalDateTime.class)),
-                couponApply.appliedCouponFor(id));
+                couponApply.appliedCouponFor(id),
+                rs.getObject("referral_fee") != null,
+                (Integer) rs.getObject("referral_fee"));
     }
 
     /**
@@ -176,7 +190,9 @@ class OwnerReservationController {
             boolean fromRecommendation,
             Integer visitAmount,
             Instant visitedAt,
-            AppliedCoupon coupon) {
+            AppliedCoupon coupon,
+            boolean referralConfirmed,
+            Integer referralFee) {
     }
 
     private static LocalDateTime utc(Instant t) {
