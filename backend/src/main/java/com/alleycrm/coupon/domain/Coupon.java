@@ -49,6 +49,13 @@ public class Coupon {
     @Column(name = "reservation_id")
     private Long reservationId;
 
+    /** 방문 처리 때 정한 실제 할인액(원). 서비스 제공 쿠폰은 0. */
+    @Column(name = "discount_applied")
+    private Integer discountApplied;
+
+    @Column(name = "used_at")
+    private LocalDateTime usedAt;
+
     protected Coupon() {
     }
 
@@ -117,7 +124,32 @@ public class Coupon {
         return status;
     }
 
+    /** 방문 처리 때 실제 할인액을 남긴다. 상태는 '예약에 적용됨' 그대로다(FR-CPN-08). */
+    public void recordDiscount(int discount) {
+        if (status != CouponStatus.APPLIED) {
+            throw new IllegalStateException("예약에 적용된 쿠폰만 할인액을 남긴다: " + status);
+        }
+        this.discountApplied = discount;
+    }
+
+    /** 사장님 사용 확인(FR-CPN-08 #1). 방문 처리됐는지는 부르는 쪽이 확인한다. */
+    public void markUsed(LocalDateTime now) {
+        if (status != CouponStatus.APPLIED) {
+            throw new IllegalStateException("예약에 적용된 쿠폰만 사용 확인한다: " + status);
+        }
+        this.status = CouponStatus.USED;
+        this.usedAt = now;
+    }
+
     public Long getReservationId() {
         return reservationId;
+    }
+
+    public Integer getDiscountApplied() {
+        return discountApplied;
+    }
+
+    public LocalDateTime getUsedAt() {
+        return usedAt;
     }
 }

@@ -84,6 +84,28 @@ public class CouponApplyService {
         coupon.applyTo(reservationId);
         // 같은 신청 트랜잭션에서 SQL로 쿠폰을 읽는 코드도 적용된 상태를 보도록 바로 반영한다
         coupons.saveAndFlush(coupon);
+        return toApplied(coupon);
+    }
+
+    /**
+     * 예약에 적용 · 사용된 쿠폰(3.5 모양). 없으면 null. 사장님 예약 응답(D3 · D4 · D11)이 {@code coupon} 칸을 채울 때 부른다
+     * (CONTRACTS_API 3.6 S-1).
+     */
+    @Transactional(readOnly = true)
+    public AppliedCoupon appliedCouponFor(long reservationId) {
+        return coupons.findByReservationIdAndStatusIn(reservationId, List.of(CouponStatus.APPLIED, CouponStatus.USED))
+                .filter(coupon -> coupon.getCouponPolicyId() != null) // 상인회 쿠폰은 E20이 더한다
+                .map(this::toApplied)
+                .orElse(null);
+    }
+
+    /** 방문 전 취소 · 거절된 예약의 적용 쿠폰을 '적용 취소'로(FR-CPN-05 #4). 다른 예약에 다시 주지 않는다. */
+    @Transactional
+    public void cancelForReservation(long reservationId) {
+        coupons.changeStatusOfReservation(reservationId, CouponStatus.APPLIED, CouponStatus.APPLY_CANCELED);
+    }
+
+    private AppliedCoupon toApplied(Coupon coupon) {
         CouponPolicy event = events.findById(coupon.getCouponPolicyId())
                 .orElseThrow(() -> new IllegalStateException("쿠폰의 행사가 없다: " + coupon.getCouponPolicyId()));
         return new AppliedCoupon(
@@ -93,12 +115,6 @@ public class CouponApplyService {
                 event.getDiscountPercent(),
                 event.getMaxDiscountAmount(),
                 event.getServiceName());
-    }
-
-    /** 방문 전 취소 · 거절된 예약의 적용 쿠폰을 '적용 취소'로(FR-CPN-05 #4). 다른 예약에 다시 주지 않는다. */
-    @Transactional
-    public void cancelForReservation(long reservationId) {
-        coupons.cancelApplied(reservationId, CouponStatus.APPLIED, CouponStatus.APPLY_CANCELED);
     }
 
     /** DB 칸이 DATETIME(6)이라 마이크로초까지만 쓴다. 값은 UTC. */
