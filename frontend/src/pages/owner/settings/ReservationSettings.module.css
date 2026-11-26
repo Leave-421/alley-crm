@@ -175,3 +175,27 @@
   font-size: var(--text-md);
   line-height: var(--leading-normal);
 }
+
+/* 보기만 하는 값(O-12 주소 · 지도 위치). O-12 가게 정보도 이 파일의 틀을 같이 쓴다 */
+.facts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  font-size: var(--text-md);
+}
+
+.facts div {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: var(--space-2);
+}
+
+.facts dt {
+  color: var(--color-text-muted);
+  font-weight: var(--weight-semibold);
+}
+
+.facts dd {
+  margin: 0;
+}

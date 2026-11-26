@@ -136,9 +136,10 @@ export default function OwnerReservationsPage() {
 
       <p className={styles.rules}>{AUTO_RULES}</p>
 
-      {/* O-01 → O-03 '예약 운영 설정'(07-screens O-01 이동, B10) */}
+      {/* O-01 → O-03 '예약 운영 설정'(B10) · O-12 '가게 정보'(B24)(07-screens O-01 이동) */}
       <nav className={styles.links} aria-label="예약 관리 바로가기">
         <Link to="/owner/settings">예약 운영 설정 ›</Link>
+        <Link to="/owner/store">가게 정보 ›</Link>
       </nav>
 
       {notice && (
