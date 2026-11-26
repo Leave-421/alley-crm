@@ -59,7 +59,8 @@ export default function SettlementPage() {
           <MonthlyFees
             month={month}
             isThisMonth={month === thisMonth}
-            onMove={(delta) => setSelected(addMonths(month, delta))}
+            // 빠르게 여러 번 눌러도 누른 만큼 움직이게 앞 값 기준으로 계산한다(#241)
+            onMove={(delta) => setSelected((previous) => addMonths(previous ?? thisMonth, delta))}
             onThisMonth={() => setSelected(null)}
           />
           <ReferralStats month={month} />

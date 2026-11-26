@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { getClock } from '@/api/demoClock.js';
 import { getOwnerReservations } from '@/api/ownerReservations.js';
@@ -71,6 +71,20 @@ export default function OwnerReservationsPage() {
     setSearchParams(nextKey === todayKey ? {} : { date: nextKey });
   }
 
+  // 마지막으로 옮기라고 한 날짜. setSearchParams는 함수로 넘겨도 그린 때의 주소를 기준으로 해서,
+  // 화면이 다시 그려지기 전에 여러 번 누르면 한 칸만 움직인다(#241). 화면 날짜가 바뀌면(뒤로 가기 포함) 맞춰 둔다.
+  const requestedDateRef = useRef(dateKey);
+  useEffect(() => {
+    requestedDateRef.current = dateKey;
+  }, [dateKey]);
+
+  /** 날짜를 days만큼 옮긴다. 빠르게 여러 번 눌러도 누른 만큼 움직인다. */
+  function moveBy(days) {
+    const nextKey = addDays(requestedDateRef.current ?? dateKey, days);
+    requestedDateRef.current = nextKey;
+    moveTo(nextKey);
+  }
+
   /**
    * 승인 · 거절(B7) · 방문 처리(B8) 결과를 목록에 반영한다. 응답 Reservation에는 손님 이름 · 회원 여부가 없어
    * 상태 · 방문 · 쿠폰 칸만 바꾼다(거절이면 쿠폰은 적용 취소라 null). 쿠폰 사용 확인처럼 예약이 바뀌지 않으면 reservation 없이 안내만 한다.
@@ -110,14 +124,14 @@ export default function OwnerReservationsPage() {
     <main className={styles.page}>
       <header className={styles.dayHead}>
         <div className={styles.dayNav}>
-          <button type="button" className={styles.navButton} onClick={() => moveTo(addDays(dateKey, -1))} aria-label="이전 날">
+          <button type="button" className={styles.navButton} onClick={() => moveBy(-1)} aria-label="이전 날">
             ‹
           </button>
           <h1 className={styles.dayTitle}>
             {isToday && <span className={styles.todayChip}>오늘</span>}
             {formatDayLabel(dateKey)}
           </h1>
-          <button type="button" className={styles.navButton} onClick={() => moveTo(addDays(dateKey, 1))} aria-label="다음 날">
+          <button type="button" className={styles.navButton} onClick={() => moveBy(1)} aria-label="다음 날">
             ›
           </button>
         </div>
