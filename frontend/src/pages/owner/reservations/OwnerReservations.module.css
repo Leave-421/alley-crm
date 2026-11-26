@@ -184,3 +184,47 @@
 .fromRecommendation::before {
   content: '★ ';
 }
+
+.notice {
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-pink-50);
+  color: var(--color-ink-800);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+}
+
+/* 신청 예약의 승인 · 거절(B7) */
+.decision {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: auto;
+  padding-top: var(--space-2);
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.warning {
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--color-berry-500);
+  border-radius: var(--radius-sm);
+  background: var(--color-pink-50);
+  color: var(--color-ink-800);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+}
+
+.error {
+  color: var(--color-danger-text);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.error::before {
+  content: '! ';
+}

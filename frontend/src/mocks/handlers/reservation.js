@@ -32,19 +32,25 @@ const MOCK_DAY = [
   { time: '19:30', partySize: 4, status: 'canceled', cancelReason: 'store_rejected', customerType: 'guest', maskedName: '정*늘', fromRecommendation: true, requestNote: null, depositAmount: 20000 },
   { time: '20:00', partySize: 1, status: 'canceled', cancelReason: 'auto_canceled', customerType: 'guest', maskedName: null, fromRecommendation: false, requestNote: null, depositAmount: 0 },
   { time: '20:30', partySize: 2, status: 'requested', cancelReason: null, customerType: 'member', maskedName: '최*아', fromRecommendation: true, requestNote: '아이 의자 1개', depositAmount: 10000 },
+  { time: '21:30', partySize: 3, status: 'requested', cancelReason: null, customerType: 'guest', maskedName: '한*름', fromRecommendation: false, requestNote: null, depositAmount: 0 },
 ];
+
+// 승인 · 거절(D3)로 바뀐 상태. 예약 id → { status, cancelReason }. 새로고침하면 처음으로 돌아간다.
+const decided = new Map();
 
 function mockOwnerReservations(date) {
   const day = date.replaceAll('-', '');
   return MOCK_DAY.map((item, index) => {
     const startAt = new Date(`${date}T${item.time}:00+09:00`);
+    const id = `${day}-${index + 1}`;
+    const { status, cancelReason } = decided.get(id) ?? item;
     return {
-      id: `${day}-${index + 1}`,
-      reservationNo: `K7Q2M9X${'ABCDEFG'[index]}`, // 8자, 헷갈리는 0 O 1 I 없음(계약)
+      id,
+      reservationNo: `K7Q2M9X${'ABCDEFGH'[index]}`, // 8자, 헷갈리는 0 O 1 I 없음(계약)
       startAt: startAt.toISOString(),
       partySize: item.partySize,
-      status: item.status,
-      cancelReason: item.cancelReason,
+      status,
+      cancelReason,
       requestedAt: new Date(startAt.getTime() - 26 * 3_600_000).toISOString(),
       requestNote: item.requestNote,
       depositAmount: item.depositAmount,
@@ -55,7 +61,40 @@ function mockOwnerReservations(date) {
   });
 }
 
+/** 목 예약 id('YYYYMMDD-n')로 그날 목록에서 찾는다. 없으면 null. */
+function findMockReservation(id) {
+  const match = /^(\d{4})(\d{2})(\d{2})-\d+$/.exec(id);
+  if (!match) return null;
+  return mockOwnerReservations(`${match[1]}-${match[2]}-${match[3]}`).find((item) => item.id === id) ?? null;
+}
+
+/** 목록 항목 → 계약의 Reservation 응답 모양(D2). 손님 이름 · 회원 여부는 넣지 않는다. */
+function toReservation(item) {
+  const { customerType: _customerType, maskedName: _maskedName, ...rest } = item;
+  return { ...rest, storeId: '3', coupon: null, courseRootId: null, visitAmount: null, visitedAt: null };
+}
+
+/** 승인 · 거절 공통: 신청 상태가 아니면 409, 승인은 예약 시각이 지났어도 409(자동 거절 대상). */
+function decideReservation(next) {
+  return (info) => {
+    const blocked = rejectInvalidCsrf(info) ?? rejectNonOwner();
+    if (blocked) return blocked;
+    const found = findMockReservation(info.params.id);
+    if (!found) return errorResponse(404, 'not_found', '예약을 찾을 수 없어요.');
+    if (found.status !== 'requested') return errorResponse(409, 'conflict', '신청 상태인 예약만 처리할 수 있어요.');
+    if (next.status === 'confirmed' && Date.parse(found.startAt) <= Date.now() + offsetMs) {
+      return errorResponse(409, 'conflict', '예약 시각이 지나 승인할 수 없어요. 자동 거절돼요.');
+    }
+    decided.set(found.id, next);
+    return HttpResponse.json(toReservation({ ...found, ...next }));
+  };
+}
+
 export const reservationHandlers = [
+  // POST /api/v1/owner/reservations/{id}/confirm · /reject (D3)
+  http.post('/api/v1/owner/reservations/:id/confirm', decideReservation({ status: 'confirmed', cancelReason: null })),
+  http.post('/api/v1/owner/reservations/:id/reject', decideReservation({ status: 'canceled', cancelReason: 'store_rejected' })),
+
   // GET /api/v1/owner/reservations?date= (D4) — 로그인한 사장님 가게의 그 날짜 예약, 시각 순
   http.get('/api/v1/owner/reservations', ({ request }) => {
     const blocked = rejectNonOwner();

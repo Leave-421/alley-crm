@@ -25,3 +25,13 @@ export const CANCEL_REASON_LABELS = Object.freeze({
 export function getOwnerReservations(date) {
   return api.get('/api/v1/owner/reservations', { query: { date } });
 }
+
+/** 승인(D3): 신청 → 확정. 응답은 Reservation. 신청이 아니거나 예약 시각이 지났으면 409 conflict. */
+export function confirmReservation(id) {
+  return api.post(`/api/v1/owner/reservations/${encodeURIComponent(id)}/confirm`);
+}
+
+/** 거절(D3): 신청 → 취소(가게 거절). 예약금 100% 환불 · 쿠폰 적용 취소는 서버가 한다. 응답은 Reservation. */
+export function rejectReservation(id) {
+  return api.post(`/api/v1/owner/reservations/${encodeURIComponent(id)}/reject`);
+}
