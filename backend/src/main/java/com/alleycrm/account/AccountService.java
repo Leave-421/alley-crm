@@ -3,6 +3,7 @@ package com.alleycrm.account;
 import com.alleycrm.common.error.ApiException;
 import com.alleycrm.common.error.ErrorCode;
 import com.alleycrm.customer.CustomerService;
+import java.util.Optional;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -38,6 +39,15 @@ public class AccountService {
         return saveNew(Account.association(loginId, passwordEncoder.encode(rawPassword), regionId)).toPrincipal();
     }
 
+    /** 사장님 계정 만들기(가게 가입 신청, C5). 가게당 1개 — 이미 있으면 409 conflict(FR-AUTH-04 #2). */
+    @Transactional
+    public AccountPrincipal createOwner(long storeId, String loginId, String rawPassword) {
+        if (accounts.existsByStoreId(storeId)) {
+            throw new ApiException(ErrorCode.CONFLICT, "이 가게에는 이미 사장님 계정이 있습니다.");
+        }
+        return saveNew(Account.owner(loginId, passwordEncoder.encode(rawPassword), storeId)).toPrincipal();
+    }
+
     /** 아이디가 없거나 비밀번호가 틀리면 둘을 구분하지 않고 401 unauthorized. */
     @Transactional(readOnly = true)
     public AccountPrincipal authenticate(String loginId, String rawPassword) {
@@ -47,6 +57,20 @@ public class AccountService {
             throw new ApiException(ErrorCode.UNAUTHORIZED, "아이디 또는 비밀번호가 맞지 않습니다.");
         }
         return account.toPrincipal();
+    }
+
+    /** 세션의 loginId로 계정을 다시 읽는다. 세션 뒤에 계정이 없어졌으면 401 unauthorized. */
+    @Transactional(readOnly = true)
+    public AccountPrincipal getByLoginId(String loginId) {
+        return accounts.findByLoginId(loginId)
+                .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED))
+                .toPrincipal();
+    }
+
+    /** 가게의 사장님 계정 ID(가게당 1개). 아직 사장님 계정이 없으면 비어 있다. */
+    @Transactional(readOnly = true)
+    public Optional<Long> findOwnerAccountId(long storeId) {
+        return accounts.findByStoreId(storeId).map(Account::getId);
     }
 
     private Account saveNew(Account account) {

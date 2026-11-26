@@ -113,7 +113,7 @@ D1(#12)에서 정한 enum 값의 **유일한 목록**이다. DB에는 이 문자
 ## 6. 인증 · 세션 · CSRF
 
 - 서버 세션 쿠키(Spring Security HttpSession). JWT를 쓰지 않는다. 세션 쿠키는 `HttpOnly` · `SameSite=Lax`, HTTPS에서 `Secure`.
-- 기본은 모든 `/api/**`가 로그인 필요다. 로그인 없이 여는 경로는 이 절에 적는다: `GET /api/v1/csrf`, `GET /actuator/health`, `POST /api/v1/auth/signup`, `POST /api/v1/auth/login`. (C3 · C13에서 비회원 조회 · 손님 공개 조회 경로를 더한다.) 로그인 없이 여는 `POST`도 CSRF 토큰은 필요하다.
+- 기본은 모든 `/api/**`가 로그인 필요다. 로그인 없이 여는 경로는 이 절에 적는다: `GET /api/v1/csrf`, `GET /actuator/health`, `POST /api/v1/auth/signup`, `POST /api/v1/auth/login`, `POST /api/v1/store-joins`. (C3 · C13에서 비회원 조회 · 손님 공개 조회 경로를 더한다.) 로그인 없이 여는 `POST`도 CSRF 토큰은 필요하다.
 - 로그인에 성공하면 세션 ID를 새로 발급한다(세션 고정 방지). 로그아웃은 `POST /api/v1/auth/logout`만 받는다.
 - **CSRF:** 앱을 처음 열 때 `GET /api/v1/csrf`를 부르면 `XSRF-TOKEN` 쿠키가 내려온다. 상태 변경 요청(`POST` · `PUT` · `PATCH` · `DELETE`)은 그 값을 `X-XSRF-TOKEN` 헤더로 보낸다. 없거나 틀리면 `403 csrf_invalid`.
 - 로그인 안 된 요청은 리다이렉트하지 않고 `401 unauthorized` JSON으로 응답한다.

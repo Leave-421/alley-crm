@@ -65,7 +65,7 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 - 요청: `{ "loginId": "string", "password": "string" }`
 - 응답 `200`: `Account` + 새 세션 쿠키(세션 ID 재발급)
 - 실패: `invalid`(빈 값) · `unauthorized`(아이디가 없거나 비밀번호가 틀림 — 둘을 구분하지 않는다) · `csrf_invalid`
-- 가게 가입이 승인되지 않은 사장님 계정의 처리는 C5(FR-AUTH-04)에서 정한다.
+- 가게 가입이 승인되지 않은(신청 · 거절) 사장님도 로그인할 수 있다. 가입 상태는 `GET /api/v1/store-joins/mine`으로 보고, 다른 사장님 기능은 승인 전에 `403 forbidden_role`이다(C5, FR-AUTH-04).
 
 ### `POST /api/v1/auth/logout` — 로그아웃 (C2)
 
@@ -78,6 +78,104 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 - 역할: 로그인한 누구나
 - 응답 `200`: `Account`
 - 실패: `unauthorized`
+
+### 가게 가입 (C5)
+
+사장님은 가게 가입을 신청하고, 그 권역 상인회가 승인 · 거절한다(FR-STO-01). 신청이 가게(`joinStatus: requested`)와 사장님 계정을 함께 만든다. 가게당 사장님 계정은 1개, 직원 계정은 없다(FR-AUTH-04).
+
+**가게 가입 `StoreJoin`**
+
+```json
+{
+  "storeId": "string", "regionId": "string", "name": "string",
+  "category": "cafe", "alley": "center",
+  "openTime": "10:00", "closeTime": "22:00", "closedDays": ["mon"],
+  "joinStatus": "requested"
+}
+```
+
+- `category` · `alley` · `closedDays` · `joinStatus`: `CONTRACTS.md` 「3」 `store.*`. `openTime` · `closeTime`: `HH:mm`(Asia/Seoul 벽시계). `closedDays` 빈 목록이면 연중무휴.
+- 가게 정보 요청 칸(아래 `StoreJoinInfo`): `name` 1 ~ 50자, `category` · `alley` 값 목록 안, `openTime` < `closeTime`, `closedDays`는 생략 가능(빈 목록), 같은 요일 중복 불가.
+- `alley`는 신청 때 사장님이 고르고, 지도 위치와 함께 상인회가 관리한다(C6).
+
+#### `POST /api/v1/store-joins` — 가게 가입 신청
+
+- 역할: 누구나(로그인 불필요). `X-XSRF-TOKEN` 필요.
+- 요청: `{ "loginId": "string", "password": "string", "regionId": "string", ...StoreJoinInfo }` — `StoreJoinInfo` = `{ "name", "category", "alley", "openTime", "closeTime", "closedDays" }`. `loginId` · `password` 규칙은 회원가입과 같다.
+- 응답 `201`: `StoreJoin`(`joinStatus: "requested"`). 로그인 세션은 만들지 않는다. 같은 아이디로 로그인하면 승인 전에도 이 가게의 가입 상태를 볼 수 있다.
+- 실패: `invalid` · `not_found`(없는 권역) · `conflict`(이미 쓰는 `loginId`) · `csrf_invalid`
+
+#### `GET /api/v1/store-joins/mine` — 내 가게 가입 상태
+
+- 역할: 사장님(승인 전 · 거절 포함). 손님 · 상인회는 `403 forbidden_role`.
+- 응답 `200`: `StoreJoin`
+- 실패: `unauthorized` · `forbidden_role`
+
+#### `POST /api/v1/store-joins/mine/reapply` — 거절된 가입 다시 신청
+
+- 역할: 사장님. 거절된(`rejected`) 가입만 고친 가게 정보로 다시 신청한다. 받아들일지는 상인회가 정한다.
+- 요청: `StoreJoinInfo`
+- 응답 `200`: `StoreJoin`(`joinStatus: "requested"`)
+- 실패: `invalid` · `conflict`(거절 상태가 아님) · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+#### `GET /api/v1/store-joins` — 권역의 가게 가입 목록
+
+- 역할: 상인회. 자기 권역 가게만. 사장님 · 손님은 `403 forbidden_role`.
+- 쿼리: `status`(선택, 기본 `requested`, `store.joinStatus` 값) + 페이지네이션(공통 규칙). 오래된 신청부터.
+- 응답 `200`: 공통 페이지, `items[]` = `StoreJoin`
+- 실패: `invalid` · `unauthorized` · `forbidden_role`
+
+#### `POST /api/v1/store-joins/{storeId}/approve` · `/reject` — 가입 승인 · 거절
+
+- 역할: 상인회. 자기 권역 가게만(다른 권역 가게는 `404`). `X-XSRF-TOKEN` 필요. 요청 본문 없음.
+- `requested`인 가입만 `approved` · `rejected`로 바꾼다. 커밋 뒤 `StoreJoinDecidedEvent(storeId, joinStatus)`를 내보내고, C14가 그 가게 사장님에게 `store_join_result` 알림(`payload: { "storeId", "joinStatus" }`)을 남긴다.
+- 응답 `200`: `StoreJoin`
+- 실패: `not_found` · `conflict`(신청 상태가 아님) · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+#### 서버 내부: 승인된 사장님 확인 (D · E가 씀)
+
+- 사장님 기능의 Controller는 `StoreService.requireApprovedOwnStore(me)`로 가게 ID를 얻는다. 사장님이 아니거나 가게가 `approved`가 아니면 `403 forbidden_role`(FR-AUTH-04 #1). 가게 ID는 세션 계정에서만 정하고 요청에서 받지 않는다.
+- 경로에 가게 ID가 있으면 `StoreService.requireApprovedOwnStore(me, storeId)` — 다른 가게면 `404 not_found`(IDOR).
+
+### 알림 (C14)
+
+앱 · 웹 안 알림함(G-11 손님 · O-10 사장님). 실제 문자 · 카카오 발송은 없다. 알림을 받는 쪽은 계정(회원 · 사장님) 또는 비회원 예약이다(`CONTRACTS.md` 「3」 `notification.recipientType`).
+
+**알림 `Notification`**
+
+```json
+{ "id": "string", "type": "reservation_requested", "payload": { "reservationId": "string" }, "readAt": null, "createdAt": "2026-11-27T01:00:00Z" }
+```
+
+- `type`: `CONTRACTS.md` 「3」 `notification.type`. 화면 문구는 프론트가 `type`으로 정한다.
+- `payload`: 종류마다 다른 JSON 객체. 화면이 이동 · 표시에 쓰는 ID와 값만 넣고 **손님 개인정보(이름 · 전화번호)와 보낸 가게는 넣지 않는다**(FR-CUS-05). ID는 문자열.
+- `readAt`: 읽은 시각, 안 읽었으면 `null`.
+
+| `type` | 받는 쪽 | `payload` | 만드는 곳 |
+| --- | --- | --- | --- |
+| `reservation_requested` | 그 가게 사장님 | `{ "reservationId" }` | 예약 신청 커밋 뒤(`ReservationRequestedEvent`) |
+| 나머지 종류 | — | 만드는 기능(D · E 이벤트)이 생길 때 C14에서 이 표에 더한다 | — |
+
+#### `GET /api/v1/notifications` — 내 알림 목록
+
+- 역할: 로그인한 계정(회원 · 사장님 · 상인회). 받는 쪽은 로그인 계정으로만 정하고 ID를 받지 않는다. 비회원 예약의 알림은 비회원 예약 조회 제한 세션(C13)에서 연다.
+- 페이지네이션(공통 규칙), 최근 것부터.
+- 응답 `200`: 공통 페이지 + `unreadCount`(종 아이콘 표시용, 전체 안 읽은 수)
+  `{ "items": [Notification], "page": 0, "size": 20, "totalElements": 3, "totalPages": 1, "unreadCount": 2 }`
+- 실패: `invalid`(page · size 범위) · `unauthorized`
+
+#### `POST /api/v1/notifications/{notificationId}/read` — 읽음 처리
+
+- 역할: 그 알림을 받은 계정. 이미 읽은 알림이면 그대로 둔다(처음 읽은 시각 유지).
+- 응답 `204`
+- 실패: `not_found`(없는 알림 · 남의 알림) · `unauthorized` · `csrf_invalid`
+
+#### 서버 내부: `NotificationService` (D · E가 씀)
+
+- 알림은 `NotificationService`로만 만든다. `notification` 테이블에 직접 넣지 않는다.
+- `notifyAccount(accountId, type, payload)` · `notifyGuestReservation(reservationId, type, payload)`. `payload`는 `Map<String, Object>`.
+- **트랜잭션 커밋 뒤에 만든다.** 기능 쪽은 이벤트를 내보내고, C14가 `@TransactionalEventListener`(커밋 뒤)로 받아 알림을 만든다. 롤백된 일에는 알림이 남지 않는다.
+- 생성 시각은 서버 시계(D18)를 따른다.
 
 ## 2. 예약 · 잔액 · 수수료 · 정산 · 서버 시계 (담당 D)
 
@@ -202,7 +300,137 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 | 슬롯이 찼는지 | 같은 가게 · 같은 `start_at`의 `requested` · `confirmed` 예약 수가 `capacity_per_slot` 이상이면 참 | FR-RSV-01 #3, FR-RSV-05 #2 |
 | 동시 신청 | 가게 행을 잠가(`SELECT … FOR UPDATE`) 같은 가게 신청을 한 줄로 세운다. 자리를 넘겨 받지 않는다 | NFR-09 |
 | 승인 전 · 거절 · 탈퇴 가게 | 손님에게 없는 가게로 보고 `404 not_found` | FR-STO-01 |
-| D5가 단계 30에 더할 것 | 영업시간 · 휴무일 · 슬롯 단위 맞춤 · 한 팀 최대 인원(`invalid`) | D5 (#71) |
+| 단계 30의 D5 검사 | 한 팀 최대 인원 초과 → `invalid`. 영업시간 밖 · 휴무일 · 슬롯 단위에 안 맞는 시각 → `slot_unavailable` (아래 「슬롯 계산」) | D5 (#71) |
+
+### 예약 운영 설정 · 슬롯 (D5)
+
+#### 슬롯 계산 (서버 내부 `SlotRules`, 신청 검사 · 예약 가능 시간이 같이 씀)
+
+- 슬롯은 영업 시작 시각(`open_time`)부터 슬롯 단위(`slot_minutes`)로 나눈다. **마지막 슬롯은 영업 종료 시각까지 끝나야 한다**(10:00 ~ 22:00, 30분 → 21:30이 마지막).
+- 종료 시각이 시작 시각보다 이르거나 같으면 다음 날 새벽까지 영업한다(18:00 ~ 02:00). 자정 뒤 슬롯도 **시작한 날(영업일)**의 것이다.
+- 휴무일(`closed_days`)은 영업일의 요일로 판단한다. 영업시간이 비어 있는 가게는 슬롯이 없다.
+- 모든 날짜 · 요일은 운영 시간대(Asia/Seoul).
+
+#### `GET /api/v1/stores/{storeId}/available-slots?date=2026-11-28` — 예약 가능 시간 (G-02)
+
+- 역할: 누구나(로그인 불필요).
+- 응답 `200`:
+
+```json
+{
+  "date": "2026-11-28",
+  "acceptingReservations": true,
+  "maxPartySize": 4,
+  "depositPerPerson": 10000,
+  "slots": [ { "startAt": "2026-11-28T01:00:00Z", "available": false }, { "startAt": "2026-11-28T01:30:00Z", "available": true } ]
+}
+```
+
+  - `slots`: 그 영업일의 모든 슬롯(휴무일이면 빈 목록). `available`은 예약 받는 중 · 예약 가능 기간 안 · 지금 이후 · 자리 남음일 때 `true`.
+  - `acceptingReservations`: 영업 상태가 `open`이고 예약 받기가 켜져 있으면 `true`. `false`면 모든 슬롯이 `available: false`.
+  - `maxPartySize`: `null`이면 제한 없음. 화면은 인원 선택 상한으로 쓴다.
+  - 보였던 슬롯도 신청 순간 자리가 차면 신청이 `slot_unavailable`이 될 수 있다.
+- 실패: `not_found`(없거나 승인 전 가게) · `invalid`(date)
+
+#### `GET` · `PUT /api/v1/owner/reservation-settings` — 예약 운영 설정 (O-03)
+
+- 역할: 사장님(내 가게). `PUT`은 `X-XSRF-TOKEN` 필요. 영업시간 · 휴무일(O-12)과 영업 상태 · 예약 받기는 C22가 맡는다.
+- `PUT` 요청은 **모든 칸을 보낸다**(부분 수정 없음):
+
+```json
+{ "slotMinutes": 30, "capacityPerSlot": 2, "maxPartySize": 4, "bookingWindowDays": 30, "cancelDeadlineHours": 24, "lateCancelRefundRate": 0.5, "depositPerPerson": 10000 }
+```
+
+| 필드 | 범위 | 비고 |
+| --- | --- | --- |
+| `slotMinutes` | 10 ~ 240, 10분 단위 | |
+| `capacityPerSlot` | 1 ~ 50 | 같은 슬롯에 받는 예약 수 |
+| `maxPartySize` | 1 ~ 100 또는 `null` | `null` = 제한 없음 |
+| `bookingWindowDays` | 1 ~ 60 | 기본 30 (기획 11-25 (2)) |
+| `cancelDeadlineHours` | 0 ~ 24 | 예약 시각 몇 시간 전까지 취소. 24시간 전보다 이르게 못 잡음(FR-RSV-05 #1) |
+| `lateCancelRefundRate` | 0 ~ 1(소수 셋째 자리까지) 또는 `null` | `null` = 권역 설정값(`late_cancel_refund_rate`) |
+| `depositPerPerson` | 0 ~ 1,000,000 | 원. 0 = 예약금 없음 |
+
+- 응답 `200`(GET · PUT): 위 칸 + `effectiveLateCancelRefundRate`(실제로 쓰는 환불 비율 = 가게 값, 없으면 권역 값).
+- 바꾼 설정은 그 뒤 신청부터 적용된다. 이미 받은 예약은 그대로다.
+- 실패: `invalid`(범위 밖 · 칸 빠짐) · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+#### 정책에 따라 정한 것 (D5)
+
+| 항목 | 정한 것 | 근거 |
+| --- | --- | --- |
+| 마지막 슬롯 | 영업 종료 시각까지 끝나는 슬롯까지 | FR-RSV-05 '예약 가능 시간' |
+| 새벽 영업 | 종료 ≤ 시작이면 다음 날 새벽까지, 슬롯은 시작한 날 소속 | 주점 업종 |
+| 슬롯 단위 · 동시 예약 수 · 최대 인원 · 예약금 범위 | 위 표 (기획에 범위 없음, 화면 입력 상한용) | — |
+
+### 사장님 예약 (D3 · D4)
+
+가게는 경로 · 요청으로 받지 않고 **로그인한 사장님 계정의 가게**로 정한다(IDOR). 다른 가게 예약은 `404 not_found`(존재 숨김). 사장님이 아니면 `403 forbidden_role`.
+
+#### `GET /api/v1/owner/reservations?date=2026-11-28` — 날짜별 예약 목록 (D4)
+
+- 역할: 사장님. `date`는 운영 시간대(Asia/Seoul) 날짜, 그 날짜에 시작하는 내 가게 예약을 시각 순으로. 하루치라 페이지를 나누지 않는다.
+- 응답 `200`:
+
+```json
+{
+  "date": "2026-11-28",
+  "items": [
+    {
+      "id": "string", "reservationNo": "K7Q2M9XA", "startAt": "2026-11-28T09:00:00Z", "partySize": 2,
+      "status": "requested", "cancelReason": null, "requestedAt": "2026-11-27T07:40:00Z", "requestNote": null,
+      "depositAmount": 10000, "customerType": "guest", "maskedName": "김*코", "fromRecommendation": true
+    }
+  ]
+}
+```
+
+  - `customerType`: `member` · `guest`(화면의 '회원 여부').
+  - `maskedName`: 가린 이름. 이름이 없으면 `null`. **전화번호 · 보낸 가게 id · 이름은 넣지 않는다**(FR-CUS-05, FR-RSV-04).
+  - `fromRecommendation`: 정식 코스 제안으로 온 예약이면 `true`.
+  - 손님 등급(FR-CUS-04)은 고객 카드(C)가 만든 뒤 더한다.
+- 실패: `invalid`(date 없음 · 형식) · `unauthorized` · `forbidden_role`
+
+#### `POST /api/v1/owner/reservations/{id}/confirm` — 승인 (D3)
+
+- 역할: 사장님. `X-XSRF-TOKEN` 필요. 본문 없음.
+- `requested` → `confirmed`(FR-RSV-03 #1). 응답 `200`: `Reservation`.
+- 실패: `not_found` · `conflict`(신청 상태가 아님, 또는 예약 시각이 이미 지남 — 자동 거절 대상) · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+#### `POST /api/v1/owner/reservations/{id}/reject` — 거절 (D3)
+
+- 역할: 사장님. `X-XSRF-TOKEN` 필요. 본문 없음. 거절 사유는 받지 않는다.
+- `requested` → `canceled`, `cancelReason: "store_rejected"`(FR-RSV-03 #2). 예약금 100% 환불 · 쿠폰 적용 취소는 아래 이벤트를 받는 쪽이 같은 트랜잭션에서 한다.
+- 응답 `200`: `Reservation`. 실패: 위와 같음(`conflict`: 신청 상태가 아님).
+
+#### 자동 거절 · 자동 취소 (서버 내부, D3 · D4 → 실행 주기는 D7)
+
+`ReservationStateService`의 두 메서드를 D7 스케줄이 주기적으로 부른다. 둘 다 서버 시계(D18)를 따른다.
+
+| 메서드 | 대상 | 결과 |
+| --- | --- | --- |
+| `autoRejectDue()` | `requested`이고 `startAt` ≤ 지금 | `canceled` · `store_rejected` (FR-RSV-03 #3, 거절과 같은 결과) |
+| `autoCancelDue()` | `confirmed`이고 예약일(운영 시간대) 다음 날이 끝남 = `startAt` < (오늘 − 1일) 00:00 | `canceled` · `auto_canceled` (FR-RSV-02 #1) |
+
+방문 처리된 예약은 바꾸지 않는다(FR-RSV-02 #2). 사장님 처리와 겹쳐도 행을 잠그고 상태를 다시 확인해 한 번만 바뀐다.
+
+#### 상태 변경 이벤트 `ReservationStatusChangedEvent` (서버 내부)
+
+상태를 바꾸는 곳은 `ReservationStateService` 하나다. 바꿀 때마다 `ReservationStatusChangedEvent(reservationId, storeId, customerId, fromStatus, toStatus, cancelReason, byScheduler)`를 상태를 바꾼 트랜잭션 안에서 내보낸다.
+
+| 받는 쪽 | 받는 방법 | 할 일 |
+| --- | --- | --- |
+| 예약금 환불 (D10 · D6) | `@EventListener` (같은 트랜잭션, 실패하면 상태 변경도 취소) | `store_rejected` → 100% 환불, `auto_canceled` → 환불 없음(05-policy 「예약 상태」). 손님 취소는 D6 |
+| 쿠폰 적용 취소 (E) | `@EventListener` | 방문 전 취소면 적용 쿠폰 → `apply_canceled`(30일 제한 유지) |
+| 알림 (C14 · C15) | `@TransactionalEventListener` (커밋 뒤) | 승인 · 거절 알림 |
+
+#### 정책에 따라 정한 것 (D3 · D4)
+
+| 항목 | 정한 것 | 근거 |
+| --- | --- | --- |
+| 가린 이름 | 첫 글자와 마지막 글자만 남기고 가운데를 `*`(김로코 → 김\*코). 두 글자면 첫 글자 + `*`(김코 → 김\*) | 07-screens O-01 · O-13 '가린 이름' |
+| 예약 시각이 지난 신청 승인 | 거절(`conflict`). 자동 거절 대상이다 | FR-RSV-03 "예약 시각까지 승인되지 않은 신청 예약은 자동 거절" |
+| 날짜 목록의 날짜 | 운영 시간대 기준 `startAt`의 날짜 | 05-policy "서비스 운영 시간대" |
 
 ### 가상 잔액 · 거래 내역 (D9)
 
@@ -421,7 +649,7 @@ E1 ~ E17. 추천 API(E7은 계산보다 계약을 먼저), 노출 · 코스 제�
 | '같은 날' | 기준 시각의 Asia/Seoul 날짜 | 05-policy "서비스 운영 시간대" | D18 |
 | '같은 날 이미 예약한 가게' | 신청 · 확정 · 방문 예약. 취소된 예약은 넣지 않음 | FR-CRS-01 | — |
 | 후보가 아닌 가게를 `POST` | `409 conflict`, 아무것도 기록 안 함 | — | — |
-| 익명 방문자 쿠키 | 이름 · 수명은 E3(#79)에서 정함. `HttpOnly` · `SameSite=Lax`. `visitor.anon_id`(UUID)에 저장 | FR-CRS-07, 11-23 (5) | C |
+| 익명 방문자 쿠키 | 3.3 「익명 방문자 쿠키」(`alley_vid`, 90일, `HttpOnly` · `SameSite=Lax`, `visitor.anon_id`) | FR-CRS-07, 11-23 (5) | C |
 
 ### 미확정
 
@@ -570,6 +798,97 @@ DB가 막지 않는 것(유형별 필수 칸, 확정 뒤 변경 금지, 중단�
 | # | 내용 | 정해지지 않은 동안 | 결정 주체 |
 | --- | --- | --- | --- |
 | C-2 | 승인 전 · 탈퇴 신청 사장님 계정의 접근 | C5(FR-AUTH-04)의 승인 전 계정 규칙을 따른다 | C5 |
+
+### 3.3 탐색 기록 · 익명 방문자 (E3 #79 · 계약 #144)
+
+> 상태: **계약.** 구현은 #79에서 한다. 지도 추천 노출 · 정식 코스 제안 기록의 엔드포인트는 3.1에 있고 여기서 다시 정의하지 않는다.
+> 기준: 기획 저장소 `03-requirements.md` FR-CRS-07 · 11, `06-data.md` VISITOR · STORE_CLICK · COURSE_PREVIEW_EVENT, 결정 기록 11-23 (5) · 11-23 (8). 표는 D19 `visitor` · `store_click` · `course_preview_event` · `recommendation_exposure` · `course_proposal`.
+
+로그인 전 행동(가게 클릭 · 추천 노출 · 오늘의 코스)은 브라우저의 **익명 방문자 ID**로 기록하고, 같은 브라우저에서 로그인하거나 비회원 예약을 하면 그 손님에 잇는다. 다른 기기에서 한 예약은 잇지 않는다(FR-CRS-07). 모두 탐색 기록이고 소개 판정 · 수락률에 쓰지 않는다(3.1 「기록과 집계 기준」).
+
+#### 익명 방문자 쿠키
+
+| 항목 | 값 |
+| --- | --- |
+| 이름 | `alley_vid` |
+| 값 | 서버가 만든 UUID. `visitor.anon_id`에 저장 |
+| 수명 | 90일(`Max-Age=7776000`). 기록할 때마다 늘리지 않는다 |
+| 속성 | `Path=/` · `HttpOnly` · `SameSite=Lax`, HTTPS에서 `Secure`(세션 쿠키와 같은 설정 `SESSION_COOKIE_SECURE`) |
+| 발급 | 탐색 기록 `POST`(3.1 `POST /api/v1/recommendation-exposures`, 아래 두 엔드포인트)에서 쿠키가 없으면 그 응답에서 발급하고 새 ID로 기록한다 |
+| 다시 발급 | 쿠키 값이 UUID가 아니거나 서버에 없는 ID면 없는 것으로 보고 새로 발급한다. 클라이언트가 정한 ID로 방문자를 만들지 않는다 |
+
+프론트는 이 쿠키를 읽거나 보내는 코드를 따로 두지 않는다(`HttpOnly`, 같은 출처라 브라우저가 붙인다).
+
+#### 방문자를 손님에 잇기 (서버 내부)
+
+| 때 | 부르는 곳 | 하는 일 |
+| --- | --- | --- |
+| 로그인 성공 | C2 (#24) | 이 요청의 방문자를 로그인한 회원의 손님에 잇는다 |
+| 예약 신청 (회원 · 비회원) | C4 (#38) 신청 단계 20 「손님 식별」 | 손님을 정한 뒤 이 요청의 방문자를 그 손님에 잇는다 |
+| 로그아웃 | C2 (#24) | 방문자 쿠키를 지운다(`Max-Age=0`). 이후 탐색은 새 익명 방문자로 기록된다 |
+
+- E3가 `com.alleycrm.recommend.visitor.VisitorService`를 제공한다. 부르는 쪽은 손님 ID만 넘긴다: `linkCurrentBrowser(long customerId)`, `forgetCurrentBrowser()`. 쿠키를 읽고 쓰는 일은 E3가 현재 요청 · 응답에서 한다. 그래서 D2 신청 컨텍스트에 칸을 더하지 않는다.
+- 잇는 규칙:
+  - 쿠키가 없거나 서버에 없는 ID면 아무것도 하지 않는다(이을 탐색 기록이 없다).
+  - 아직 손님이 없는 방문자면 `customer_id` · `linked_at`을 채운다. 이미 같은 손님이면 그대로 둔다.
+  - **다른 손님에 이미 이어진 방문자면** 기존 연결은 바꾸지 않고, 이 브라우저에 새 방문자 ID를 발급해 새 손님에 잇는다. 지난 탐색 기록이 다른 손님 것으로 옮겨 가지 않게 한다(같은 브라우저를 여러 사람이 쓰는 경우).
+- 한 손님에 방문자가 여럿일 수 있다(브라우저 · 기기마다). 다른 기기의 방문자는 그 기기에서 로그인하거나 예약하기 전까지 잇지 않는다(FR-CRS-07 #3).
+- 예약 신청이 실패해 롤백되면 연결도 남지 않는다(같은 트랜잭션). 새로 발급한 쿠키는 응답에 실려도 서버에 없는 ID라 다음 요청에서 다시 발급된다.
+
+### `POST /api/v1/store-clicks` — 가게 클릭 기록
+
+- 역할: 누구나(로그인 불필요). 상태 변경이라 `X-XSRF-TOKEN` 필요(`CONTRACTS.md` 「6」).
+- 지도에서 가게를 눌러 확대할 때 한 번 보낸다. 같은 가게를 다시 누르면 다시 보낸다(누른 횟수를 센다).
+- 요청: `{ "storeId": "7" }`
+- 응답 `204` (본문 없음). 쿠키가 없었으면 `Set-Cookie: alley_vid=…`.
+- 실패: `invalid`(storeId 없음 · 숫자 아님) · `not_found`(없는 가게 · 승인 전 · 거절 · 탈퇴 가게) · `csrf_invalid`
+
+### `POST /api/v1/course-previews` — 오늘의 코스 노출 · 클릭 기록
+
+- 역할: 누구나(로그인 불필요). `X-XSRF-TOKEN` 필요.
+- 오늘의 코스 카드를 그린 뒤 코스마다 `impression`을 한 번, 코스를 누르면 `click`을 한 번 보낸다(FR-CRS-07 #4, FR-CRS-13). 정식 코스 제안 · 소개 연결은 만들지 않는다.
+- 요청:
+
+  ```json
+  { "type": "impression", "storeIds": ["3", "7", "12"], "dayType": "weekend", "timeBand": "…" }
+  ```
+
+  - `type`: `impression` · `click`(`CONTRACTS.md` 「3」 오늘의 코스 기록)
+  - `storeIds`: 코스의 가게 3곳, 순서대로, 중복 없음
+  - `dayType` · `timeBand`: 그 코스를 고른 칸. 오늘의 코스 응답(E8 #49)에 있는 값을 그대로 보낸다. `timeBand` 값 목록은 E2(#16)가 정한다 — **미확정 V-1**
+- 응답 `204`. 쿠키가 없었으면 `Set-Cookie: alley_vid=…`.
+- 실패: `invalid`(type · dayType · timeBand가 정해진 값이 아님, storeIds가 3개가 아니거나 중복) · `not_found`(없는 가게 · 승인 전 · 거절 · 탈퇴 가게) · `csrf_invalid`
+
+#### E3 · E7 분담
+
+| 일 | 이슈 |
+| --- | --- |
+| 방문자 쿠키 · 손님 잇기, 가게 클릭 · 오늘의 코스 기록 엔드포인트 | E3 (#79) |
+| 지도 추천 노출 · 정식 코스 제안의 **저장과 중복 처리** (아래 표) | E3 (#79) |
+| 3.1의 두 `POST` 엔드포인트, 추천 후보인지 검사(아니면 `409`), 순위 · 배지 · 근거 종류 재계산 | E7 (#21) — 검사를 마친 값으로 E3 저장 서비스를 부른다 |
+
+| 기록 | 저장 규칙 (E3) |
+| --- | --- |
+| 지도 추천 노출 | (방문자, `displayId`, 추천 가게)가 이미 있으면 새로 만들지 않고 처음 행의 `exposureId`를 돌려준다(`uk_exposure_display`). 동시에 같은 값이 와도 1건 |
+| 정식 코스 제안 | (기준 예약, 추천 가게)가 이미 있으면 새로 만들지 않고 처음 행의 `courseProposalId` · `firstShownAt`을 돌려준다(`uk_course_proposal`). 동시에 같은 값이 와도 1건 |
+| 묶음 | 한 요청의 가게들은 한 트랜잭션에 저장한다. E7의 후보 검사에서 하나라도 걸리면 아무것도 저장하지 않는다(3.1) |
+
+#### 구현 기준 (정책에 명시 없음 — 관련 담당 확인 요청)
+
+| 항목 | 이 계약의 기준 | 정책 근거 | 확인할 담당 |
+| --- | --- | --- | --- |
+| 쿠키 이름 · 수명 | `alley_vid`, 90일, 늘리지 않음 | FR-CRS-07 "브라우저의 익명 방문자 ID" | C |
+| 다른 손님에 이어진 방문자 | 기존 연결 유지, 새 방문자 ID 발급 | FR-CRS-07 "같은 브라우저에서 … 그 손님에 잇는다" | C |
+| 로그아웃 | 방문자 쿠키 삭제 | — | C2 |
+| 가게 클릭 중복 | 거르지 않는다(누를 때마다 1건) | FR-ANL-08 "가게 클릭 수" | C21 |
+
+#### 미확정 (3.3)
+
+| # | 내용 | 정해지지 않은 동안 | 결정 주체 |
+| --- | --- | --- | --- |
+| V-1 | 오늘의 코스 `timeBand` 값 목록 (`course_preview_event.time_band`) | 엔드포인트는 이 값이 정해진 뒤(E2) 구현한다. 목은 임의 문자열로 둔다 | E2 (#16, 팀 결정 P-1) |
+| V-2 | 이 절과 3.1의 비로그인 경로를 보안 설정 · `CONTRACTS.md` 「6」 목록에 더하기: `POST /api/v1/store-clicks`, `POST /api/v1/course-previews` (3.1 R-10의 두 경로와 함께) | — | C (#24) |
+| V-3 | 로그인 · 예약 신청에서 `VisitorService`를 부르는 것 | E3는 서비스만 제공하고 테스트는 서비스 단위로 한다 | C2 (#24) · C4 (#38) |
 
 ### 3.4 쿠폰 상세 · 다운로드 (E12 #25 · 계약 #154)
 

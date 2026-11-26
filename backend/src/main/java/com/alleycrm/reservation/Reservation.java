@@ -64,6 +64,25 @@ public class Reservation {
     @Column(name = "data_source", nullable = false, length = 10)
     private String dataSource;
 
+    @Column(name = "confirmed_at")
+    private Instant confirmedAt;
+
+    @Column(name = "canceled_at")
+    private Instant canceledAt;
+
+    /** 신청 → 확정(D3). 상태 확인은 부르는 쪽(ReservationStateService)이 한다 */
+    void confirm(Instant now) {
+        this.status = ReservationStatus.CONFIRMED;
+        this.confirmedAt = now;
+    }
+
+    /** → 취소. 사유는 CancelReason 값 */
+    void cancel(String reason, Instant now) {
+        this.status = ReservationStatus.CANCELED;
+        this.cancelReason = reason;
+        this.canceledAt = now;
+    }
+
     /** 신청 상태의 새 예약. 값 검사는 신청 단계들이 끝낸 뒤 부른다. */
     public static Reservation requested(String reservationNo, Long storeId, Long customerId, Instant startAt,
             int partySize, Instant requestedAt, int depositAmount, String requestNote,
