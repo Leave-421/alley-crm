@@ -1504,3 +1504,145 @@ DB가 막지 않는 것(유형별 필수 칸, 확정 뒤 변경 금지, 중단�
 | # | 내용 | 정해지지 않은 동안 | 결정 주체 |
 | --- | --- | --- | --- |
 | T-1 | `GET /api/v1/today-courses`를 로그인 없이 여는 보안 설정 · `CONTRACTS.md` 「6」 목록에 더하기(3.1 R-10 · 3.3 V-2와 함께) | **반영됨**(#222) | C (#24) |
+
+### 3.8 상인회 쿠폰 행사 (E18 #161 · 계약 #243)
+
+> 상태: **계약.** 구현은 #161에서 한다. 프론트 목(A-10 상인회 쿠폰 관리)은 이 절을 따른다. 회원 알림 · 선착순 받기는 E19(#162), 예약 적용 · 기금 부담 기록은 E20(#172)이 이 절의 행사를 쓴다.
+> 기준: 기획 저장소 `05-policy.md` 「상인회 쿠폰」, `03-requirements.md` FR-CPN-12 ~ 14, `07-screens.md` A-10, 결정 기록 11-25 (5). 표는 `association_coupon_event` · `association_coupon_event_store`(D24 #159), 기금 예산은 2절 「상인회 쿠폰 기금 예산」(`FundBudgetService`, D20 #160).
+
+**상인회 쿠폰 행사**는 상인회가 만들고 할인은 **공동 기금**이 부담한다. 가게 쿠폰 행사(3.2)처럼 저장하는 순간 확정되고 **고칠 수 없으며 중단만 할 수 있다.** 만들 때 '수량 × 한 장 최대 할인액'을 기금에서 미리 잡고, 기금이 모자라면 만들 수 없다(기금은 마이너스가 되지 않는다). 권역은 **로그인한 상인회 계정의 권역**으로 정하고 권역 ID를 받지 않는다. 가게 쿠폰과 달리 권역에 진행 중인 행사가 여러 개일 수 있다.
+
+**AssociationCouponEvent** (응답):
+
+```json
+{
+  "id": "5",
+  "title": "12월 골목 주말 할인",
+  "benefitType": "percent_discount",
+  "discountAmount": null,
+  "discountPercent": 10,
+  "maxDiscountAmount": 5000,
+  "eligibleStoreScope": "selected",
+  "storeIds": ["3", "7"],
+  "totalQuantity": 10,
+  "issuedCount": 6,
+  "remainingQuantity": 4,
+  "issueStartAt": "2026-12-01T00:00:00Z",
+  "issueEndAt": "2026-12-07T15:00:00Z",
+  "validStartAt": "2026-12-01T00:00:00Z",
+  "validEndAt": "2026-12-14T15:00:00Z",
+  "reservedBudget": 50000,
+  "usedBudget": 15000,
+  "remainingBudget": 35000,
+  "budgetReleasedAt": null,
+  "confirmedAt": "2026-11-30T03:00:00Z",
+  "stoppedAt": null,
+  "issuable": true
+}
+```
+
+| 필드 | 뜻 |
+| --- | --- |
+| `title` | 행사 이름(1 ~ 50자). 회원 알림함(E19)에 보인다 |
+| `benefitType` | `fixed_discount` 정액 할인 · `percent_discount` 정률 할인(`CONTRACTS.md` 「3」). **`service`(서비스 제공)는 없다** |
+| `discountAmount` | 정액 할인 금액(원). `fixed_discount`일 때만 |
+| `discountPercent` · `maxDiscountAmount` | 정률 할인율(퍼센트 정수 1 ~ 50)과 한 장 최대 할인액(원). `percent_discount`일 때만. **최대 할인액은 필수**(가게 쿠폰과 다름) |
+| `eligibleStoreScope` · `storeIds` | 쓸 수 있는 가게. `all`(그 권역의 참여 가게 전부, `storeIds: []`) · `selected`(상인회가 고른 가게, `storeIds`에 ID 순) |
+| `totalQuantity` · `issuedCount` · `remainingQuantity` | 총수량 · 지금까지 받은 수 · 남은 수. 받은 수는 E19 선착순 받기만 늘린다 |
+| `issueStartAt` · `issueEndAt` | 받을 수 있는 기간 `[시작, 끝)` |
+| `validStartAt` · `validEndAt` | 쓸 수 있는 기간(유효기간) `[시작, 끝)`. 기한은 예약 신청 시각으로 판단한다(E20). 받은 쿠폰의 만료 시각은 `validEndAt`이다 |
+| `reservedBudget` | 만들 때 기금에서 잡은 예산 = 수량 × 한 장 최대 할인액(정액은 `discountAmount`, 정률은 `maxDiscountAmount`) |
+| `usedBudget` · `remainingBudget` | 쓴 예산과 남은 예산(= 잡은 예산 − 쓴 예산). 쓴 예산은 2절 `releaseDue`와 같은 계산: 이 행사 쿠폰 중 예약에 적용 · 사용된 것의 실제 할인액, 아직 방문 전이면 한 장 최대 할인액 |
+| `budgetReleasedAt` | 쓰지 않은 예산을 기금으로 돌려준 시각(유효기간이 끝난 뒤 D20 `releaseDue`). 그 전에는 `null`. **중단해도 이 시각 전에는 돌아오지 않는다** |
+| `confirmedAt` · `stoppedAt` | 확정(저장) 시각 · 중단 시각(`null`이면 진행 중) |
+| `issuable` | 지금 받을 수 있는지: 중단 안 됨 · 받을 수 있는 기간 안 · 남은 수 ≥ 1. 회원 화면의 '받기' · '마감'(E19)도 같은 규칙 |
+
+### `GET /api/v1/association/coupon-events` — 상인회 쿠폰 행사 목록 (A-10)
+
+- 역할: 상인회. 손님 · 사장님은 `403 forbidden_role`.
+- 응답 `200`: `{ "items": [AssociationCouponEvent] }` — 그 권역 행사 전부, 최근에 만든 순(ID 내림차순). 행사가 많지 않아 페이지를 두지 않는다(`GET /api/v1/stores`와 같은 예외).
+- 화면의 '현재 기금 잔액'은 `GET /api/v1/wallets/me`(상인회 = 기금, D9), '잡힐 예산'은 프론트가 수량 × 한 장 최대 할인액으로 미리 보여준다. 가게를 고를 때 보는 가게별 통계는 FR-ANL-05(C) API다.
+- 실패: `unauthorized` · `forbidden_role`
+
+### `POST /api/v1/association/coupon-events` — 상인회 쿠폰 행사 만들기(확정)
+
+- 역할: 상인회. `X-XSRF-TOKEN` 필요. 저장하는 순간 확정되고 이후 어떤 값도 바꿀 수 없다.
+- 요청:
+
+  ```json
+  {
+    "title": "12월 골목 주말 할인",
+    "benefitType": "percent_discount", "discountAmount": null, "discountPercent": 10, "maxDiscountAmount": 5000,
+    "eligibleStoreScope": "selected", "storeIds": ["3", "7"],
+    "totalQuantity": 10,
+    "issueStartAt": "2026-12-01T00:00:00Z", "issueEndAt": "2026-12-07T15:00:00Z",
+    "validStartAt": "2026-12-01T00:00:00Z", "validEndAt": "2026-12-14T15:00:00Z"
+  }
+  ```
+
+- 검사(어긋나면 `400 invalid`):
+  - `title` 1 ~ 50자, `benefitType` · `totalQuantity` · `eligibleStoreScope` · 네 시각 필수.
+  - `benefitType`은 `fixed_discount` · `percent_discount`만(`service`는 `invalid`).
+  - `fixed_discount`: `discountAmount` 1 이상 필수.
+  - `percent_discount`: `discountPercent` 정수 1 ~ 50, **`maxDiscountAmount` 1 이상 필수**(FR-CPN-12 #3).
+  - 고른 유형에 쓰지 않는 칸은 무시하고 저장하지 않는다(응답에서 `null`).
+  - `totalQuantity` 1 이상.
+  - `eligibleStoreScope`가 `selected`면 `storeIds` 1개 이상 · 중복 없음 · 모두 **그 권역의 승인된 가게**. `all`이면 `storeIds`는 무시한다.
+  - 시각: `issueStartAt < issueEndAt`, `validStartAt < validEndAt`, `issueEndAt ≤ validEndAt`(쓸 수 없는 때에 받지 않게), `issueEndAt`이 지금보다 뒤.
+- 기금 예산: 행사를 저장하고 **같은 트랜잭션에서** `FundBudgetService.reserve(eventId)`(D20)로 예산을 기금에서 뺀다(거래 `fund_budget_reserved`, `associationEventId` 남김). 기금이 모자라면 `409 insufficient_balance`이고 **행사도 만들어지지 않는다**(FR-CPN-12 #2).
+- 응답 `201`: 만든 AssociationCouponEvent(`reservedBudget` 채움, `usedBudget` 0).
+- 회원 알림(FR-CPN-13)은 E19가 이 행사로 보낸다.
+- 실패: `invalid` · `insufficient_balance` · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+### `POST /api/v1/association/coupon-events/{eventId}/stop` — 상인회 쿠폰 행사 중단
+
+- 역할: 상인회. `X-XSRF-TOKEN` 필요. 요청 본문 없음.
+- 중단하면 **새로 받기만 멈춘다.** 이미 받은 쿠폰은 유효기간까지 쓸 수 있다(FR-CPN-12 #4). **예산은 이때 돌려주지 않고** 유효기간이 끝날 때 D20 `releaseDue`가 돌려준다(FR-CPN-12 #5).
+- 중단은 `stopped_at IS NULL`일 때만 바꾸는 조건부 UPDATE로 한다. E19의 발급 수 늘리기와 동시에 들어와도 먼저 커밋한 쪽만 반영된다.
+- 응답 `200`: 중단된 AssociationCouponEvent(`stoppedAt` 채움, `issuable: false`).
+- 실패:
+  - `404 not_found` — 없는 행사 · 다른 권역 행사(존재 숨김)
+  - `409 conflict` — 이미 중단한 행사
+  - `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+### 고치는 API는 없다 (3.8)
+
+- 확정한 행사를 고치거나 다시 켜는 엔드포인트를 두지 않는다(FR-CPN-12 #4). `PUT` · `PATCH`는 공통 규칙대로 `404 not_found`.
+
+#### 다른 이슈가 쓰는 규칙 (서버 내부, 3.8)
+
+| 규칙 | 정의 | 쓰는 곳 |
+| --- | --- | --- |
+| 받을 수 있음 | `stopped_at IS NULL` AND `issue_start_at ≤ 지금 < issue_end_at` AND `issued_count < total_quantity` | E19 |
+| 발급 수 늘리기 | `UPDATE association_coupon_event SET issued_count = issued_count + 1 WHERE id = ? AND stopped_at IS NULL AND issued_count < total_quantity AND issue_start_at <= ? AND ? < issue_end_at` — 바뀐 행이 0이면 마감 · 중단 · 기간 밖 | E19 (NFR-09) |
+| 받은 쿠폰 | `coupon.issuer_kind = 'association'`, `association_event_id` 채움, `coupon_policy_id` · `target_store_id`는 `NULL`, `expires_at = valid_end_at`. 한 회원 한 장(`uk_coupon_association_member`) | E19 |
+| 쓸 수 있는 가게 | `all`: 쓸 때 그 권역의 승인된 가게. `selected`: `association_coupon_event_store`의 가게 | E20 |
+| 쓸 수 있는 기간 | 예약 신청 시각이 `[valid_start_at, valid_end_at)` 안 | E20 |
+| 할인액 | 3.2 「할인액」과 같은 계산(정률은 `max_discount_amount`까지) | E20 · E14 · D15 |
+
+### 응답 필드와 테이블 칸 (3.8)
+
+| 필드 | 칸 | 비고 |
+| --- | --- | --- |
+| `discountPercent` | `discount_rate` | 정수 퍼센트(DB CHECK 1 ~ 50) |
+| `storeIds` | `association_coupon_event_store.store_id` | `selected`일 때만 행이 있다 |
+| `reservedBudget` · `budgetReleasedAt` | `reserved_budget` · `budget_released_at` | D20이 채운다 |
+| `usedBudget` · `remainingBudget` · `issuable` · `remainingQuantity` | — | 계산값(저장하지 않음) |
+
+#### 정책에 따라 정한 것 (3.8)
+
+| 항목 | 정한 것 | 근거 |
+| --- | --- | --- |
+| 확정 시점 | 저장 = 확정. 임시 저장 없음 | FR-CPN-12 "확정 뒤에는 값을 바꾸지 않고" · 3.2와 같음 |
+| 서비스 제공 혜택 | 없음(`invalid`) | 05-policy 「상인회 쿠폰」 혜택 = 정액 · 정률 |
+| 중단과 예산 | 중단 때 돌려주지 않음, 유효기간 끝에 D20 | FR-CPN-12 #5 |
+| 권역의 진행 중 행사 수 | 제한 없음 | 05-policy에 가게 쿠폰 같은 '하나만' 규칙 없음 |
+
+#### 구현 기준 (정책에 명시 없음 — 관련 담당 확인 요청)
+
+| 항목 | 이 계약의 기준 | 정책 근거 | 확인할 담당 |
+| --- | --- | --- | --- |
+| 받는 기간 끝 ≤ 쓰는 기간 끝 | `issueEndAt ≤ validEndAt`이 아니면 `invalid` | 받고 나서 못 쓰는 쿠폰을 막음 | B (A-10) |
+| 받는 기간 끝 | 지금보다 뒤여야 함(이미 끝난 행사를 만들지 않음) | — | B |
+| 고른 가게 | 그 권역의 승인된 가게만. 아니면 `invalid` | FR-CPN-12 "참여 가게" | — |
+| 목록 | 페이지 없이 전부 | A-10 행사별 발급 수 · 남은 예산 | B |
