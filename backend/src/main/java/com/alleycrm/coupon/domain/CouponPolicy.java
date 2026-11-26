@@ -1,12 +1,12 @@
 package com.alleycrm.coupon.domain;
 
+import java.time.Instant;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import java.time.LocalDateTime;
 
 /**
  * 쿠폰 행사(표 coupon_policy, D #134). 행사마다 행 하나이고, 확정한 뒤에는 설정값을 바꾸지 않는다.
@@ -59,16 +59,16 @@ public class CouponPolicy {
     private int issuedCount;
 
     @Column(name = "confirmed_at", updatable = false)
-    private LocalDateTime confirmedAt;
+    private Instant confirmedAt;
 
     @Column(name = "stopped_at", updatable = false)
-    private LocalDateTime stoppedAt;
+    private Instant stoppedAt;
 
     protected CouponPolicy() {
     }
 
     /** 새 행사를 만든다. 저장 = 확정이라 확정 시각을 함께 채운다. */
-    public static CouponPolicy confirm(long storeId, CouponEventTerms terms, LocalDateTime now) {
+    public static CouponPolicy confirm(long storeId, CouponEventTerms terms, Instant now) {
         CouponPolicy policy = new CouponPolicy();
         policy.storeId = storeId;
         policy.benefitType = terms.benefitType();
@@ -146,11 +146,11 @@ public class CouponPolicy {
         return issuedCount;
     }
 
-    public LocalDateTime getConfirmedAt() {
+    public Instant getConfirmedAt() {
         return confirmedAt;
     }
 
-    public LocalDateTime getStoppedAt() {
+    public Instant getStoppedAt() {
         return stoppedAt;
     }
 }

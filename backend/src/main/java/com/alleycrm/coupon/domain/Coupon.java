@@ -6,7 +6,8 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import java.time.LocalDateTime;
+import java.time.Duration;
+import java.time.Instant;
 
 /**
  * 회원이 받은 쿠폰(표 coupon, D #134). 다운로드할 때 출처(추천 기준 가게 · 노출)를 함께 저장하고,
@@ -42,10 +43,10 @@ public class Coupon {
     private Long sourceExposureId;
 
     @Column(name = "downloaded_at", nullable = false, updatable = false)
-    private LocalDateTime downloadedAt;
+    private Instant downloadedAt;
 
     @Column(name = "expires_at", nullable = false, updatable = false)
-    private LocalDateTime expiresAt;
+    private Instant expiresAt;
 
     @Column(name = "status", nullable = false)
     private CouponStatus status;
@@ -58,13 +59,13 @@ public class Coupon {
     private Integer discountApplied;
 
     @Column(name = "used_at")
-    private LocalDateTime usedAt;
+    private Instant usedAt;
 
     protected Coupon() {
     }
 
     /** 신청 시각에 이 쿠폰을 예약에 쓸 수 있는지: '다운로드됨'이고 기한 전(FR-CPN-05, 판단은 신청 시각). */
-    public boolean isUsableAt(LocalDateTime requestedAt) {
+    public boolean isUsableAt(Instant requestedAt) {
         return status == CouponStatus.DOWNLOADED && requestedAt.isBefore(expiresAt);
     }
 
@@ -79,7 +80,7 @@ public class Coupon {
 
     /** 다운로드(FR-CPN-03 · 05 · 10). 만료 시각 = 다운로드 시각 + 행사의 쿠폰 기간 × 24시간. */
     public static Coupon download(long customerId, CouponPolicy event, long sourceBaseStoreId, long sourceExposureId,
-            LocalDateTime now) {
+            Instant now) {
         Coupon coupon = new Coupon();
         coupon.customerId = customerId;
         coupon.issuerKind = CouponIssuer.STORE;
@@ -88,7 +89,7 @@ public class Coupon {
         coupon.sourceBaseStoreId = sourceBaseStoreId;
         coupon.sourceExposureId = sourceExposureId;
         coupon.downloadedAt = now;
-        coupon.expiresAt = now.plusHours(24L * event.getValidDays());
+        coupon.expiresAt = now.plus(Duration.ofHours(24L * event.getValidDays()));
         coupon.status = CouponStatus.DOWNLOADED;
         return coupon;
     }
@@ -121,11 +122,11 @@ public class Coupon {
         return sourceExposureId;
     }
 
-    public LocalDateTime getDownloadedAt() {
+    public Instant getDownloadedAt() {
         return downloadedAt;
     }
 
-    public LocalDateTime getExpiresAt() {
+    public Instant getExpiresAt() {
         return expiresAt;
     }
 
@@ -142,7 +143,7 @@ public class Coupon {
     }
 
     /** 사장님 사용 확인(FR-CPN-08 #1). 방문 처리됐는지는 부르는 쪽이 확인한다. */
-    public void markUsed(LocalDateTime now) {
+    public void markUsed(Instant now) {
         if (status != CouponStatus.APPLIED) {
             throw new IllegalStateException("예약에 적용된 쿠폰만 사용 확인한다: " + status);
         }
@@ -158,7 +159,7 @@ public class Coupon {
         return discountApplied;
     }
 
-    public LocalDateTime getUsedAt() {
+    public Instant getUsedAt() {
         return usedAt;
     }
 }

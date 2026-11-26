@@ -1,11 +1,10 @@
 package com.alleycrm.coupon.dto;
 
+import java.time.Instant;
 import com.alleycrm.coupon.domain.BenefitType;
 import com.alleycrm.coupon.domain.Coupon;
 import com.alleycrm.coupon.domain.CouponPolicy;
 import com.alleycrm.coupon.domain.CouponStatus;
-import java.time.Instant;
-import java.time.ZoneOffset;
 
 /**
  * 받은 쿠폰(CONTRACTS_API 3.4 Coupon). 혜택 칸은 받은 행사의 값이다(행사는 확정 뒤 바뀌지 않는다).
@@ -37,7 +36,7 @@ public record CouponResponse(
                 event.getMaxDiscountAmount(),
                 event.getServiceName(),
                 event.getConditions(),
-                coupon.getDownloadedAt().toInstant(ZoneOffset.UTC),
-                coupon.getExpiresAt().toInstant(ZoneOffset.UTC));
+                coupon.getDownloadedAt(),
+                coupon.getExpiresAt());
     }
 }
