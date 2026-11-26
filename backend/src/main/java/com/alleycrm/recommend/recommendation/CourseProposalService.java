@@ -82,7 +82,7 @@ public class CourseProposalService {
         return new Context(base, ranking);
     }
 
-    /** 소개 예약 신청 마감: 기준 예약일(Asia/Seoul) 다음 날 00:00. 판정은 D12 · E15가 신청 시각으로 한다. */
+    /** 소개 예약 신청 마감: 기준 예약일(Asia/Seoul) 다음 날 00:00. 판정은 D12가 신청 시각으로 한다. */
     static Instant applyDeadline(Instant baseTime) {
         LocalDate day = LocalDate.ofInstant(baseTime, SlotRules.SERVICE_ZONE);
         return day.plusDays(1).atStartOfDay(SlotRules.SERVICE_ZONE).toInstant();
