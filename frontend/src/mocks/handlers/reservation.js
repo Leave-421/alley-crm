@@ -50,6 +50,15 @@ const usedCoupons = new Set(); // 예약 id
 // 소개 수수료율(설정값, NFR-04). 목은 기본값 4%
 const REFERRAL_FEE_RATE = 0.04;
 
+/**
+ * 소개 확정 · 수수료(#246). 목은 '추천으로 온(정식 코스 제안) 예약이 방문 처리되면 소개 확정'으로 본다.
+ * 수수료 = (방문 금액 − 실제 쿠폰 할인) × 수수료율, 1원 미만 버림(D15). 방문 전 · 소개 아님은 false · null.
+ */
+function referralOf({ status, fromRecommendation, coupon, visitAmount }) {
+  if (status !== 'visited' || !fromRecommendation || visitAmount === null) return { referralConfirmed: false, referralFee: null };
+  return { referralConfirmed: true, referralFee: Math.floor((visitAmount - discountFor(coupon, visitAmount)) * REFERRAL_FEE_RATE) };
+}
+
 /** 방문 할인(3.6 「방문 할인」 표) */
 function discountFor(coupon, visitAmount) {
   if (!coupon || visitAmount === null) return 0;
@@ -89,6 +98,7 @@ function mockOwnerReservations(date) {
       coupon: status === 'canceled' ? null : (MOCK_APPLIED_COUPONS[index] ?? null),
       visitAmount,
       visitedAt,
+      ...referralOf({ status, fromRecommendation: item.fromRecommendation, coupon: MOCK_APPLIED_COUPONS[index] ?? null, visitAmount }),
     };
   });
 }
@@ -138,7 +148,8 @@ export const reservationHandlers = [
     decided.set(found.id, next);
     // 응답에 실제로 깎은 쿠폰 할인액(쿠폰이 없으면 null)
     const couponDiscountAmount = found.coupon ? discountFor(found.coupon, amount) : null;
-    return HttpResponse.json({ ...toReservation({ ...found, ...next }), couponDiscountAmount });
+    const referral = referralOf({ status: 'visited', fromRecommendation: found.fromRecommendation, coupon: found.coupon, visitAmount: amount });
+    return HttpResponse.json({ ...toReservation({ ...found, ...next, ...referral }), couponDiscountAmount });
   }),
 
   // POST /api/v1/owner/reservations/{id}/coupon-use (E14 3.6) — 방문 처리된 예약의 적용 쿠폰 → 사용 완료

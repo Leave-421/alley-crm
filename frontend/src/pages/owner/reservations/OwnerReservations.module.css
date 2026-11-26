@@ -292,3 +292,18 @@
 .links a {
   color: var(--color-heading);
 }
+
+/* 처리 결과: 소개 확정 · 수수료(B8). 글자 + 앞 표시로도 구분(NFR-11) */
+.referralTag {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--color-pink-100);
+  color: var(--color-ink-900);
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+}
+
+.referralTag::before {
+  content: '✓ ';
+}

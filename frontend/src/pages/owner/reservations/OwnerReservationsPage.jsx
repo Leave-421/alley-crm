@@ -87,15 +87,15 @@ export default function OwnerReservationsPage() {
 
   /**
    * 승인 · 거절(B7) · 방문 처리(B8) 결과를 목록에 반영한다. 응답 Reservation에는 손님 이름 · 회원 여부가 없어
-   * 상태 · 방문 · 쿠폰 칸만 바꾼다(거절이면 쿠폰은 적용 취소라 null). 쿠폰 사용 확인처럼 예약이 바뀌지 않으면 reservation 없이 안내만 한다.
+   * 상태 · 방문 · 쿠폰 · 소개 확정 칸만 바꾼다(거절이면 쿠폰은 적용 취소라 null). 쿠폰 사용 확인처럼 예약이 바뀌지 않으면 reservation 없이 안내만 한다.
    */
   function handleDecided(reservation, message) {
     setNotice(message);
     if (!reservation) return;
-    const { id, status, cancelReason, visitAmount = null, visitedAt = null, coupon = null } = reservation;
+    const { id, status, cancelReason, visitAmount = null, visitedAt = null, coupon = null, referralConfirmed = false, referralFee = null } = reservation;
     setResult((previous) => ({
       ...previous,
-      items: previous.items.map((item) => (item.id === id ? { ...item, status, cancelReason, visitAmount, visitedAt, coupon } : item)),
+      items: previous.items.map((item) => (item.id === id ? { ...item, status, cancelReason, visitAmount, visitedAt, coupon, referralConfirmed, referralFee } : item)),
     }));
   }
 

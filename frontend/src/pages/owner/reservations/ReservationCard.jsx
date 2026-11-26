@@ -56,6 +56,12 @@ export default function ReservationCard({ reservation, referralFeeRate, onDecide
       {status === 'visited' && reservation.visitAmount != null && (
         <p className={styles.cardMeta}>방문 금액 {formatWon(reservation.visitAmount)}(쿠폰 할인 전)</p>
       )}
+      {/* 처리 결과: 소개 확정 여부와 확정된 수수료(#246). 보낸 가게는 없다(FR-CUS-05) */}
+      {status === 'visited' && (
+        <p className={reservation.referralConfirmed ? styles.referralTag : styles.cardMeta}>
+          {reservation.referralConfirmed ? `소개 확정 · 수수료 ${formatWon(reservation.referralFee ?? 0)}` : '소개 수수료 없음'}
+        </p>
+      )}
 
       {status === 'requested' && <DecisionActions reservation={reservation} onDecided={onDecided} onOutdated={onOutdated} />}
       {status === 'confirmed' && (
@@ -102,7 +108,11 @@ function VisitAction({ reservation, referralFeeRate, onDecided, onOutdated }) {
       const result = await visitReservation(reservation.id, amount);
       const parts = [`방문 금액 ${formatWon(amount)}`];
       if (result.couponDiscountAmount != null) parts.push(`쿠폰 할인 ${formatWon(result.couponDiscountAmount)}`);
-      parts.push(reservation.fromRecommendation ? '소개 수수료는 소개 판정 뒤 확정돼요' : '일반 예약이라 소개 수수료는 없어요');
+      parts.push(
+        result.referralConfirmed
+          ? `소개 확정 · 수수료 ${formatWon(result.referralFee ?? 0)}(가상 잔액에서 공동 기금으로)`
+          : '소개 수수료 없음',
+      );
       onDecided(result, `${who}님 방문을 처리했어요 · ${parts.join(' · ')}.`);
     } catch (caught) {
       if (caught instanceof ApiError && (caught.code === 'conflict' || caught.code === 'not_found')) {
