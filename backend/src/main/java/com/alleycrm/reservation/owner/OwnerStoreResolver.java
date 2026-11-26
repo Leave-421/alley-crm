@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
  * C2 로그인(인증 이름 = account.login_id)을 전제로 한다. C2가 공통 도구를 만들면 그것으로 바꾼다.
  */
 @Component
-class OwnerStoreResolver {
+public class OwnerStoreResolver {
 
     private final JdbcTemplate jdbc;
 
@@ -21,7 +21,7 @@ class OwnerStoreResolver {
         this.jdbc = jdbc;
     }
 
-    long storeIdOf(Authentication auth) {
+    public long storeIdOf(Authentication auth) {
         List<Map<String, Object>> rows = jdbc.queryForList(
                 "SELECT role, store_id FROM account WHERE login_id = ?", auth.getName());
         if (rows.isEmpty()) {

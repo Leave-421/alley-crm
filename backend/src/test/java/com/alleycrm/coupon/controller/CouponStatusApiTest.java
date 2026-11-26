@@ -2,6 +2,7 @@ package com.alleycrm.coupon.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -16,6 +17,7 @@ import com.alleycrm.coupon.service.CouponStatusService;
 import com.alleycrm.coupon.service.CouponVisitService;
 import com.alleycrm.reservation.ReservationStateService;
 import com.alleycrm.reservation.ReservationStatusChangedEvent;
+import com.alleycrm.store.StoreBusinessStatusChangedEvent;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -34,6 +36,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -269,6 +272,43 @@ class CouponStatusApiTest {
         assertThat(statusOf(otherStores)).isEqualTo("downloaded");
     }
 
+    @Test
+    void 사장님이_휴업으로_바꾸면_그_가게의_미사용_쿠폰이_적용_취소_FR_CPN_07_4() throws Exception {
+        long downloaded = coupon(fixedEvent, store, NOW_UTC.minusDays(1), "downloaded", null);
+        long applied = coupon(fixedEvent, store, NOW_UTC.minusDays(1), "applied", reservation(store, "confirmed"));
+        long used = coupon(fixedEvent, store, NOW_UTC.minusDays(3), "used", reservation(store, "visited"));
+        long otherStores = coupon(event(otherStore, "'fixed_discount', 3000, NULL, NULL, NULL"), otherStore,
+                NOW_UTC.minusDays(1), "downloaded", null);
+
+        changeStatus("paused", true).andExpect(status().isOk());
+
+        assertThat(statusOf(downloaded)).isEqualTo("apply_canceled");
+        assertThat(statusOf(applied)).isEqualTo("apply_canceled");
+        assertThat(statusOf(used)).isEqualTo("used");
+        assertThat(statusOf(otherStores)).isEqualTo("downloaded");
+    }
+
+    @Test
+    void 운영_중단_이벤트도_적용_취소() {
+        long downloaded = coupon(fixedEvent, store, NOW_UTC.minusDays(1), "downloaded", null);
+
+        events.publishEvent(new StoreBusinessStatusChangedEvent(store, "closed"));
+
+        assertThat(statusOf(downloaded)).isEqualTo("apply_canceled");
+    }
+
+    @Test
+    void 예약_받기만_멈추거나_영업으로_돌아오면_쿠폰은_그대로() throws Exception {
+        long downloaded = coupon(fixedEvent, store, NOW_UTC.minusDays(1), "downloaded", null);
+        long applied = coupon(fixedEvent, store, NOW_UTC.minusDays(1), "applied", reservation(store, "confirmed"));
+
+        changeStatus("open", false).andExpect(status().isOk()); // 영업 상태가 그대로라 이벤트 없음
+        events.publishEvent(new StoreBusinessStatusChangedEvent(store, "open"));
+
+        assertThat(statusOf(downloaded)).isEqualTo("downloaded");
+        assertThat(statusOf(applied)).isEqualTo("applied");
+    }
+
     // ---- 늦은 방문 처리 ----
 
     @Test
@@ -316,6 +356,13 @@ class CouponStatusApiTest {
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, customer, eventId, storeId, downloadedAt, downloadedAt.plusDays(7), status, reservation);
         return jdbc.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
+    }
+
+    /** 사장님 영업 상태 · 예약 받기 변경(C22). */
+    private ResultActions changeStatus(String businessStatus, boolean reservationEnabled) throws Exception {
+        return mvc.perform(put("/api/v1/owner/store/status").session(owner).with(TestCsrf.csrf(mvc))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"businessStatus\":\"" + businessStatus + "\",\"reservationEnabled\":" + reservationEnabled + "}"));
     }
 
     private String statusOf(long coupon) {

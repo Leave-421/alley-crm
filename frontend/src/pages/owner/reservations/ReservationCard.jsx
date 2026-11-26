@@ -13,14 +13,16 @@ import Badge from '@/components/Badge/Badge.jsx';
 import Button from '@/components/Button/Button.jsx';
 import TextField from '@/components/TextField/TextField.jsx';
 import { formatTime, formatWon } from './reservationFormat.js';
+import { describeAppliedCoupon, previewVisit } from './visitPreview.js';
 import styles from './OwnerReservations.module.css';
 
 /**
  * 날짜별 목록의 예약 한 건(계약 D4 items[]).
  * 손님은 가린 이름만, 추천은 '추천으로 왔어요' 여부만 보여 준다. 보낸 가게 이름 · 전화번호는 응답에도 없다(FR-CUS-05, FR-RSV-04).
- * '신청' 예약은 승인 · 거절(B7, FR-RSV-03), '확정' 예약은 방문 처리, '방문' 예약은 쿠폰 사용 확인(B8)을 한다.
+ * '신청' 예약은 승인 · 거절(B7, FR-RSV-03), '확정' 예약은 방문 처리, 쿠폰이 있는 '방문' 예약은 쿠폰 사용 확인(B8)을 한다.
+ * referralFeeRate: 목록 응답의 소개 수수료율(설정값, 방문 처리 미리보기용).
  */
-export default function ReservationCard({ reservation, onDecided, onOutdated }) {
+export default function ReservationCard({ reservation, referralFeeRate, onDecided, onOutdated }) {
   const { startAt, maskedName, partySize, status, cancelReason, customerType, fromRecommendation, requestNote, depositAmount } =
     reservation;
   const canceled = status === 'canceled';
@@ -48,22 +50,36 @@ export default function ReservationCard({ reservation, onDecided, onOutdated }) 
         {fromRecommendation ? '추천으로 왔어요' : '일반 예약'}
       </p>
 
+      {/* 적용된 쿠폰 표시(FR-CPN-08). 글자 + 앞 표시로도 구분(NFR-11) */}
+      {reservation.coupon && <p className={styles.couponTag}>{describeAppliedCoupon(reservation.coupon)}</p>}
+
       {status === 'visited' && reservation.visitAmount != null && (
         <p className={styles.cardMeta}>방문 금액 {formatWon(reservation.visitAmount)}(쿠폰 할인 전)</p>
       )}
 
       {status === 'requested' && <DecisionActions reservation={reservation} onDecided={onDecided} onOutdated={onOutdated} />}
-      {status === 'confirmed' && <VisitAction reservation={reservation} onDecided={onDecided} onOutdated={onOutdated} />}
-      {status === 'visited' && <CouponUseAction reservation={reservation} onDecided={onDecided} />}
+      {status === 'confirmed' && (
+        <VisitAction reservation={reservation} referralFeeRate={referralFeeRate} onDecided={onDecided} onOutdated={onOutdated} />
+      )}
+      {status === 'visited' && reservation.coupon && <CouponUseAction reservation={reservation} onDecided={onDecided} />}
     </article>
   );
 }
 
+/** 입력 글자 → 방문 금액(원). 쉼표 허용, 범위 밖이면 null */
+function parseVisitAmount(text) {
+  const trimmed = text.replaceAll(',', '').trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const amount = Number(trimmed);
+  return amount >= VISIT_AMOUNT_LIMITS.min && amount <= VISIT_AMOUNT_LIMITS.max ? amount : null;
+}
+
 /**
- * 확정 예약의 방문 처리(B8, FR-RSV-09). 방문 금액은 쿠폰 할인 전 결제 금액이고,
- * 쿠폰 할인 · 소개 수수료는 서버가 계산한다(D11). 쿠폰 사용 확인은 방문 처리와 따로 한다(FR-CPN-08).
+ * 확정 예약의 방문 처리(B8, FR-RSV-09). 방문 금액은 쿠폰 할인 전 결제 금액이다.
+ * 입력하는 동안 방문 금액 → 쿠폰 할인 → 할인 후 금액 → 소개 수수료를 미리 보여 주고(visitPreview.js),
+ * 확정 할인액은 처리 응답의 couponDiscountAmount를 쓴다. 쿠폰 사용 확인은 방문 처리와 따로 한다(FR-CPN-08).
  */
-function VisitAction({ reservation, onDecided, onOutdated }) {
+function VisitAction({ reservation, referralFeeRate, onDecided, onOutdated }) {
   const id = useId();
   const [open, setOpen] = useState(false);
   const [amountText, setAmountText] = useState('');
@@ -74,9 +90,8 @@ function VisitAction({ reservation, onDecided, onOutdated }) {
 
   async function submit(event) {
     event.preventDefault();
-    const trimmed = amountText.replaceAll(',', '').trim();
-    const amount = /^\d+$/.test(trimmed) ? Number(trimmed) : NaN;
-    if (Number.isNaN(amount) || amount < VISIT_AMOUNT_LIMITS.min || amount > VISIT_AMOUNT_LIMITS.max) {
+    const amount = parseVisitAmount(amountText);
+    if (amount === null) {
       setFieldError('0 ~ 10,000,000원 사이 숫자로 넣어 주세요.');
       return;
     }
@@ -85,8 +100,10 @@ function VisitAction({ reservation, onDecided, onOutdated }) {
     setError(null);
     try {
       const result = await visitReservation(reservation.id, amount);
-      const fee = reservation.fromRecommendation ? '추천으로 온 예약이라 쿠폰 할인 뒤 금액으로 소개 수수료가 계산돼요' : '일반 예약이라 소개 수수료는 없어요';
-      onDecided(result, `${who}님 방문을 처리했어요 · 방문 금액 ${formatWon(amount)} · ${fee}.`);
+      const parts = [`방문 금액 ${formatWon(amount)}`];
+      if (result.couponDiscountAmount != null) parts.push(`쿠폰 할인 ${formatWon(result.couponDiscountAmount)}`);
+      parts.push(reservation.fromRecommendation ? '소개 수수료는 소개 판정 뒤 확정돼요' : '일반 예약이라 소개 수수료는 없어요');
+      onDecided(result, `${who}님 방문을 처리했어요 · ${parts.join(' · ')}.`);
     } catch (caught) {
       if (caught instanceof ApiError && (caught.code === 'conflict' || caught.code === 'not_found')) {
         onOutdated(`${who}님 예약은 확정 상태가 아니라 방문 처리할 수 없어요. 목록을 다시 불러왔어요.`);
@@ -116,11 +133,7 @@ function VisitAction({ reservation, onDecided, onOutdated }) {
         hint="손님이 낸 결제 금액이에요. 쿠폰 할인은 이 금액에서 빠져요."
         error={fieldError}
       />
-      <p className={styles.feeNote}>
-        {reservation.fromRecommendation
-          ? '추천으로 온 예약이에요. 쿠폰 할인 뒤 금액에 소개 수수료가 붙어요.'
-          : '일반 예약이라 소개 수수료가 없어요.'}
-      </p>
+      <VisitPreview reservation={reservation} referralFeeRate={referralFeeRate} amount={parseVisitAmount(amountText)} />
       {error && (
         <p className={styles.error} role="alert">
           {error}
@@ -138,9 +151,47 @@ function VisitAction({ reservation, onDecided, onOutdated }) {
   );
 }
 
+/** 방문 처리 미리보기. 금액을 아직 안 넣었으면 수수료 대상 여부만 안내한다(07-screens O-01). */
+function VisitPreview({ reservation, referralFeeRate, amount }) {
+  const { coupon, fromRecommendation } = reservation;
+  if (amount === null) {
+    return (
+      <p className={styles.feeNote}>
+        {fromRecommendation ? '추천으로 온 예약이에요. 쿠폰 할인 뒤 금액에 소개 수수료가 붙어요.' : '일반 예약이라 소개 수수료가 없어요.'}
+      </p>
+    );
+  }
+  const { discount, afterDiscount, fee } = previewVisit({ visitAmount: amount, coupon, fromRecommendation, referralFeeRate });
+  const ratePercent = referralFeeRate != null ? `${Math.round(referralFeeRate * 1000) / 10}%` : null;
+  let couponText = '쿠폰 없음';
+  if (coupon) couponText = coupon.benefitType === 'service' ? `${coupon.serviceName} 제공(금액 할인 없음)` : `− ${formatWon(discount)}`;
+  let feeText = '소개 수수료 없음(일반 예약)';
+  if (fromRecommendation) feeText = fee === null ? '수수료율을 불러오지 못했어요' : `${formatWon(fee)}(${ratePercent}, 미리보기)`;
+  return (
+    <dl className={styles.preview} aria-label="방문 처리 미리보기">
+      <div>
+        <dt>방문 금액</dt>
+        <dd>{formatWon(amount)}</dd>
+      </div>
+      <div>
+        <dt>쿠폰 할인</dt>
+        <dd>{couponText}</dd>
+      </div>
+      <div>
+        <dt>할인 후 금액</dt>
+        <dd>{formatWon(afterDiscount)}</dd>
+      </div>
+      <div>
+        <dt>소개 수수료</dt>
+        <dd>{feeText}</dd>
+      </div>
+    </dl>
+  );
+}
+
 /**
- * 방문 처리된 예약의 쿠폰 사용 확인(B8, FR-CPN-08, E14). 방문 전 예약에는 보이지 않는다(FR-CPN-08 #2).
- * 목록(D4)에 적용 쿠폰 칸이 아직 없어, 쿠폰이 없거나 이미 확인했으면 서버의 409로 알려 준다.
+ * 방문 처리된 예약의 쿠폰 사용 확인(B8, FR-CPN-08, E14). 쿠폰이 있는 방문 예약에만 보인다(FR-CPN-08 #2).
+ * 목록 쿠폰에는 사용 여부가 없어서, 이미 확인했으면 서버의 409로 알려 준다.
  */
 function CouponUseAction({ reservation, onDecided }) {
   const [busy, setBusy] = useState(false);

@@ -1,3 +1,4 @@
+import RequireApprovedStore from '@/auth/RequireApprovedStore.jsx';
 import RequireRole from '@/auth/RequireRole.jsx';
 import { ROLES } from '@/auth/roles.js';
 import AppLayout from '@/layouts/AppLayout.jsx';
@@ -16,7 +17,12 @@ export const ownerRoutes = [
     element: <RequireRole allow={[ROLES.OWNER]} />,
     children: [
       {
-        element: <AppLayout menu={OWNER_MENU} />,
+        // 승인 전 · 거절 가게의 사장님은 가게 가입 상태(O-11)로 보낸다(B5, FR-AUTH-04)
+        element: (
+          <RequireApprovedStore>
+            <AppLayout menu={OWNER_MENU} />
+          </RequireApprovedStore>
+        ),
         children: [
           { index: true, handle: { title: '예약 관리' }, element: <OwnerReservationsPage /> }, // O-01 B6
           { path: 'customers', element: <PlaceholderPage screenId="O-04" title="고객 목록" /> },

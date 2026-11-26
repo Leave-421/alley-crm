@@ -170,3 +170,21 @@ export const storeHandlers = [
   http.post('/api/v1/store-joins/:storeId/approve', decideJoin('approved')),
   http.post('/api/v1/store-joins/:storeId/reject', decideJoin('rejected')),
 ];
+
+// 사장님 쪽 가게 가입(storeJoin.js)이 같은 가게 목록을 쓰도록 내보낸다.
+export const mockRegionId = MOCK_REGION_ID;
+export const findMockStore = (id) => stores.find((item) => item.id === id) ?? null;
+export const toMockStoreJoin = (item) => toStoreJoin(item);
+
+/** 새 가게를 더하고 id를 돌려준다. */
+export function addMockStore(fields) {
+  const id = String(Math.max(...stores.map((item) => Number(item.id))) + 1);
+  stores = [...stores, store(id, fields.name, fields.category, fields.alley, { ...fields })];
+  return id;
+}
+
+/** 가게 칸을 바꾸고 바뀐 가게를 돌려준다. */
+export function updateMockStore(id, fields) {
+  stores = stores.map((item) => (item.id === id ? { ...item, ...fields } : item));
+  return findMockStore(id);
+}

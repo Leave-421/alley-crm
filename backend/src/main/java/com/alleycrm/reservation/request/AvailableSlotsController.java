@@ -31,7 +31,8 @@ class AvailableSlotsController {
 
     @GetMapping("/api/v1/stores/{storeId}/available-slots")
     Map<String, Object> availableSlots(@PathVariable long storeId,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant after) {
         StoreSnapshot store = slots.read(storeId)
                 .filter(s -> "approved".equals(s.joinStatus()))
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND));
@@ -40,7 +41,12 @@ class AvailableSlotsController {
         boolean accepting = "open".equals(store.businessStatus()) && store.reservationEnabled();
         boolean inWindow = !date.isBefore(today) && !date.isAfter(today.plusDays(store.bookingWindowDays()));
 
-        List<Instant> starts = SlotRules.slotsOf(store, date);
+        // 다음 코스 시간 제안(D12, FR-RSV-11 #2): 기준 예약 시각(after)과 같은 날이면 그보다 늦은 슬롯만. 다른 날은 모두
+        List<Instant> starts = SlotRules.slotsOf(store, date).stream()
+                .filter(t -> after == null
+                        || !LocalDate.ofInstant(t, SlotRules.SERVICE_ZONE).equals(LocalDate.ofInstant(after, SlotRules.SERVICE_ZONE))
+                        || t.isAfter(after))
+                .toList();
         Map<Instant, Integer> taken = starts.isEmpty() ? Map.of()
                 : slots.takenBetween(storeId, starts.get(0), starts.get(starts.size() - 1).plusSeconds(1));
         List<Map<String, Object>> items = starts.stream()
