@@ -25,6 +25,29 @@ export const ALLEY_LABELS = Object.freeze({
 
 export const ALLEYS = Object.freeze(Object.keys(ALLEY_LABELS));
 
+/** CONTRACTS.md 「3」 store.closedDays 요일 값 */
+export const WEEKDAY_LABELS = Object.freeze({
+  mon: '월',
+  tue: '화',
+  wed: '수',
+  thu: '목',
+  fri: '금',
+  sat: '토',
+  sun: '일',
+});
+
+/** closedDays(요일 코드 목록) → 목업 문구('매주 월요일 휴무' · '매주 월·화 휴무' · '연중무휴') */
+export function formatClosedDays(closedDays) {
+  if (!closedDays || closedDays.length === 0) return '연중무휴';
+  const days = closedDays.map((day) => WEEKDAY_LABELS[day] ?? day);
+  return days.length === 1 ? `매주 ${days[0]}요일 휴무` : `매주 ${days.join('·')} 휴무`;
+}
+
+/** 영업시간 → 목업 문구('11:30 – 21:00'). 승인 전이라 값이 없으면 '-' */
+export function formatHours(openTime, closeTime) {
+  return openTime && closeTime ? `${openTime} – ${closeTime}` : '-';
+}
+
 const SEED_STORES = [
   { code: 'S01', name: '아침볕 커피', category: 'cafe', alley: 'front_gate', mapX: 30, mapY: 30, address: '정문 앞길 3', openTime: '08:00', closeTime: '22:00', closedDays: [] },
   { code: 'S02', name: '연필깎는집', category: 'stationery', alley: 'front_gate', mapX: 90, mapY: 50, address: '정문 앞길 8', openTime: '09:00', closeTime: '20:00', closedDays: ['sun'] },

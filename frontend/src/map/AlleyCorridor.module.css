@@ -1,63 +1,306 @@
-/* 키(height)는 '뒤로 몇 칸 더 들어가야 하는지'만큼 JS로 늘린다(maxDepth). 페이지 자체가
-   정상적으로 스크롤되고(B2 레이아웃), 그 스크롤에 맞춰 안의 stage가 sticky로 붙어 있는 동안
-   AlleyCorridor가 window scroll을 읽어 depth로 바꾼다 */
+/* 확정 목업 GuestAlley*.dc.html의 스크롤 영역 값 그대로(목업 좌표계). 폭 · 높이는 JS가 정한다 */
 .scroller {
-  position: relative;
+  position: absolute;
+  top: 56px;
+  left: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
 }
 
-/* 화면에 붙어 있는 동안(sticky) perspective 무대를 보여준다 */
+.scroller::-webkit-scrollbar {
+  display: none;
+}
+
 .stage {
   position: sticky;
   top: 0;
   overflow: hidden;
-  perspective: 700px;
-  perspective-origin: 50% 55%;
-  background: var(--gradient-bg);
+  background-color: #96b0d2;
+}
+
+/* 3D 장면 캔버스: 아래(길 · 도크)에 맞춰 붙이고, 목업 높이(764)보다 높은 화면은 그만큼 키운다.
+   높이 · 지평선은 JS가 정한다 */
+.canvas {
+  position: absolute;
+  bottom: 0;
+  transform-origin: 50% 100%;
+  perspective: 600px;
+  background-repeat: no-repeat, no-repeat;
 }
 
 .world {
   position: absolute;
-  left: 50%;
-  top: 50%;
   width: 0;
   height: 0;
   transform-style: preserve-3d;
-  transition: transform var(--duration-normal) ease-out;
+  transition-property: transform;
+  transition-timing-function: cubic-bezier(0.62, 0, 0.32, 1);
+}
+
+/* left · top · width · height는 길 폭에 맞춰 JS가 정한다(목업은 -150 · -195 · 300 · 390) */
+.endWall {
+  position: absolute;
+  pointer-events: none;
+}
+
+.endWallFade {
+  mask-image: linear-gradient(180deg, transparent 0%, #000 30%);
+}
+
+.floor {
+  position: absolute;
+  top: -115px;
+  height: 230px;
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+
+/* 건물 줄 뒤 그늘진 벽(땅에서 280까지 — 가장 낮은 건물보다 낮아 지붕 위로는 안 보인다). 위치 · 길이는 JS */
+.backWall {
+  position: absolute;
+  top: -85px;
+  height: 280px;
+  background: linear-gradient(180deg, #2a2427 0%, #1f1a1c 100%);
+  pointer-events: none;
+}
+
+/* 물러선 건물 앞 땅: 바닥 그림의 보도 쪽 끝을 이어 깐다(위치 · 크기는 JS) */
+.floorEdge {
+  position: absolute;
+  top: -115px;
+  height: 230px;
+  pointer-events: none;
 }
 
 .facade {
   position: absolute;
-  left: -110px;
-  top: -140px;
-  width: 220px;
-  height: 280px;
-  border: 1px solid var(--color-surface-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-card);
+  left: -115px;
+  top: -195px;
+  width: 230px;
+  height: 390px;
+  backface-visibility: hidden;
+}
+
+/* 건물 그림은 칸 아래(땅)에 붙이고 그림 비율대로 위로 넘친다 */
+.facadeBody {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+}
+
+/* 건물 밑단이 땅과 닿는 곳의 그늘 */
+.facade::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 22px;
+  background: linear-gradient(0deg, rgba(20, 16, 18, 0.32), rgba(20, 16, 18, 0));
+  pointer-events: none;
+}
+
+/* 길 쪽으로 튀어나온 건물의 앞쪽 옆벽(정면 사진 끝 줄을 어둡게) */
+.ret {
+  position: absolute;
+  left: 0;
+  background-repeat: no-repeat;
+  filter: brightness(0.62) saturate(0.9);
+  pointer-events: none;
+}
+
+/* 보도 소품(가로등). 클릭은 가로채지 않는다 */
+.prop {
+  position: absolute;
+  pointer-events: none;
+}
+
+.propBody {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 100%;
+}
+
+.propImage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: none;
+  user-select: none;
+}
+
+.shaft {
+  position: absolute;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #8d8f8e, #c7c8c4 45%, #9a9b98);
+}
+
+.facadeHit {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.sign {
+  position: absolute;
+  left: -44px;
+  top: -22px;
+  width: 88px;
+  height: 44px;
+  backface-visibility: hidden;
+}
+
+.bracket {
+  position: absolute;
+  width: 10px;
+  height: 3px;
+  border-radius: 2px;
+  background: #2a2226;
+}
+
+.signBoard {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--space-1);
-  padding: var(--space-4);
-  backface-visibility: hidden;
+  width: 88px;
+  height: 44px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #5e3b4e 0%, var(--color-ink-800) 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 6px 12px rgba(19, 10, 13, 0.3);
+  color: #fff;
   cursor: pointer;
 }
 
-.facadeSelected {
-  outline: 3px solid var(--color-brand-700);
-  outline-offset: 2px;
+.signName {
+  font-size: 13px;
+  line-height: 17px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
-.facadeName {
-  font-weight: var(--weight-bold);
-  font-size: var(--text-lg);
-  color: var(--color-text);
-  text-align: center;
+.signCat {
+  font-size: 10.5px;
+  line-height: 14px;
+  font-weight: 600;
+  color: #e2d0da;
 }
 
-.facadeCat {
-  font-size: var(--text-sm);
-  color: var(--color-text-muted);
+.hint {
+  position: absolute;
+  left: 16px;
+  top: 10px;
+  z-index: 2;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--color-ink-600);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 700;
+}
+
+/* 목업 크기(폭 390 - 좌우 12) 그대로. 넓은 화면에서는 가운데 */
+.dock {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  width: min(366px, calc(100% - 24px));
+  transform: translateX(-50%);
+  z-index: 3;
+  padding: 12px;
+  border-radius: 26px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 10px 30px rgba(150, 120, 137, 0.16);
+}
+
+.dockHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.dockTitle {
+  flex: 1;
+  min-width: 0;
+  color: var(--color-ink-900);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 800;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.dockLabel {
+  margin: -2px 0 8px;
+  color: var(--color-ink-500);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 700;
+}
+
+.dockGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.dockButton {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 64px;
+  padding: 6px;
+  border: 0;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow: inset 0 0 0 1px var(--color-gray-200);
+  text-align: left;
+  cursor: pointer;
+}
+
+.dockThumb {
+  display: flex;
+  flex: none;
+  align-items: flex-end;
+  width: 30px;
+  height: 51px;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.dockText {
+  display: block;
+  min-width: 0;
+}
+
+.dockName {
+  display: block;
+  overflow: hidden;
+  color: var(--color-ink-900);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 800;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.dockCat {
+  display: block;
+  color: var(--color-ink-500);
+  font-size: 12px;
+  line-height: 16px;
 }

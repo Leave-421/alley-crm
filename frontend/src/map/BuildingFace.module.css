@@ -1,0 +1,145 @@
+.face {
+  position: relative;
+  pointer-events: none;
+}
+
+/* 건물 뒤 그늘(지붕선 아래 칸 폭 전체). 윗층이 좁은 건물 옆 틈으로 하늘 대신 이게 보인다 */
+.backing {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #231e20;
+}
+
+.image {
+  position: absolute;
+  top: 0;
+  max-width: none;
+  user-select: none;
+}
+
+/*
+ * 사진 속 간판 위에 덮는 실제 이름. 바탕색은 사진에서 잰 그 간판 색(JS)이고, 재질(kind)마다 빛 · 그늘 · 글자 입체감을
+ * 사진 속 원래 간판처럼 준다. 그림자 · 테두리는 모두 em(= 글자 크기 비례)이라 멀리서 작게 보여도 비율이 같다.
+ */
+.sign {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 0 4%;
+  font-family: var(--font-sans);
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  text-align: center;
+  white-space: normal;
+  word-break: keep-all;
+}
+
+.text {
+  display: block;
+}
+
+/* 뒤에서 불을 켠 아크릴 간판: 가운데가 밝고 가장자리 테가 있다 */
+.lightbox {
+  background-image: radial-gradient(120% 140% at 50% 45%, rgba(255, 255, 255, 0.38), rgba(255, 255, 255, 0) 70%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(0, 0, 0, 0.08));
+  box-shadow: inset 0 0 0 0.06em rgba(40, 30, 30, 0.28), inset 0 0.12em 0.25em rgba(255, 255, 255, 0.45),
+    inset 0 -0.12em 0.25em rgba(0, 0, 0, 0.12);
+}
+
+.lightbox .text {
+  text-shadow: 0 0 0.04em rgba(0, 0, 0, 0.25);
+}
+
+/* 판 위에 도드라진 글자(채널 간판): 글자 아래로 두께와 그림자 */
+.channel {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 40%, rgba(0, 0, 0, 0.14));
+  box-shadow: inset 0 0.06em 0 rgba(255, 255, 255, 0.25), inset 0 -0.08em 0.12em rgba(0, 0, 0, 0.22);
+}
+
+.channel .text {
+  text-shadow: 0 0.025em 0 rgba(0, 0, 0, 0.28), 0 0.05em 0 rgba(0, 0, 0, 0.22), 0 0.09em 0.12em rgba(0, 0, 0, 0.35);
+}
+
+/* 나무 판에 새긴 글자: 판결 무늬 + 위 그늘 · 아래 빛(파인 느낌) */
+.wood {
+  background-image: repeating-linear-gradient(180deg, rgba(0, 0, 0, 0.05) 0 0.08em, rgba(255, 255, 255, 0.03) 0.08em 0.2em),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(0, 0, 0, 0.16));
+  box-shadow: inset 0 0 0 0.05em rgba(0, 0, 0, 0.25), inset 0 0.08em 0.15em rgba(0, 0, 0, 0.25);
+}
+
+.wood .text {
+  text-shadow: 0 -0.03em 0 rgba(0, 0, 0, 0.45), 0 0.03em 0 rgba(255, 255, 255, 0.2);
+}
+
+/* 어두운 판의 금속 글자: 글자에 금빛 그러데이션 */
+.metal {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(0, 0, 0, 0.25));
+  box-shadow: inset 0 0 0 0.05em rgba(255, 255, 255, 0.08), inset 0 0.1em 0.2em rgba(0, 0, 0, 0.4);
+}
+
+.metal .text {
+  background: linear-gradient(180deg, #f3e3b8 0%, #c9a866 48%, #8f7240 52%, #d8bf86 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0.05em 0.04em rgba(0, 0, 0, 0.55));
+}
+
+/* 차양 천에 찍은 글자: 천 주름 그늘, 글자는 살짝 바랜 흰색 */
+.awning {
+  background-image: repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.06) 0 0.6em, rgba(255, 255, 255, 0.04) 0.6em 1.2em),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(0, 0, 0, 0.12));
+  letter-spacing: 0.04em;
+}
+
+.awning .text {
+  opacity: 0.94;
+  text-shadow: 0 0.03em 0.05em rgba(0, 0, 0, 0.3);
+}
+
+/* 둥근 돌출 간판(원판) */
+.round {
+  border-radius: 50%;
+  background-image: radial-gradient(circle at 50% 40%, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0) 65%);
+  box-shadow: inset 0 0 0 0.12em rgba(150, 110, 80, 0.55), 0 0.08em 0.15em rgba(0, 0, 0, 0.25);
+  line-height: 1.05;
+}
+
+/* 어두운 판 위 네온 글자: 글자 둘레로 빛이 번진다 */
+.neon {
+  border-radius: 0.2em;
+  box-shadow: inset 0 0 0 0.05em rgba(255, 255, 255, 0.06), inset 0 0 0.4em rgba(0, 0, 0, 0.5);
+}
+
+.neon .text {
+  text-shadow: 0 0 0.04em #fff8e0, 0 0 0.18em currentColor, 0 0 0.45em currentColor;
+}
+
+/* 벽에 바로 쓴 글자: 원래 글자만 벽색으로 지우고 가장자리는 벽에 녹이며, 글자는 벽 질감이 살짝 비치게 */
+.painted {
+  mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent),
+    linear-gradient(180deg, transparent, #000 14%, #000 86%, transparent);
+  mask-composite: intersect;
+}
+
+.painted .text {
+  opacity: 0.9;
+  text-shadow: 0 0.02em 0.02em rgba(255, 255, 255, 0.15);
+}
+
+.serif {
+  font-family: 'Noto Serif KR', 'Nanum Myeongjo', Batang, serif;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.vertical {
+  padding: 6% 0;
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  letter-spacing: -0.06em;
+}
