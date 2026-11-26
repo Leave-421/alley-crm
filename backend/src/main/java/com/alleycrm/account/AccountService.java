@@ -3,6 +3,7 @@ package com.alleycrm.account;
 import com.alleycrm.common.error.ApiException;
 import com.alleycrm.common.error.ErrorCode;
 import com.alleycrm.customer.CustomerService;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -71,6 +72,12 @@ public class AccountService {
     @Transactional(readOnly = true)
     public Optional<Long> findOwnerAccountId(long storeId) {
         return accounts.findByStoreId(storeId).map(Account::getId);
+    }
+
+    /** 회원(손님) 계정 ID 전부. 상인회 쿠폰 행사 알림(FR-CPN-13)을 보낼 때 쓴다 */
+    @Transactional(readOnly = true)
+    public List<Long> customerAccountIds() {
+        return accounts.findIdsByRole(AccountRole.CUSTOMER);
     }
 
     private Account saveNew(Account account) {
