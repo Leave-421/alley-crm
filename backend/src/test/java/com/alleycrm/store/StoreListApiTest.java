@@ -96,6 +96,16 @@ class StoreListApiTest {
     }
 
     @Test
+    void 권역_목록은_로그인_없이_ID순으로_본다() throws Exception {
+        // 같은 DB를 쓰는 다른 테스트의 권역이 있을 수 있어 이 테스트가 만든 두 권역의 순서만 확인한다
+        mvc.perform(get("/api/v1/regions"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[*].id").value(org.hamcrest.Matchers.containsInRelativeOrder(
+                        String.valueOf(regionId), String.valueOf(otherRegionId))))
+                .andExpect(jsonPath("$.items[?(@.id == '" + regionId + "')].name").value(org.hamcrest.Matchers.contains("목록 테스트 권역")));
+    }
+
+    @Test
     void 실제_좌표는_검증된_가게만_보인다() throws Exception {
         store(regionId, "approved", "open", true, true);
         store(regionId, "approved", "open", true, false);

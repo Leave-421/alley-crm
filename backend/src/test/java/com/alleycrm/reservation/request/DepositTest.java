@@ -68,7 +68,7 @@ class DepositTest {
     @AfterEach
     void clean() {
         clock.reset();
-        for (String t : new String[] {"wallet_tx", "wallet", "reservation", "customer", "account", "store", "region"}) {
+        for (String t : new String[] {"wallet_tx", "wallet", "share_consent", "reservation", "customer", "account", "store", "region"}) {
             jdbc.update("DELETE FROM " + t);
         }
     }

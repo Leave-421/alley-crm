@@ -7,6 +7,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalTime;
 import lombok.AccessLevel;
 import org.hibernate.annotations.JdbcType;
@@ -14,7 +15,7 @@ import org.hibernate.type.descriptor.jdbc.LocalTimeJdbcType;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/** 가게(06-data STORE). 테이블은 Flyway가 만들고, 여기서는 가게 가입(C5)이 쓰는 칸만 매핑한다. */
+/** 가게(06-data STORE). 테이블은 Flyway가 만들고, 여기서는 가게 가입(C5) · 목록(C6) · 사장님 변경(C22)이 쓰는 칸만 매핑한다. */
 @Entity
 @Table(name = "store")
 @Getter
@@ -82,6 +83,10 @@ public class Store {
     @Column(name = "reservation_enabled", nullable = false, insertable = false)
     private boolean reservationEnabled;
 
+    /** 영업 상태가 바뀐 시각. 쿠폰 30일 제한 해제가 이 시각 전 다운로드를 뺀다(06-data COUPON) */
+    @Column(name = "business_status_changed_at")
+    private Instant businessStatusChangedAt;
+
     static Store requested(long regionId, StoreJoinInfo info) {
         Store s = new Store();
         s.regionId = regionId;
@@ -107,6 +112,24 @@ public class Store {
         this.mapY = mapY;
     }
 
+    /** 사장님이 영업 상태 · 예약 받기를 바꾼다(C22). 영업 상태가 실제로 바뀌었으면 true. */
+    boolean changeStatus(String businessStatus, boolean reservationEnabled, Instant now) {
+        this.reservationEnabled = reservationEnabled;
+        if (businessStatus.equals(this.businessStatus)) {
+            return false;
+        }
+        this.businessStatus = businessStatus;
+        this.businessStatusChangedAt = now;
+        return true;
+    }
+
+    /** 사장님이 영업시간 · 휴무일을 바꾼다(C22). 예약 가능 시간(D5)이 이 칸을 읽는다. */
+    void changeHours(LocalTime openTime, LocalTime closeTime, String closedDays) {
+        this.openTime = openTime;
+        this.closeTime = closeTime;
+        this.closedDays = closedDays;
+    }
+
     /** 지금 예약을 받는 가게: 영업 중이고 예약 받기가 켜져 있음(FR-STO-02). 저장하지 않고 계산한다. */
     boolean isReservable() {
         return BUSINESS_OPEN.equals(businessStatus) && reservationEnabled;
@@ -116,8 +139,6 @@ public class Store {
         name = info.name().strip();
         category = info.category();
         alley = info.alley();
-        openTime = info.openTime();
-        closeTime = info.closeTime();
-        closedDays = info.closedDaysValue();
+        changeHours(info.openTime(), info.closeTime(), info.closedDaysValue());
     }
 }
