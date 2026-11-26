@@ -23,7 +23,7 @@ export const ownerRoutes = [
           { path: 'flow', element: <PlaceholderPage screenId="O-07" title="손님 흐름" /> },
           { path: 'settlement', element: <PlaceholderPage screenId="O-08" title="소개 · 수수료" /> },
           { path: 'coupons', handle: { title: '쿠폰 설정' }, element: <CouponSettingsPage /> }, // O-09 B15
-          { path: 'settings', handle: { title: '예약 운영 설정' }, element: <ReservationSettingsPage /> }, // O-03 B10, 진입은 O-01 '예약 운영 설정'
+          { path: 'settings', handle: { title: '가게 · 예약 설정' }, element: <ReservationSettingsPage /> }, // O-03 B10, 진입은 O-01 '예약 운영 설정'
           { path: 'notifications', handle: { title: '알림함' }, element: <PlaceholderPage screenId="O-10" title="알림함" /> },
         ],
       },

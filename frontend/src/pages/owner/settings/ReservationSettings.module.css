@@ -104,3 +104,74 @@
 .error::before {
   content: '! ';
 }
+
+.cardHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+/* 지금 예약을 받는지: 글자로도 구분(NFR-11) */
+.stateOn,
+.stateOff {
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+}
+
+.stateOn {
+  background: var(--color-pink-100);
+  color: var(--color-ink-900);
+}
+
+.stateOff {
+  border: 1px solid var(--color-gray-400);
+  color: var(--color-ink-500);
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* 고른 항목은 진한 바탕 + 굵은 글씨로도 구분한다(색만으로 나누지 않음, NFR-11) */
+.choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1.5px solid rgba(63, 36, 42, 0.2);
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.35);
+  color: var(--color-ink-800);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+
+.choice:has(input:checked) {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-weight: var(--weight-bold);
+}
+
+.choice input {
+  margin: 0;
+  accent-color: var(--color-on-primary);
+}
+
+.warning {
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--color-berry-500);
+  border-radius: var(--radius-sm);
+  background: var(--color-pink-50);
+  color: var(--color-ink-800);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+}
