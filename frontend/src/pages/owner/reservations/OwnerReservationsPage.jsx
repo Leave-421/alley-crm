@@ -34,7 +34,7 @@ function useServerNow() {
 /**
  * O-01 예약 관리(B6): 날짜별 예약 목록과 상태(신청 · 확정 · 방문 · 취소 + 사유), '추천으로 왔어요' 여부.
  * 기준: 07-screens O-01, FR-RSV-02 · 04, FR-CUS-05, CONTRACTS_API.md 「사장님 예약 (D3 · D4)」.
- * 승인 · 거절은 B7, 방문 처리 · 쿠폰 사용 확인은 B8, 실시간 반영 · 지연 표시는 B9에서 이 카드에 더한다.
+ * 신청 예약의 승인 · 거절(B7, FR-RSV-03)은 카드에 있다. 방문 처리 · 쿠폰 사용 확인은 B8, 실시간 반영 · 지연 표시는 B9에서 더한다.
  */
 export default function OwnerReservationsPage() {
   const nowMs = useServerNow();
@@ -64,8 +64,28 @@ export default function OwnerReservationsPage() {
     };
   }, [requestKey]);
 
+  const [notice, setNotice] = useState(null);
+
   function moveTo(nextKey) {
+    setNotice(null);
     setSearchParams(nextKey === todayKey ? {} : { date: nextKey });
+  }
+
+  /** 승인 · 거절(B7) 결과를 목록에 반영한다. 응답 Reservation에는 손님 이름 · 회원 여부가 없어 상태 칸만 바꾼다. */
+  function handleDecided(reservation, message) {
+    setNotice(message);
+    setResult((previous) => ({
+      ...previous,
+      items: previous.items.map((item) =>
+        item.id === reservation.id ? { ...item, status: reservation.status, cancelReason: reservation.cancelReason } : item,
+      ),
+    }));
+  }
+
+  /** 이미 처리됐거나(409 · 404) 자동 거절된 예약: 안내하고 서버 기준으로 다시 읽는다. */
+  function handleOutdated(message) {
+    setNotice(message);
+    setReloadCount((count) => count + 1);
   }
 
   if (!dateKey) {
@@ -113,6 +133,12 @@ export default function OwnerReservationsPage() {
 
       <p className={styles.rules}>{AUTO_RULES}</p>
 
+      {notice && (
+        <p className={styles.notice} role="status">
+          {notice}
+        </p>
+      )}
+
       {state.status === 'ready' && (
         <dl className={styles.kpis}>
           <div className={styles.kpi}>
@@ -144,7 +170,7 @@ export default function OwnerReservationsPage() {
           <ol className={styles.list} aria-label={`${formatDayLabel(dateKey)} 예약`}>
             {items.map((item) => (
               <li key={item.id}>
-                <ReservationCard reservation={item} />
+                <ReservationCard reservation={item} onDecided={handleDecided} onOutdated={handleOutdated} />
               </li>
             ))}
           </ol>
