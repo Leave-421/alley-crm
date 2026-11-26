@@ -1145,4 +1145,81 @@ DB가 막지 않는 것(유형별 필수 칸, 확정 뒤 변경 금지, 중단�
 | # | 내용 | 정해지지 않은 동안 | 결정 주체 |
 | --- | --- | --- | --- |
 | A-1 | 상인회 쿠폰(E20)을 같은 목록 · 같은 `couponId`로 받을지, 응답에 쿠폰 종류 칸을 더할지 | 가게 쿠폰만 다룬다 | E20 (#172) · D24 (#159) |
-| A-2 | 늦은 방문 처리(11-25 (5)) 때 '적용 취소' → '예약에 적용됨' 되돌리기 | 이 절에서는 하지 않는다 | E14 (#45) · D23 (#170) |
+| A-2 | (닫힘) 늦은 방문 처리(11-25 (5)) 때 '적용 취소' → '예약에 적용됨' 되돌리기 → 3.6 「늦은 방문 처리」 | — | E14 (#45) · D23 (#170) |
+
+### 3.6 쿠폰 상태 · 만료 · 사용 확인 (E14 #45 · 계약 #187)
+
+> 상태: **계약.** 구현은 #45에서 한다. 프론트 목(사장님 예약 B8 · O-01 · O-13)은 이 절을 따른다. 상인회 쿠폰의 같은 일은 E20(#172)이 더한다.
+> 기준: 기획 저장소 `05-policy.md` 「추천 쿠폰」 「상태와 전이」 「혜택과 비용」, `03-requirements.md` FR-CPN-05 · 07 · 08, `06-data.md` COUPON(`discount_applied` · `used_at`) · FEE(`coupon_cost`), 결정 기록 11-25 · 11-25 (5). 방문 처리는 2 「방문 처리」 · 「'방문 처리됨' 이벤트」(D11).
+
+| 지금 상태 | 일 | 다음 상태 | 하는 곳 |
+| --- | --- | --- | --- |
+| `downloaded` | 신청 시각이 기한 전, 회원이 골라 예약 신청 | `applied` | 3.5 (E13) |
+| `downloaded` | 만료 시각이 지남 | `expired` | 만료 작업 (아래) |
+| `applied` | 방문 처리된 예약을 사장님이 사용 확인 | `used` | 사용 확인 API (아래) |
+| `applied` | 방문 전 취소 (손님 취소 · 가게 거절 · 자동 거절 · 자동 취소) | `apply_canceled` | 3.5 (E13) |
+| `downloaded` · `applied` | 대상 가게 운영 중단 · 탈퇴 | `apply_canceled` | 가게 상태 변경 (아래) |
+| `apply_canceled` | 자동 취소된 예약을 늦게 방문 처리 (11-25 (5)) | `applied` | 늦은 방문 처리 (아래) |
+
+- 방문 처리만으로 `used`가 되지 않는다. 방문 처리 때는 실제 할인액만 기록한다(FR-CPN-08).
+- 같은 예약 ID로 날짜만 바꾸는 변경은 쿠폰을 건드리지 않는다. 적용은 그대로 유지된다(FR-CPN-07 #2). 변경이 거절돼도 원래 예약이 유지되므로 쿠폰도 그대로다.
+
+### `POST /api/v1/owner/reservations/{id}/coupon-use` — 쿠폰 사용 확인
+
+- 역할: 사장님(내 가게 예약). `X-XSRF-TOKEN` 필요. 본문 없음.
+- 그 예약에 적용된 쿠폰을 `applied` → `used`로 바꾸고 `used_at`(서버 시계)을 남긴다(FR-CPN-08 #1).
+- 응답 `200`:
+
+  ```json
+  { "couponId": "501", "reservationId": "88", "status": "used", "discountAmount": 3000, "usedAt": "2026-12-02T10:00:00Z" }
+  ```
+
+  - `discountAmount`: 방문 처리 때 기록한 실제 할인액(아래 「방문 할인」). 서비스 제공 쿠폰은 `0`.
+- 실패:
+  - `not_found` — 없는 예약 · 다른 가게 예약(존재 숨김)
+  - `conflict` — 예약이 방문 처리(`visited`) 전(FR-CPN-08 #2), 그 예약에 적용된 쿠폰이 없음, 이미 사용 확인함
+  - `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+### 방문 할인 (서버 내부, D11 이벤트)
+
+- 할인액 · 쿠폰 비용은 적용된 쿠폰의 행사 값과 방문 금액(쿠폰 할인 전)으로 정한다(05-policy 「혜택과 비용」).
+
+  | 혜택 | 할인액 | 쿠폰 비용 |
+  | --- | --- | --- |
+  | `fixed_discount` | `min(discountAmount, 방문 금액)` — 남는 할인은 사라진다(FR-CPN-07 #3) | 할인액 |
+  | `percent_discount` | `floor(방문 금액 × discountPercent ÷ 100)`, `maxDiscountAmount`가 있으면 그 금액까지(FR-CPN-07 #5 · #6) | 할인액 |
+  | `service` | `0` — 금액을 깎지 않는다 | 행사의 `serviceValue`(환산 금액) |
+
+- E14는 '방문 처리됨' 이벤트 `VisitProcessedEvent`를 `@EventListener`(같은 트랜잭션)로 받아 할인액을 쿠폰의 `discount_applied`에 기록한다. 상태는 `applied` 그대로다.
+- **D15(수수료 · 쿠폰 비용)는 이벤트 처리 순서에 기대지 않고** 같은 계산을 E의 서비스에서 받는다:
+  `CouponVisitService.discountFor(long reservationId, int visitAmount)` → `Optional<VisitCouponDiscount(long couponId, int discountAmount, int couponCost)>`. 적용된 쿠폰이 없으면 빈 값. 수수료 계산 금액은 `방문 금액 − discountAmount`(서비스 제공은 원래 방문 금액), `coupon_cost`는 `couponCost`(FR-STL-02, 06-data FEE).
+
+### 만료 작업 (서버 내부 → 실행 주기는 D7)
+
+- `CouponExpiryService.expireDue()`: `downloaded`이고 `expires_at` ≤ 지금(서버 시계)인 쿠폰을 `expired`로 바꾸고 바꾼 수를 돌려준다(FR-CPN-05 #2 · #5). `applied`는 방문일이 기한을 넘어도 그대로다(FR-CPN-05 #3).
+- D7 스케줄이 `autoRejectDue()` · `autoCancelDue()`와 같이 주기적으로 부른다. 사용 가능한 쿠폰 목록(3.5)은 작업 전이라도 기한이 지난 쿠폰을 빼고 보여준다.
+
+### 가게 운영 중단 · 탈퇴 → 적용 취소 (서버 내부, C가 부름)
+
+- `CouponStatusService.cancelUnusedForStore(long storeId)`: 그 가게가 대상인 `downloaded` · `applied` 쿠폰을 `apply_canceled`로 바꾼다(FR-CPN-07 #4). 30일 제한 해제는 `business_status_changed_at`으로 이미 처리된다(3.4).
+- 영업 상태를 휴업 · 중단으로 바꾸는 곳(C22 #116)과 탈퇴를 처리하는 곳이 **같은 트랜잭션에서** 부른다. 예약 받기 '잠시 멈춤'이나 쿠폰 행사 중단(FR-CPN-11)에는 부르지 않는다.
+
+### 늦은 방문 처리 → 되돌리기 (서버 내부, 11-25 (5))
+
+- `ReservationStatusChangedEvent`의 `fromStatus = canceled` · `toStatus = visited`(D23 늦은 방문 처리)를 `@EventListener`로 받아, 그 예약의 `apply_canceled` 쿠폰을 `applied`로 되돌린다. 사용 확인은 사장님이 따로 한다. 3.5 미확정 A-2를 이것으로 닫는다.
+
+#### 정책에 따라 정한 것 (3.6)
+
+| 항목 | 정한 것 | 근거 |
+| --- | --- | --- |
+| 할인 계산을 서비스로도 제공 | D15가 이벤트 순서와 상관없이 같은 값을 쓴다 | D11 이벤트 표(E14 · D15 모두 `@EventListener`) |
+| 사용 확인 응답 | 쿠폰 요약만. 예약 전체는 D 응답 | 사용 확인은 쿠폰 상태 변경 |
+| 운영 중단 쿠폰 | `downloaded`도 `apply_canceled` | 05-policy 「상태와 전이」 |
+
+#### 미확정 (3.6)
+
+| # | 내용 | 정해지지 않은 동안 | 결정 주체 |
+| --- | --- | --- | --- |
+| S-1 | 사장님 예약 응답(D3 · D4 · D11 · O-13)의 `coupon` 칸 채우기 — E가 `CouponApplyService.appliedCouponFor(reservationId)`(3.5 모양)를 제공하고 D가 응답에 넣는다. 지금은 `null` | 사장님 화면은 사용 확인 API의 `conflict`로 판단 | D (#14 · #19) |
+| S-2 | 가게 운영 중단 · 탈퇴 때 `cancelUnusedForStore` 부르기 | 상태 변경 API가 생기면 C가 붙인다 | C (C22 #116) |
+| S-3 | 만료 작업 실행 주기 | 메서드만 둔다 | D (D7 #103) |
