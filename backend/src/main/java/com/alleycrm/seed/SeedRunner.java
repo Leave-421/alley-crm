@@ -29,7 +29,7 @@ import org.springframework.stereotype.Component;
  * .\gradlew.bat bootRun --args="--spring.profiles.active=seed --seed.confirm=reset-all-data"
  * </pre>
  *
- * 넣는 순서: ① 초기화(참조 역순) → ② 권역 · 가게 15곳(E1) → ③ 상인회 계정(C2 단계) → ④ 공공데이터(E2)
+ * 넣는 순서: ① 초기화(참조 역순) → ② 권역 · 가게 15곳(E1) → ③ 시연용 고정 계정: 손님 · 사장님 · 상인회(#141) → ④ 공공데이터(E2)
  * → ⑤ 가상 데이터 1: 손님 · 예약 · 취소 · 방문(E16) → ⑥ 가상 데이터 2: 노출 · 코스 제안 · 소개 · 쿠폰 사례(E17).
  *
  * <p>초기화 · 적재:
@@ -93,6 +93,7 @@ class SeedRunner implements ApplicationRunner {
         SeedLoader.Result result = loader.resetAndLoad(regionStores);
         log.info("[seed] 지운 표 {}개 {}", result.clearedTables().size(), result.clearedTables());
         log.info("[seed] 권역 1개, 가게 {}곳을 넣었습니다.", result.regionStores().storeIdsByCode().size());
+        log.info("[seed] 시연 계정 {}", result.demoAccounts());
     }
 
     private void logPlan(SeedRegionData data) {

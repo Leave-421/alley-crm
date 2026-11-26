@@ -23,7 +23,9 @@ import org.springframework.test.context.ActiveProfiles;
  * 기준: NFR-07 #1 · #3, 06-data STORE, 11-24 (5), 00-backlog 「같이 쓰는 것 규칙」 시드 · 시연 데이터.
  * NFR-07 #2(예약 날짜 9 ~ 11월)는 예약을 만드는 E16에서 확인한다.
  */
-@SpringBootTest(properties = "seed.close-after-run=false")
+// 루트 .env에 시연 비밀번호가 있어도 이 테스트는 시연 계정 없이 돈다(계정 수 확인).
+@SpringBootTest(properties = {"seed.close-after-run=false",
+        "DEMO_CUSTOMER_PASSWORD=", "DEMO_OWNER_PASSWORD=", "DEMO_ASSOCIATION_PASSWORD="})
 @ActiveProfiles("seed")
 @Import(TestcontainersConfiguration.class)
 class SeedLoaderIntegrationTest {
