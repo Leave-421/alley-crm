@@ -178,6 +178,31 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 - 응답 `200`: `Store`
 - 실패: `invalid` · `not_found` · `unauthorized` · `forbidden_role` · `csrf_invalid`
 
+### 사장님 내 가게 (C22)
+
+사장님이 자기 가게의 영업 상태 · 예약 받기(O-03)와 영업시간 · 휴무일(O-12)을 바꾼다(FR-STO-02). 가게는 세션 계정에서만 정하고 경로 · 요청에서 받지 않는다. 주소 · 지도 위치는 상인회만 바꾼다(위 `PUT /api/v1/stores/{storeId}/location`, FR-STO-02 #3).
+
+- 역할: 사장님, 가입 승인된 가게만(`StoreService.requireApprovedOwnStore`). 손님 · 상인회 · 승인 전 · 거절 가게의 사장님은 `403 forbidden_role`. `PUT`은 `X-XSRF-TOKEN` 필요.
+- 응답 `200`: 세 API 모두 위 `Store`.
+
+#### `GET /api/v1/owner/store` — 내 가게
+
+- 실패: `unauthorized` · `forbidden_role`
+
+#### `PUT /api/v1/owner/store/status` — 영업 상태 · 예약 받기
+
+- 요청: `{ "businessStatus": "paused", "reservationEnabled": true }` — 둘 다 필수. `businessStatus`는 `CONTRACTS.md` 「3」 `store.businessStatus`(`open` · `paused` · `closed`).
+- 바뀐 값은 바로 반영된다: 추천 후보 · 예약 신청(단계 30) · 예약 가능 시간 · 쿠폰 발급이 모두 `businessStatus = open`이고 `reservationEnabled = true`인 가게만 받는다(FR-STO-02 #1 · #2). 이미 받은 예약은 그대로 둔다.
+- `businessStatus`가 실제로 바뀌면 `store.business_status_changed_at`에 지금 시각(서버 시계)을 남긴다. 쿠폰 30일 제한 해제(3.4 「휴업 뒤 제한 해제」)가 이 시각 전 다운로드를 뺀다. 같은 값이면 시각을 바꾸지 않는다.
+- `businessStatus`가 실제로 바뀌면 같은 트랜잭션(커밋 전)에서 `StoreBusinessStatusChangedEvent(storeId, businessStatus)`를 내보낸다. 휴업 · 운영 중단 때 그 가게 미사용 쿠폰의 적용 취소(FR-STO-02 #1, FR-CPN-07 #4)는 E14가 `@EventListener`로 받아 처리한다. 예약 받기만 멈춘 것은 이벤트가 없고 쿠폰도 그대로다(FR-STO-02 #2).
+- 실패: `invalid` · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+#### `PUT /api/v1/owner/store/hours` — 영업시간 · 휴무일
+
+- 요청: `{ "openTime": "10:00", "closeTime": "22:00", "closedDays": ["mon"] }` — 규칙은 가게 가입 신청의 `StoreJoinInfo`와 같다(`openTime` < `closeTime`, `closedDays` 생략 가능 · 같은 요일 중복 불가). 휴무일은 요일 순서(mon → sun)로 저장 · 응답한다.
+- 예약 가능 시간(D5 「슬롯 계산」)과 예약 신청 검사가 바뀐 값을 바로 쓴다(FR-STO-02 #4). 이미 받은 예약은 그대로 둔다.
+- 실패: `invalid` · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
 ### 알림 (C14)
 
 앱 · 웹 안 알림함(G-11 손님 · O-10 사장님). 실제 문자 · 카카오 발송은 없다. 알림을 받는 쪽은 계정(회원 · 사장님) 또는 비회원 예약이다(`CONTRACTS.md` 「3」 `notification.recipientType`).

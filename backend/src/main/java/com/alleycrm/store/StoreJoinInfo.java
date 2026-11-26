@@ -24,6 +24,15 @@ record StoreJoinInfo(
 
     /** Bean Validation으로 못 거르는 규칙: 영업 시작 < 끝, 같은 요일 중복 금지 */
     void check() {
+        checkHours(openTime, closeTime, closedDays);
+    }
+
+    String closedDaysValue() {
+        return closedDaysValue(closedDays);
+    }
+
+    /** 가입 신청과 사장님 영업시간 변경(C22)이 같이 쓴다. */
+    static void checkHours(LocalTime openTime, LocalTime closeTime, List<String> closedDays) {
         if (!openTime.isBefore(closeTime)) {
             throw new ApiException(ErrorCode.INVALID);
         }
@@ -33,7 +42,7 @@ record StoreJoinInfo(
     }
 
     /** DB 칸 값: 요일 순서대로 쉼표로 잇는다. 없으면 빈 값(연중무휴) */
-    String closedDaysValue() {
+    static String closedDaysValue(List<String> closedDays) {
         if (closedDays == null) {
             return "";
         }

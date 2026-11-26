@@ -5,7 +5,10 @@ import com.alleycrm.account.AccountRole;
 import com.alleycrm.common.error.ApiException;
 import com.alleycrm.common.error.ErrorCode;
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.List;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,10 +26,14 @@ public class StoreService {
 
     private final StoreRepository stores;
     private final JdbcTemplate jdbc;
+    private final Clock clock;
+    private final ApplicationEventPublisher events;
 
-    StoreService(StoreRepository stores, JdbcTemplate jdbc) {
+    StoreService(StoreRepository stores, JdbcTemplate jdbc, Clock clock, ApplicationEventPublisher events) {
         this.stores = stores;
         this.jdbc = jdbc;
+        this.clock = clock;
+        this.events = events;
     }
 
     /** 사장님이 아니거나 가게가 승인 전 · 거절 · 탈퇴면 403 forbidden_role. 가게 ID는 세션 계정에서만 정한다. */
@@ -67,6 +74,38 @@ public class StoreService {
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND));
         store.moveTo(address, alley, mapX, mapY);
         return store;
+    }
+
+    /** 사장님: 내 가게(승인된 가게만). */
+    @Transactional(readOnly = true)
+    public Store myStore(AccountPrincipal me) {
+        return approvedOwnStore(me);
+    }
+
+    /**
+     * 사장님: 영업 상태 · 예약 받기를 바꾼다(FR-STO-02 #1 · #2). 추천 후보 · 예약 신청 · 쿠폰 발급은 이 칸을 읽어 바로 반영한다.
+     * 영업 상태가 실제로 바뀌면 바뀐 시각을 남기고(쿠폰 30일 제한 해제 기준) 같은 트랜잭션에서 이벤트를 내보낸다.
+     */
+    @Transactional
+    public Store changeStatus(AccountPrincipal me, String businessStatus, boolean reservationEnabled) {
+        Store store = approvedOwnStore(me);
+        if (store.changeStatus(businessStatus, reservationEnabled, Instant.now(clock))) {
+            events.publishEvent(new StoreBusinessStatusChangedEvent(store.getId(), businessStatus));
+        }
+        return store;
+    }
+
+    /** 사장님: 영업시간 · 휴무일을 바꾼다(FR-STO-02 #4). 이미 받은 예약은 그대로 둔다. */
+    @Transactional
+    public Store changeHours(AccountPrincipal me, OwnerStoreHoursRequest hours) {
+        StoreJoinInfo.checkHours(hours.openTime(), hours.closeTime(), hours.closedDays());
+        Store store = approvedOwnStore(me);
+        store.changeHours(hours.openTime(), hours.closeTime(), StoreJoinInfo.closedDaysValue(hours.closedDays()));
+        return store;
+    }
+
+    private Store approvedOwnStore(AccountPrincipal me) {
+        return stores.findById(requireApprovedOwnStore(me)).orElseThrow();
     }
 
     /** 경로의 가게 ID가 내 가게가 아니면 존재를 숨기고 404 not_found(IDOR), 그다음 승인 확인. */
