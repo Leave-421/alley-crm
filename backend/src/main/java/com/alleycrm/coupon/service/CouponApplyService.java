@@ -69,7 +69,8 @@ public class CouponApplyService {
     public void checkForRequest(long customerId, long couponId, long storeId, Instant requestedAt) {
         Coupon coupon = coupons.findWithLockByIdAndCustomerId(couponId, customerId)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND));
-        if (coupon.getTargetStoreId() != storeId || !coupon.isUsableAt(requestedAt)) {
+        // 상인회 쿠폰(대상 가게 없음)의 예약 적용은 E20(#172)이 더한다. 그 전에는 쓸 수 없는 쿠폰으로 본다.
+        if (coupon.getTargetStoreId() == null || coupon.getTargetStoreId() != storeId || !coupon.isUsableAt(requestedAt)) {
             throw new ApiException(ErrorCode.CONFLICT, "이 예약에 쓸 수 없는 쿠폰입니다.");
         }
     }
