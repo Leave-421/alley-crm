@@ -1,6 +1,7 @@
 import AppLayout from '@/layouts/AppLayout.jsx';
 import { CUSTOMER_MENU } from '@/layouts/menus.js';
 import PlaceholderPage from '@/pages/PlaceholderPage.jsx';
+import AlleyScreen from '@/pages/customer/alley/AlleyScreen.jsx';
 
 // 손님 영역(/). 담당 A가 children에 화면 경로를 더하고, 자리표시를 실제 화면으로 바꾼다.
 // 비회원도 둘러볼 수 있어서 영역 전체에는 가드를 걸지 않는다.
@@ -12,6 +13,9 @@ export const customerRoutes = [
     element: <AppLayout menu={CUSTOMER_MENU} />,
     children: [
       { index: true, element: <PlaceholderPage screenId="G-14" title="홈" /> },
+      // 골목 고르기(G-15, A25)는 아직 자리표시. 골목 3D 스크롤(G-01, A1)만 이 이슈에서 만든다
+      { path: 'alleys', handle: { title: '골목 고르기' }, element: <PlaceholderPage screenId="G-15" title="골목 고르기" /> },
+      { path: 'alleys/:alley', element: <AlleyScreen /> },
       { path: 'reservations', handle: { title: '내 예약' }, element: <PlaceholderPage screenId="G-04" title="내 예약" /> },
       { path: 'my', handle: { title: '마이' }, element: <PlaceholderPage screenId="G-10" title="마이" /> },
       { path: 'notifications', handle: { title: '알림함' }, element: <PlaceholderPage screenId="G-11" title="알림함" /> },
