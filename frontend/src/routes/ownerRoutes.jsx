@@ -1,7 +1,9 @@
+import RequireApprovedStore from '@/auth/RequireApprovedStore.jsx';
 import RequireRole from '@/auth/RequireRole.jsx';
 import { ROLES } from '@/auth/roles.js';
 import AppLayout from '@/layouts/AppLayout.jsx';
 import { OWNER_MENU } from '@/layouts/menus.js';
+import ReservationSettingsPage from '@/pages/owner/settings/ReservationSettingsPage.jsx';
 import PlaceholderPage from '@/pages/PlaceholderPage.jsx';
 import CouponSettingsPage from '@/pages/owner/coupon/CouponSettingsPage.jsx';
 import OwnerReservationsPage from '@/pages/owner/reservations/OwnerReservationsPage.jsx';
@@ -15,13 +17,19 @@ export const ownerRoutes = [
     element: <RequireRole allow={[ROLES.OWNER]} />,
     children: [
       {
-        element: <AppLayout menu={OWNER_MENU} />,
+        // 승인 전 · 거절 가게의 사장님은 가게 가입 상태(O-11)로 보낸다(B5, FR-AUTH-04)
+        element: (
+          <RequireApprovedStore>
+            <AppLayout menu={OWNER_MENU} />
+          </RequireApprovedStore>
+        ),
         children: [
           { index: true, handle: { title: '예약 관리' }, element: <OwnerReservationsPage /> }, // O-01 B6
           { path: 'customers', element: <PlaceholderPage screenId="O-04" title="고객 목록" /> },
           { path: 'flow', element: <PlaceholderPage screenId="O-07" title="손님 흐름" /> },
           { path: 'settlement', element: <PlaceholderPage screenId="O-08" title="소개 · 수수료" /> },
           { path: 'coupons', handle: { title: '쿠폰 설정' }, element: <CouponSettingsPage /> }, // O-09 B15
+          { path: 'settings', handle: { title: '가게 · 예약 설정' }, element: <ReservationSettingsPage /> }, // O-03 B10, 진입은 O-01 '예약 운영 설정'
           { path: 'notifications', handle: { title: '알림함' }, element: <PlaceholderPage screenId="O-10" title="알림함" /> },
         ],
       },
