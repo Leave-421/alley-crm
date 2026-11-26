@@ -1,5 +1,6 @@
 package com.alleycrm.customer;
 
+import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,5 +41,12 @@ public class CustomerService {
                 })
                 .orElseGet(() -> customers.save(Customer.guest(name, phone, gender, ageGroup)))
                 .getId();
+    }
+
+    /** 비회원 예약 조회 제한 세션(C13): 그 전화번호의 파기되지 않은 비회원 손님 ID. 동시 신청으로 둘일 수 있어 모두 준다. */
+    @Transactional(readOnly = true)
+    public List<Long> guestIdsByPhone(String phone) {
+        return customers.findByTypeAndPhoneAndPurgedAtIsNull(Customer.TYPE_GUEST, phone).stream()
+                .map(Customer::getId).toList();
     }
 }

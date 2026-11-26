@@ -203,6 +203,29 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 - 예약 가능 시간(D5 「슬롯 계산」)과 예약 신청 검사가 바뀐 값을 바로 쓴다(FR-STO-02 #4). 이미 받은 예약은 그대로 둔다.
 - 실패: `invalid` · `unauthorized` · `forbidden_role` · `csrf_invalid`
 
+### 비회원 예약 조회 (C13)
+
+비회원은 계정이 없어서 예약번호 + 전화번호로 확인하고, **그 전화번호의 비회원 예약만** 다루는 제한 세션을 받는다(FR-AUTH-03, G-13). 세션 규칙은 `CONTRACTS.md` 「6」 「비회원 제한 세션」.
+
+#### `POST /api/v1/guest/lookup` — 비회원 예약 확인 · 제한 세션 시작
+
+- 역할: 누구나(로그인 불필요). `X-XSRF-TOKEN` 필요.
+- 요청: `{ "reservationNo": "string", "phone": "01012345678" }` — `phone`은 예약 신청의 비회원 `guest.phone`과 같은 형식(숫자 10 ~ 11자). 예약번호는 대소문자를 구분하지 않는다.
+- 맞으면 세션 ID를 새로 발급하고(세션 고정 방지) 제한 세션을 시작한다. 이미 로그인한 계정 세션이었다면 제한 세션으로 바뀐다. 끝낼 때는 `POST /api/v1/auth/logout`.
+- 응답 `200`: 그 예약(`Reservation`, D2 「예약 응답」. 비회원이라 `coupon`은 `null`). 손님 이름 · 전화번호는 응답에 없다.
+- 실패: `invalid`(형식) · `unauthorized`(예약번호가 없거나 전화번호가 다름 — 둘을 구분하지 않는다, FR-AUTH-03 #3. 회원 예약 · 파기된 비회원 예약도 같다) · `csrf_invalid`
+
+#### `GET /api/v1/guest/reservations` — 내 비회원 예약 목록
+
+- 역할: 비회원 제한 세션만. 로그인 안 함 `401 unauthorized`, 계정 세션 `403 forbidden_role`.
+- 응답 `200`: `{ "items": [Reservation] }` — 그 전화번호의 (파기되지 않은) 비회원 예약 전체, 방문 일시가 늦은 것부터. 페이지 없음(비회원 한 명의 예약 수).
+
+#### 다른 기능이 제한 세션을 받는 법 (서버 내부)
+
+- 예약 변경 · 취소(D), 정식 코스 제안(3.1), 지도 추천의 '같은 날 제외'(3.1) 등 비회원 제한 세션을 받는 기능은 `@AuthenticationPrincipal GuestPrincipal`(또는 principal 타입 확인)으로 세션을 알아보고, 대상 예약이 `GuestSessionService.reservationIds(guest)` 안에 없으면 `404 not_found`(IDOR).
+- 제한 세션으로 새 로그인 필요 경로를 열려면 `SecurityConfig`의 비회원 허용 경로에 더한다(C 확인).
+- 예약 신청(D2)은 제한 세션에서도 비회원 신청이다(`GuestPrincipal`은 계정 이름이 없다).
+
 ### 알림 (C14)
 
 앱 · 웹 안 알림함(G-11 손님 · O-10 사장님). 실제 문자 · 카카오 발송은 없다. 알림을 받는 쪽은 계정(회원 · 사장님) 또는 비회원 예약이다(`CONTRACTS.md` 「3」 `notification.recipientType`).
@@ -224,7 +247,7 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 
 #### `GET /api/v1/notifications` — 내 알림 목록
 
-- 역할: 로그인한 계정(회원 · 사장님 · 상인회). 받는 쪽은 로그인 계정으로만 정하고 ID를 받지 않는다. 비회원 예약의 알림은 비회원 예약 조회 제한 세션(C13)에서 연다.
+- 역할: 로그인한 계정(회원 · 사장님 · 상인회), 비회원 제한 세션(C13). 받는 쪽은 세션으로만 정하고 ID를 받지 않는다. 비회원 제한 세션이면 그 전화번호 비회원 예약들의 알림(`recipientType = guest_reservation`)을 모아 준다.
 - 페이지네이션(공통 규칙), 최근 것부터.
 - 응답 `200`: 공통 페이지 + `unreadCount`(종 아이콘 표시용, 전체 안 읽은 수)
   `{ "items": [Notification], "page": 0, "size": 20, "totalElements": 3, "totalPages": 1, "unreadCount": 2 }`
@@ -232,7 +255,7 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 
 #### `POST /api/v1/notifications/{notificationId}/read` — 읽음 처리
 
-- 역할: 그 알림을 받은 계정. 이미 읽은 알림이면 그대로 둔다(처음 읽은 시각 유지).
+- 역할: 그 알림을 받은 계정, 또는 그 알림의 예약을 다루는 비회원 제한 세션. 이미 읽은 알림이면 그대로 둔다(처음 읽은 시각 유지).
 - 응답 `204`
 - 실패: `not_found`(없는 알림 · 남의 알림) · `unauthorized` · `csrf_invalid`
 

@@ -119,8 +119,9 @@ D1(#12)에서 정한 enum 값의 **유일한 목록**이다. DB에는 이 문자
 ## 6. 인증 · 세션 · CSRF
 
 - 서버 세션 쿠키(Spring Security HttpSession). JWT를 쓰지 않는다. 세션 쿠키는 `HttpOnly` · `SameSite=Lax`, HTTPS에서 `Secure`.
-- 기본은 모든 `/api/**`가 로그인 필요다. 로그인 없이 여는 경로는 이 절에 적는다: `GET /api/v1/csrf`, `GET /actuator/health`, `POST /api/v1/auth/signup`, `POST /api/v1/auth/login`, `POST /api/v1/store-joins`, `GET /api/v1/stores`, `GET /api/v1/regions`, `GET /api/v1/stores/{storeId}/available-slots`, `POST /api/v1/reservations`, `GET /api/v1/recommendations`, `POST /api/v1/recommendation-exposures`, `POST /api/v1/store-clicks`, `GET /api/v1/coupon-offers/{storeId}`, `GET /api/v1/today-courses`. (C13에서 비회원 조회 경로를, 3.3 `POST /api/v1/course-previews`는 그 API를 만드는 PR에서 더한다.) 로그인 없이 여는 `POST`도 CSRF 토큰은 필요하다.
+- 기본은 모든 `/api/**`가 로그인 필요다. 로그인 없이 여는 경로는 이 절에 적는다: `GET /api/v1/csrf`, `GET /actuator/health`, `POST /api/v1/auth/signup`, `POST /api/v1/auth/login`, `POST /api/v1/store-joins`, `GET /api/v1/stores`, `GET /api/v1/regions`, `GET /api/v1/stores/{storeId}/available-slots`, `POST /api/v1/reservations`, `GET /api/v1/recommendations`, `POST /api/v1/recommendation-exposures`, `POST /api/v1/store-clicks`, `GET /api/v1/coupon-offers/{storeId}`, `GET /api/v1/today-courses`, `POST /api/v1/guest/lookup`. (3.3 `POST /api/v1/course-previews`는 그 API를 만드는 PR에서 더한다.) 로그인 없이 여는 `POST`도 CSRF 토큰은 필요하다.
 - 로그인에 성공하면 세션 ID를 새로 발급한다(세션 고정 방지). 로그아웃은 `POST /api/v1/auth/logout`만 받는다.
+- **비회원 제한 세션(C13):** `POST /api/v1/guest/lookup`에서 예약번호 + 전화번호가 맞으면 세션 ID를 새로 발급하고, 그 전화번호의 비회원 예약만 다루는 세션을 준다. 이 세션으로 쓸 수 있는 로그인 필요 경로는 `/api/v1/guest/**` · `GET /api/v1/notifications` · `POST /api/v1/notifications/{id}/read` · `POST /api/v1/auth/logout`뿐이고, 그 밖의 로그인 필요 경로는 `403 forbidden_role`이다. 로그인 없이 여는 경로는 그대로 쓸 수 있다(새 예약 신청은 비회원 신청). 서버 코드에서는 `GuestPrincipal(phone)`, 요청자의 예약인지는 `GuestSessionService.reservationIds`로 확인한다.
 - **CSRF:** 앱을 처음 열 때 `GET /api/v1/csrf`를 부르면 `XSRF-TOKEN` 쿠키가 내려온다. 상태 변경 요청(`POST` · `PUT` · `PATCH` · `DELETE`)은 그 값을 `X-XSRF-TOKEN` 헤더로 보낸다. 없거나 틀리면 `403 csrf_invalid`.
 - 로그인 안 된 요청은 리다이렉트하지 않고 `401 unauthorized` JSON으로 응답한다.
 - SSE 연결도 같은 세션 쿠키로 인증한다.
