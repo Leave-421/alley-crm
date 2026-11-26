@@ -25,7 +25,11 @@ public class Coupon {
     @Column(name = "customer_id", nullable = false, updatable = false)
     private Long customerId;
 
-    @Column(name = "coupon_policy_id", nullable = false, updatable = false)
+    /** 발급 주체(D24). 가게 쿠폰은 store, 상인회 쿠폰(E20)은 association. */
+    @Column(name = "issuer_kind", nullable = false, updatable = false)
+    private CouponIssuer issuerKind;
+
+    @Column(name = "coupon_policy_id", updatable = false)
     private Long couponPolicyId;
 
     @Column(name = "target_store_id", nullable = false, updatable = false)
@@ -78,6 +82,7 @@ public class Coupon {
             LocalDateTime now) {
         Coupon coupon = new Coupon();
         coupon.customerId = customerId;
+        coupon.issuerKind = CouponIssuer.STORE;
         coupon.couponPolicyId = event.getId();
         coupon.targetStoreId = event.getStoreId();
         coupon.sourceBaseStoreId = sourceBaseStoreId;
@@ -94,6 +99,10 @@ public class Coupon {
 
     public Long getCustomerId() {
         return customerId;
+    }
+
+    public CouponIssuer getIssuerKind() {
+        return issuerKind;
     }
 
     public Long getCouponPolicyId() {

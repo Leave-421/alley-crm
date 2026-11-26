@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.alleycrm.TestcontainersConfiguration;
 import com.alleycrm.common.TestCsrf;
 import com.alleycrm.common.time.AppClock;
+import com.alleycrm.coupon.domain.CouponIssuer;
 import com.alleycrm.coupon.dto.VisitCouponDiscount;
 import com.alleycrm.coupon.service.CouponApplyService;
 import com.alleycrm.coupon.service.CouponExpiryService;
@@ -115,7 +116,7 @@ class CouponStatusApiTest {
         assertThat(jdbc.queryForObject("SELECT discount_applied FROM coupon WHERE id = ?", Integer.class, coupon))
                 .isEqualTo(4000);
         assertThat(visitService.discountFor(reservation, 4000))
-                .contains(new VisitCouponDiscount(coupon, 4000, 4000));
+                .contains(new VisitCouponDiscount(coupon, CouponIssuer.STORE, 4000, 4000));
     }
 
     @Test
@@ -128,9 +129,9 @@ class CouponStatusApiTest {
         long serviceCoupon = coupon(service, store, NOW_UTC.minusDays(1), "applied", serviceReservation);
 
         assertThat(visitService.discountFor(percentReservation, 80000))
-                .contains(new VisitCouponDiscount(percentCoupon, 5000, 5000));
+                .contains(new VisitCouponDiscount(percentCoupon, CouponIssuer.STORE, 5000, 5000));
         assertThat(visitService.discountFor(serviceReservation, 20000))
-                .contains(new VisitCouponDiscount(serviceCoupon, 0, 4500));
+                .contains(new VisitCouponDiscount(serviceCoupon, CouponIssuer.STORE, 0, 4500));
     }
 
     @Test

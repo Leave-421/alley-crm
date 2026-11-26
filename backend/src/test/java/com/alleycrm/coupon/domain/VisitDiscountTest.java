@@ -44,6 +44,7 @@ class VisitDiscountTest {
         Coupon coupon = Coupon.download(9L, threeDays, 2L, 3L, NOW);
 
         assertThat(coupon.getExpiresAt()).isEqualTo(NOW.plusHours(72));
+        assertThat(coupon.getIssuerKind()).isEqualTo(CouponIssuer.STORE);
     }
 
     private static CouponPolicy fixed(int amount) {

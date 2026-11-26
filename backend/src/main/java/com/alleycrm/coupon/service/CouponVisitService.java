@@ -36,7 +36,8 @@ public class CouponVisitService {
                 .filter(coupon -> coupon.getCouponPolicyId() != null) // 상인회 쿠폰은 E20이 더한다
                 .map(coupon -> {
                     VisitDiscount discount = VisitDiscount.of(eventOf(coupon), visitAmount);
-                    return new VisitCouponDiscount(coupon.getId(), discount.discountAmount(), discount.couponCost());
+                    return new VisitCouponDiscount(coupon.getId(), coupon.getIssuerKind(), discount.discountAmount(),
+                            discount.couponCost());
                 });
     }
 
