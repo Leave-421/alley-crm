@@ -47,3 +47,18 @@ export function getMyWalletTransactions({ page = 0, size = 20 } = {}) {
 export function chargeMyWallet(amount) {
   return api.post('/api/v1/wallets/me/charge', { amount });
 }
+
+// ── 상인회 월 정산(D17) — 권역은 로그인한 상인회 계정으로 정한다. 공동 기금 잔액 · 내역은 위 지갑 API(상인회 = 기금) ──
+
+/**
+ * 월 정산(A-04). month = 'YYYY-MM'(정산 달 = 방문 처리된 달).
+ * @returns {Promise<{ month, status, confirmedAt, canConfirm, unprocessedReportCount, count, totalFee, stores: object[] }>}
+ */
+export function getAssociationSettlement(month) {
+  return api.get(`/api/v1/association/settlements/${encodeURIComponent(month)}`);
+}
+
+/** 월 정산 확정. 확인 기록이라 잔액 · 수수료는 바뀌지 않는다. 이미 확정 · 달이 안 끝남 · 처리 안 된 신고가 있으면 409. */
+export function confirmAssociationSettlement(month) {
+  return api.post(`/api/v1/association/settlements/${encodeURIComponent(month)}/confirm`);
+}

@@ -18,7 +18,15 @@ const wallets = {
       { id: 't1', type: 'charge', amount: 2000, reservationId: null, createdAt: '2026-11-01T01:00:00Z' },
     ],
   },
-  fund: { balance: 3200, transactions: [] },
+  // 목 권역 공동 기금: 소개 수수료가 들어온 내역(fund_deposited)
+  fund: {
+    balance: 4200,
+    transactions: [
+      { id: 'f3', type: 'fund_deposited', amount: 1680, reservationId: 'r-103', createdAt: '2026-11-24T11:20:00Z' },
+      { id: 'f2', type: 'fund_deposited', amount: 1520, reservationId: 'r-102', createdAt: '2026-11-18T10:05:00Z' },
+      { id: 'f1', type: 'fund_deposited', amount: 1000, reservationId: 'r-091', createdAt: '2026-10-20T09:00:00Z' },
+    ],
+  },
 };
 let nextTxId = 4;
 
