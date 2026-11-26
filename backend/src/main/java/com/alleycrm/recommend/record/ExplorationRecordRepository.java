@@ -1,6 +1,8 @@
 package com.alleycrm.recommend.record;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -47,6 +49,23 @@ class ExplorationRecordRepository {
                 WHERE visitor_id = ? AND display_id = ? AND recommended_store_id = ?
                 FOR SHARE
                 """, Long.class, visitorId, displayId.toString(), item.storeId());
+    }
+
+    /**
+     * 노출이 이 브라우저의 방문자({@code browserVisitorId}, 없으면 null)나 이 손님에 이어진 방문자의 것일 때만 찾는다.
+     * 다른 사람의 노출은 없는 것과 같다(IDOR).
+     */
+    Optional<ExposureSource> findExposureOwnedBy(long exposureId, Long browserVisitorId, long customerId) {
+        List<ExposureSource> rows = jdbc.query("""
+                SELECT e.id, e.base_store_id, e.recommended_store_id
+                FROM recommendation_exposure e
+                JOIN visitor v ON v.id = e.visitor_id
+                WHERE e.id = ? AND (v.id = ? OR v.customer_id = ?)
+                """,
+                (rs, n) -> new ExposureSource(
+                        rs.getLong("id"), rs.getLong("base_store_id"), rs.getLong("recommended_store_id")),
+                exposureId, browserVisitorId, customerId);
+        return rows.stream().findFirst();
     }
 
     /** (기준 예약, 추천 가게)당 1건. 이미 있으면 처음 행(처음 표시 시각 그대로). */
