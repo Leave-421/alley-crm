@@ -20,7 +20,17 @@ public record ReservationResponse(
         String courseRootId,
         boolean fromRecommendation) {
 
-    public record AppliedCoupon(String couponId, int discountAmount) {
+    /**
+     * 적용된 쿠폰(CONTRACTS_API 3.5 · 예약 응답 {@code coupon}). 혜택 칸의 뜻은 3.2 CouponEvent와 같다.
+     * 정률 할인은 신청 때 할인액을 정할 수 없어 {@code discountAmount}가 null이고, 실제 할인액은 방문 처리 때 정한다(E14).
+     */
+    public record AppliedCoupon(
+            String couponId,
+            String benefitType,
+            Integer discountAmount,
+            Integer discountPercent,
+            Integer maxDiscountAmount,
+            String serviceName) {
     }
 
     public static ReservationResponse of(Reservation r, AppliedCoupon coupon) {

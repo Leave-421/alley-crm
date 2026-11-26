@@ -46,7 +46,24 @@ public class Coupon {
     @Column(name = "status", nullable = false)
     private CouponStatus status;
 
+    @Column(name = "reservation_id")
+    private Long reservationId;
+
     protected Coupon() {
+    }
+
+    /** 신청 시각에 이 쿠폰을 예약에 쓸 수 있는지: '다운로드됨'이고 기한 전(FR-CPN-05, 판단은 신청 시각). */
+    public boolean isUsableAt(LocalDateTime requestedAt) {
+        return status == CouponStatus.DOWNLOADED && requestedAt.isBefore(expiresAt);
+    }
+
+    /** 예약에 적용(FR-CPN-06). 쓸 수 있는지는 부르는 쪽이 행을 잠근 뒤 {@link #isUsableAt}으로 확인한다. */
+    public void applyTo(long reservationId) {
+        if (status != CouponStatus.DOWNLOADED) {
+            throw new IllegalStateException("다운로드됨 상태가 아닌 쿠폰은 적용할 수 없다: " + status);
+        }
+        this.status = CouponStatus.APPLIED;
+        this.reservationId = reservationId;
     }
 
     /** 다운로드(FR-CPN-03 · 05 · 10). 만료 시각 = 다운로드 시각 + 행사의 쿠폰 기간 × 24시간. */
@@ -98,5 +115,9 @@ public class Coupon {
 
     public CouponStatus getStatus() {
         return status;
+    }
+
+    public Long getReservationId() {
+        return reservationId;
     }
 }
