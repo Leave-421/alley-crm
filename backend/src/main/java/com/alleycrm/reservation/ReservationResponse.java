@@ -20,7 +20,8 @@ public record ReservationResponse(
         String courseRootId,
         boolean fromRecommendation,
         Integer visitAmount,
-        Instant visitedAt) {
+        Instant visitedAt,
+        Integer refundAmount) {
 
     /**
      * 적용된 쿠폰(CONTRACTS_API 3.5 · 예약 응답 {@code coupon}). 혜택 칸의 뜻은 3.2 CouponEvent와 같다.
@@ -51,6 +52,7 @@ public record ReservationResponse(
                 r.getCourseRootId() == null ? null : String.valueOf(r.getCourseRootId()),
                 r.getCourseProposalId() != null,
                 r.getVisitAmount(),
-                r.getVisitedAt());
+                r.getVisitedAt(),
+                r.getRefundAmount());
     }
 }
