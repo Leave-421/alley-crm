@@ -1,13 +1,13 @@
 package com.alleycrm.reservation.state;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.alleycrm.common.TestCsrf;
 import com.alleycrm.TestcontainersConfiguration;
 import com.alleycrm.common.time.AppClock;
 import com.alleycrm.reservation.ReservationStateService;
@@ -148,7 +148,7 @@ class ReservationStateTest {
     @Test
     void 사장님이_아니면_403() throws Exception {
         long r = reservation(storeA, "2026-11-28T09:00:00", "requested", null);
-        mvc.perform(post("/api/v1/owner/reservations/" + r + "/confirm").with(csrf()).with(user("member1")))
+        mvc.perform(post("/api/v1/owner/reservations/" + r + "/confirm").with(TestCsrf.csrf(mvc)).with(user("member1")))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error.code").value("forbidden_role"));
     }
@@ -214,7 +214,7 @@ class ReservationStateTest {
 
     private org.springframework.test.web.servlet.ResultActions owner(
             org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder req) throws Exception {
-        return mvc.perform(req.with(csrf()).with(user("ownerA")));
+        return mvc.perform(req.with(TestCsrf.csrf(mvc)).with(user("ownerA")));
     }
 
     private long reservation(long store, String startUtc, String status, Long proposalId) {
