@@ -251,9 +251,12 @@ export function propPlacements({ seedText, count, types }) {
     let lastTall = Infinity;
     while (z > end) {
       const pick = types[Math.floor(random() * types.length)];
+      // 키 큰 것이 너무 가까우면 키 작은 것으로 바꾸고, 그런 게 없으면(가로등만 있을 때) 그 자리는 비운다
       const usable = pick.tall && lastTall - z < 420 ? types.find((t) => !t.tall) : pick;
-      placements.push({ key: `${side}${placements.length}`, type: usable.type, side, z: Math.round(z), mirror: random() < 0.5 });
-      if (usable.tall) lastTall = z;
+      if (usable) {
+        placements.push({ key: `${side}${placements.length}`, type: usable.type, side, z: Math.round(z), mirror: random() < 0.5 });
+        if (usable.tall) lastTall = z;
+      }
       z -= 150 + random() * 130;
     }
   }

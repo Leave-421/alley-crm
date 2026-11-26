@@ -110,7 +110,7 @@
   pointer-events: none;
 }
 
-/* 보도 소품(가로등 · 자전거 · 쓰레기통). 클릭은 가로채지 않는다 */
+/* 보도 소품(가로등). 클릭은 가로채지 않는다 */
 .prop {
   position: absolute;
   pointer-events: none;

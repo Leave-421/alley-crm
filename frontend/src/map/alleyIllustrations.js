@@ -5,8 +5,6 @@ import endFrontGate from './assets/bg-end-front_gate.webp';
 import endCenter from './assets/bg-end-center.webp';
 import endBackStreet from './assets/bg-end-back_street.webp';
 import propLamp from './assets/prop-lamp.webp';
-import propBicycle from './assets/prop-bicycle.webp';
-import propBin from './assets/prop-bin.webp';
 
 /**
  * 그리는 층 전용 이미지(ARCHITECTURE 「3D 골목 보드」). 데이터 층(storeCatalog.js)은 이 파일을 모른다.
@@ -202,14 +200,10 @@ export const FLOOR_IMAGE = floorTexture;
  */
 export const PROPS = Object.freeze({
   lamp: { src: propLamp, w: 195, h: 325, height: 160, lift: 170, shaftX: 0.656, shaftWidth: 6 },
-  bicycle: { src: propBicycle, w: 406, h: 266, height: 40 },
-  bin: { src: propBin, w: 216, h: 287, height: 36 },
 });
 
 export const PROP_TYPES = Object.freeze([
   { type: 'lamp', tall: true },
-  { type: 'bicycle' },
-  { type: 'bin' },
 ]);
 
 /**
