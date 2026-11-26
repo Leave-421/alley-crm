@@ -534,6 +534,21 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 
 `senderStoreId`는 서버 안에서만 쓴다. 응답 · 알림에 내보내지 않는다(FR-CUS-05).
 
+#### 소개 수수료 (서버 내부, D15)
+
+`ReferralFeeListener`가 `VisitProcessedEvent`를 `@EventListener`로 받아 방문 처리와 같은 트랜잭션에서 만든다(실패하면 방문 처리도 취소).
+
+| 항목 | 규칙 |
+| --- | --- |
+| 대상 | `courseProposalId` · `senderStoreId`가 있는 예약(소개 후보, D12)만. 예약 건당 한 번(`uk_referral_fee_reservation`, FR-STL-01 #8) |
+| 계산 금액 | 방문 금액 − 실제 쿠폰 할인(E14 `discountFor`). 서비스 제공 쿠폰은 할인 0(FR-STL-02 #3) |
+| 수수료 | 계산 금액 × 수수료율(설정값 `referral_fee_rate`, 그 가게 권역). **1원 미만 버림.** 수수료율은 생길 때 값을 `fee_rate`에 남긴다(NFR-04 #1) |
+| 돈 | 받은 가게 지갑 → 권역 공동 기금(`referral_fee_charged` · `fund_deposited`, 예약 id 남김). 가게 잔액이 모자라도 빼서 마이너스가 될 수 있다(기획 11-25 (4)) |
+| 쿠폰 비용 | `coupon_cost`에 따로 기록. 가게 쿠폰만(상인회 쿠폰은 기금이 내므로 0, 11-25 (5)) |
+| 정산 달 | 방문 처리된 달(운영 시간대 Asia/Seoul) `YYYY-MM` |
+
+수수료 내역 조회 API는 D16에서 이 절에 더한다.
+
 #### 정책에 따라 정한 것 (D3 · D4)
 
 | 항목 | 정한 것 | 근거 |
