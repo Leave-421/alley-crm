@@ -14,8 +14,6 @@ import com.alleycrm.customer.CustomerService;
 import com.alleycrm.reservation.ReservationResponse.AppliedCoupon;
 import java.time.Clock;
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
@@ -54,7 +52,7 @@ public class CouponApplyService {
         }
         long customerId = customers.identifyMember(memberAccountId);
         List<Coupon> usable = coupons.findByCustomerIdAndTargetStoreIdAndStatusAndExpiresAtAfterOrderByExpiresAtAscIdAsc(
-                customerId, storeId, CouponStatus.DOWNLOADED, utc(clock.instant()));
+                customerId, storeId, CouponStatus.DOWNLOADED, clock.instant().truncatedTo(ChronoUnit.MICROS));
         Map<Long, CouponPolicy> eventsById = events.findAllById(
                         usable.stream().map(Coupon::getCouponPolicyId).distinct().toList())
                 .stream().collect(Collectors.toMap(CouponPolicy::getId, Function.identity()));
@@ -71,7 +69,7 @@ public class CouponApplyService {
     public void checkForRequest(long customerId, long couponId, long storeId, Instant requestedAt) {
         Coupon coupon = coupons.findWithLockByIdAndCustomerId(couponId, customerId)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND));
-        if (coupon.getTargetStoreId() != storeId || !coupon.isUsableAt(utc(requestedAt))) {
+        if (coupon.getTargetStoreId() != storeId || !coupon.isUsableAt(requestedAt)) {
             throw new ApiException(ErrorCode.CONFLICT, "이 예약에 쓸 수 없는 쿠폰입니다.");
         }
     }
@@ -117,8 +115,4 @@ public class CouponApplyService {
                 event.getServiceName());
     }
 
-    /** DB 칸이 DATETIME(6)이라 마이크로초까지만 쓴다. 값은 UTC. */
-    private static LocalDateTime utc(Instant instant) {
-        return LocalDateTime.ofInstant(instant.truncatedTo(ChronoUnit.MICROS), ZoneOffset.UTC);
-    }
 }

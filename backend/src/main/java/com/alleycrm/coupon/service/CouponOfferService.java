@@ -16,8 +16,7 @@ import com.alleycrm.customer.CustomerService;
 import com.alleycrm.recommend.record.ExplorationRecordService;
 import com.alleycrm.recommend.record.ExposureSource;
 import java.time.Clock;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import org.springframework.stereotype.Service;
@@ -58,7 +57,7 @@ public class CouponOfferService {
     public CouponOfferResponse offer(long storeId, Long memberAccountId) {
         TargetStore store = limits.findVisibleStore(storeId).orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND));
         CouponPolicy event = events.findByStoreIdAndStoppedAtIsNull(storeId).orElse(null);
-        LocalDateTime now = now();
+        Instant now = now();
         Long customerId = memberAccountId == null ? null : customers.identifyMember(memberAccountId);
 
         DownloadLimit.Result result;
@@ -97,7 +96,7 @@ public class CouponOfferService {
         if (events.issueOne(event.getId()) == 0) {
             throw notIssuable();
         }
-        LocalDateTime now = now();
+        Instant now = now();
         DownloadLimit.Result limit = DownloadLimit.check(
                 limits.findPastDownloadsLocked(customerId, event.getId(), store.businessStatusChangedAt()), now);
         if (limit.status() != DownloadStatus.AVAILABLE) {
@@ -108,7 +107,7 @@ public class CouponOfferService {
     }
 
     /** 이 가게의 내 쿠폰 중 '다운로드됨'(기한 안) · '예약에 적용됨'. 기한이 지난 미적용 쿠폰은 만료 처리 전이어도 뺀다. */
-    private List<Coupon> heldCoupons(long customerId, long storeId, LocalDateTime now) {
+    private List<Coupon> heldCoupons(long customerId, long storeId, Instant now) {
         return coupons.findByCustomerIdAndTargetStoreIdAndStatusInOrderByDownloadedAtDesc(customerId, storeId, HELD)
                 .stream()
                 .filter(coupon -> coupon.getStatus() == CouponStatus.APPLIED || now.isBefore(coupon.getExpiresAt()))
@@ -119,8 +118,8 @@ public class CouponOfferService {
         return new ApiException(ErrorCode.CONFLICT, "지금은 이 쿠폰을 받을 수 없습니다.");
     }
 
-    /** DB 칸이 DATETIME(6)이라 마이크로초까지만 쓴다. 값은 UTC. */
-    private LocalDateTime now() {
-        return LocalDateTime.ofInstant(clock.instant().truncatedTo(ChronoUnit.MICROS), ZoneOffset.UTC);
+    /** DB 칸이 DATETIME(6)이라 마이크로초까지만 쓴다. */
+    private Instant now() {
+        return clock.instant().truncatedTo(ChronoUnit.MICROS);
     }
 }

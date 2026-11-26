@@ -10,8 +10,7 @@ import com.alleycrm.coupon.dto.CouponEventResponse;
 import com.alleycrm.coupon.dto.CurrentCouponEventResponse;
 import com.alleycrm.coupon.repository.CouponPolicyRepository;
 import java.time.Clock;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -83,8 +82,8 @@ public class CouponEventService {
     }
 
     /** DB 칸이 DATETIME(6)이라 마이크로초까지만 쓴다. 값은 UTC. */
-    private LocalDateTime now() {
-        return LocalDateTime.ofInstant(clock.instant().truncatedTo(ChronoUnit.MICROS), ZoneOffset.UTC);
+    private Instant now() {
+        return clock.instant().truncatedTo(ChronoUnit.MICROS);
     }
 
     private static ApiException activeEventExists() {

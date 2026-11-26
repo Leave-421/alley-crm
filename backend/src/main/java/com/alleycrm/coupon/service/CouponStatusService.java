@@ -8,8 +8,7 @@ import com.alleycrm.coupon.dto.CouponUseResponse;
 import com.alleycrm.coupon.repository.CouponRepository;
 import com.alleycrm.coupon.repository.ReservationStatusReader;
 import java.time.Clock;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import org.springframework.stereotype.Service;
@@ -66,7 +65,7 @@ public class CouponStatusService {
         coupons.changeStatusOfReservation(reservationId, CouponStatus.APPLY_CANCELED, CouponStatus.APPLIED);
     }
 
-    private LocalDateTime now() {
-        return LocalDateTime.ofInstant(clock.instant().truncatedTo(ChronoUnit.MICROS), ZoneOffset.UTC);
+    private Instant now() {
+        return clock.instant().truncatedTo(ChronoUnit.MICROS);
     }
 }
