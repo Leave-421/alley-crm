@@ -197,7 +197,7 @@ class SeedLoaderIntegrationTest {
         // 시각 칸은 UTC. 운영 시간대(KST)로 바꿔 학기 중 9 ~ 11월인지 본다
         assertThat(jdbc.queryForObject("""
                 SELECT COUNT(*) FROM reservation
-                WHERE DATE(DATE_ADD(start_at, INTERVAL 9 HOUR)) NOT BETWEEN 2026-09-01 AND 2026-11-30
+                WHERE DATE(DATE_ADD(start_at, INTERVAL 9 HOUR)) NOT BETWEEN '2026-09-01' AND '2026-11-30'
                 """, Integer.class)).isZero();
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM reservation WHERE status = visited AND (visit_amount IS NULL OR visited_at IS NULL)",
