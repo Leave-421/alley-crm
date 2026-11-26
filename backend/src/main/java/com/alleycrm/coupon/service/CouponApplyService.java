@@ -82,6 +82,8 @@ public class CouponApplyService {
         Coupon coupon = coupons.findWithLockByIdAndCustomerId(couponId, customerId)
                 .orElseThrow(() -> new IllegalStateException("단계 60에서 확인한 쿠폰이 없다: " + couponId));
         coupon.applyTo(reservationId);
+        // 같은 신청 트랜잭션에서 SQL로 쿠폰을 읽는 코드도 적용된 상태를 보도록 바로 반영한다
+        coupons.saveAndFlush(coupon);
         CouponPolicy event = events.findById(coupon.getCouponPolicyId())
                 .orElseThrow(() -> new IllegalStateException("쿠폰의 행사가 없다: " + coupon.getCouponPolicyId()));
         return new AppliedCoupon(
