@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -65,6 +66,16 @@ public class ExplorationRecordService {
         return storeIds.stream()
                 .map(storeId -> records.insertProposalIfAbsent(baseReservationId, storeId, shownAt))
                 .toList();
+    }
+
+    /**
+     * 이 요청자의 추천 노출(쿠폰 다운로드, CONTRACTS_API 3.4). 이 브라우저의 방문자나 이 손님에 이어진 방문자의
+     * 노출만 찾고, 다른 사람의 노출 · 없는 노출은 비어 있다. 방문자를 새로 발급하지 않는다.
+     */
+    @Transactional(readOnly = true)
+    public Optional<ExposureSource> findOwnedExposure(long exposureId, long customerId) {
+        Long browserVisitorId = visitorService.knownCurrentVisitorId().orElse(null);
+        return records.findExposureOwnedBy(exposureId, browserVisitorId, customerId);
     }
 
     /** DB 칸이 DATETIME(6)이라 마이크로초까지만 쓴다. 값은 UTC. */

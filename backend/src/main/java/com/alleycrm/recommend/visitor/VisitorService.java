@@ -48,6 +48,15 @@ public class VisitorService {
     }
 
     /**
+     * 이 브라우저의 방문자 ID. 쿠키가 없거나 서버에 없는 ID면 비어 있고, 새로 발급하지 않는다.
+     * 기록을 남기지 않고 "이 브라우저의 것인지"만 확인할 때 부른다(쿠폰 다운로드의 노출 확인, 3.4).
+     */
+    @Transactional(readOnly = true)
+    public Optional<Long> knownCurrentVisitorId() {
+        return currentAnonId(currentHttp()).flatMap(visitors::findByAnonId).map(VisitorRepository.Visitor::id);
+    }
+
+    /**
      * 이 브라우저의 방문자를 손님에 잇는다(로그인 성공 · 예약 신청 뒤).
      * 쿠키가 없거나 모르는 ID면 이을 기록이 없으니 아무것도 하지 않는다.
      * 다른 손님에 이미 이어진 방문자면 기존 연결은 두고 새 방문자 ID를 발급해 이 손님에 잇는다.
