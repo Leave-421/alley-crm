@@ -257,7 +257,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
   "requestedAt": "2026-11-27T07:40:00Z",
   "requestNote": "string | null",
   "depositAmount": 10000,
-  "coupon": { "couponId": "string", "discountAmount": 1000 },
+  "coupon": { "couponId": "string", "benefitType": "fixed_discount", "discountAmount": 1000, "discountPercent": null, "maxDiscountAmount": null, "serviceName": null },
   "courseRootId": null,
   "fromRecommendation": false
 }
@@ -266,7 +266,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 - `status` · `cancelReason`: `CONTRACTS.md` 「3」 값.
 - `reservationNo`: 8자, 영문 대문자 · 숫자(헷갈리는 `0 O 1 I` 제외). 비회원 예약 조회에 쓴다(FR-AUTH-03).
 - `depositAmount`: 원 단위. 예약금 없는 가게는 0. 실제 결제 없음(가상 잔액).
-- `coupon`: 적용된 쿠폰이 없으면 `null`(비회원은 항상 `null`).
+- `coupon`: 적용된 쿠폰이 없으면 `null`(비회원은 항상 `null`). 혜택 칸의 뜻은 3.2 CouponEvent와 같다(정률 할인은 `discountAmount: null`). 실제 할인액은 방문 처리 때 결제 금액으로 정한다(E14, FR-CPN-07).
 - `courseRootId`: '다음 코스로 예약하기'로 만든 예약만 기준 가게 예약 id(D12). 아니면 `null`.
 - `fromRecommendation`: 사장님 화면의 '추천으로 왔어요' 표시용. **보낸 가게 id · 이름은 어떤 응답에도 넣지 않는다**(FR-CUS-05).
 - 응답에 손님 이름 · 전화번호는 넣지 않는다. 사장님용 목록(D4)은 가린 이름만 따로 정한다.
@@ -293,7 +293,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
   - `startAt`: 가게 슬롯 시작 시각(UTC). 슬롯 계산은 D5.
   - `shareConsent`: `true`여야 한다. 동의 항목은 그 시점 권역 공유 정책으로 서버가 기록한다(FR-CUS-01, C8).
   - `guest`: 비회원만 필수(`name` 1 ~ 20자, `phone` 숫자 10 ~ 11자). 회원이 보내면 무시한다. `gender` · `ageGroup`은 선택.
-  - `couponId`: 회원만. 화면에서 기본 선택된 쿠폰을 그대로 보내고, 해제했으면 `null`(FR-CPN-06, E13).
+  - `couponId`: 회원만. 회원이 그 가게의 사용 가능한 쿠폰(3.5) 중 직접 고른 하나. 기본은 '적용 안 함'이라 고르지 않았으면 `null`(FR-CPN-06, 11-25 (3)). 비회원이 보내면 무시한다. 확인 · 실패는 3.5.
   - `courseRootId` · `courseProposalId`: '다음 코스로 예약하기'일 때만(D12). 일반 예약은 `null`.
   - 익명 방문자 ID는 쿠키로 서버가 읽어 손님에 잇는다(E3). 요청 본문에 넣지 않는다.
 - 응답 `201`: `Reservation`(`status: "requested"`)
@@ -316,9 +316,10 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 | 30 | 예약 가능 확인 | D2 · D5 | 가게 상태 · 영업시간 · 휴무일 · 기간 · 슬롯 · 최대 인원 |
 | 40 | 코스 연결 | D12 | 기준 예약 · 제안 확인, 시간 규칙, 보낸 가게 |
 | 50 | 공유 동의 기록 | C8 | 동의 시각 · 항목 저장 |
-| 60 | 쿠폰 적용 | E13 | 쿠폰 확인 · 적용 |
+| 60 | 쿠폰 확인 | E13 | 쿠폰 확인 · 잠금(3.5) |
 | 70 | 예약금 | D10 | 회원 잔액 차감 · 비회원 납부 기록 |
 | 80 | 저장 | D2 | 예약번호 발급 · 저장 |
+| 90 | 쿠폰 예약 연결 | E13 | 저장된 예약 ID로 쿠폰 적용(3.5). 예약 ID가 저장 뒤에 생겨 따로 둔다 |
 | 커밋 뒤 | 알림 | C14 · C15 | 사장님 새 예약 알림(SSE) |
 
 - 코드 모양(D2에서 확정): `interface ReservationRequestStep { int order(); void apply(ReservationRequestContext ctx); }` 구현을 스프링 빈으로 두면 D2가 `order` 순서대로 부른다. 아직 없는 단계는 건너뛴다.
@@ -1042,3 +1043,75 @@ DB가 막지 않는 것(유형별 필수 칸, 확정 뒤 변경 금지, 중단�
 | # | 내용 | 정해지지 않은 동안 | 결정 주체 |
 | --- | --- | --- | --- |
 | K-1 | 쿠폰 상세 `GET /api/v1/coupon-offers/{storeId}`를 로그인 없이 여는 보안 설정 · `CONTRACTS.md` 「6」 목록 | 로그인한 요청으로만 확인한다 | C (#24) |
+
+### 3.5 쿠폰 적용 (E13 #29 · 계약 #178)
+
+> 상태: **계약.** 구현은 #29에서 한다. 프론트 목(A9 #30 · G-02 · G-03)은 이 절을 따른다. 방문 할인 계산 · 사용 확인 · 만료 · 날짜 변경은 E14(#45), 상인회 쿠폰은 E20(#172)이다.
+> 기준: 기획 저장소 `05-policy.md` 「추천 쿠폰」, `03-requirements.md` FR-CPN-05 · 06, 결정 기록 11-25 (3)(회원이 직접 고름, 기본 '적용 안 함') · 11-25 (5)(예약 한 건에 쿠폰 한 장). 예약 신청은 2 「예약 신청」(D2), 쿠폰 모양은 3.4 Coupon.
+
+예약 화면은 쿠폰을 자동으로 고르지 않는다. 회원이 그 가게의 사용 가능한 쿠폰 목록에서 하나를 고르면 예약 신청 요청의 `couponId`로 보낸다. 고르지 않으면 `null`이다. 화면에서 고르거나 고르지 않는 것은 쿠폰 상태를 바꾸지 않고, **신청이 저장될 때 고른 쿠폰만** '예약에 적용됨'이 된다(05-policy).
+
+### `GET /api/v1/coupons/usable?storeId={storeId}` — 예약 화면의 사용 가능한 쿠폰
+
+- 역할: 회원 손님. 비로그인 `401 unauthorized`, 사장님 · 상인회 · 비회원 제한 세션 `403 forbidden_role`. 기록하지 않는다.
+- 쿼리: `storeId` (필수)
+- 응답 `200`:
+
+  ```json
+  {
+    "items": [
+      { "couponId": "501", "eventId": "12", "storeId": "7", "status": "downloaded", "benefitType": "fixed_discount",
+        "discountAmount": 3000, "discountPercent": null, "maxDiscountAmount": null, "serviceName": null,
+        "conditions": null, "downloadedAt": "2026-12-01T09:00:00Z", "expiresAt": "2026-12-08T09:00:00Z" }
+    ]
+  }
+  ```
+
+  - `items`의 원소는 3.4 Coupon이다. 이 회원의 그 가게 쿠폰 중 `downloaded`이고 `expiresAt`이 지금보다 뒤인 것. 만료가 가까운 순(`expiresAt` 오름차순).
+  - 행사가 중단된 쿠폰도 기한 안이면 들어간다(FR-CPN-11 #4).
+  - 없으면 `items: []`. 화면은 '적용 안 함'만 보여준다.
+- 실패: `invalid`(storeId 없음 · 숫자 아님) · `not_found`(손님에게 보이지 않는 가게) · `unauthorized` · `forbidden_role`
+
+### 예약 신청에서 쿠폰 적용 (서버 내부, 2 「예약 신청 처리 단계」)
+
+| 순서 | 단계 | 하는 일 |
+| --- | --- | --- |
+| 60 | 쿠폰 확인 (E13) | `couponId`가 있으면 쿠폰 행을 잠그고(`FOR UPDATE`) 아래 조건을 확인한다. 같은 쿠폰으로 동시에 신청해도 하나만 통과한다 |
+| 90 | 쿠폰 적용 (E13) | 저장(80)된 예약에 쿠폰을 잇는다: `status = applied`, `reservation_id` = 그 예약. 응답의 `coupon`을 채운다 |
+
+- 단계 90은 저장(80) 뒤에 예약 ID가 있어야 해서 따로 둔다. 같은 트랜잭션이라 어느 단계가 실패해도 쿠폰은 바뀌지 않는다.
+- `couponId`가 `null`이면 두 단계 모두 아무것도 하지 않는다(`coupon: null`).
+- 비회원 예약은 쿠폰 없이 진행한다: 비회원이 보낸 `couponId`는 무시한다(FR-CPN-06 #3).
+- 확인(위에서부터 먼저 걸리는 것):
+
+  | 조건 | 실패 |
+  | --- | --- |
+  | 쿠폰이 없거나 이 회원의 쿠폰이 아님 | `404 not_found` (존재를 숨김) |
+  | 쿠폰의 대상 가게가 신청한 가게가 아님 | `409 conflict` |
+  | 상태가 `downloaded`가 아님(이미 적용 · 사용 · 만료 · 적용 취소) | `409 conflict` |
+  | 신청 시각(`requestedAt`, 서버 시계)이 `expiresAt`보다 뒤이거나 같음 | `409 conflict` (기한은 신청 시각으로 판단, FR-CPN-05) |
+
+- 예약 한 건에는 쿠폰 하나만 적용한다(FR-CPN-06). `couponId`는 문자열 하나라, 배열 등 다른 모양이면 `400 invalid`.
+- 행사가 중단됐거나 총수량이 다 나간 것은 이미 받은 쿠폰의 적용을 막지 않는다(FR-CPN-11 #4).
+- 적용한 쿠폰은 방문일이 기한을 넘어도 혜택이 유지된다(FR-CPN-05 #3). 할인액은 방문 처리 때 정한다(E14).
+
+### 방문 전 취소 · 거절 → 적용 취소
+
+- 2 「상태 변경 이벤트」 `ReservationStatusChangedEvent`를 `@EventListener`(같은 트랜잭션)로 받는다.
+- `toStatus = canceled`(손님 취소 · 가게 거절 · 자동 거절 · 자동 취소)면 그 예약에 적용된 쿠폰을 `applied` → `apply_canceled`로 바꾼다. 다른 예약에 자동으로 다시 주지 않고, 30일 제한은 그대로 센다(FR-CPN-05 #4, FR-CPN-07 #1).
+- 방문 처리된 예약(`visited`)과 다른 상태의 쿠폰은 바꾸지 않는다.
+
+#### 정책에 따라 정한 것 (3.5)
+
+| 항목 | 정한 것 | 근거 |
+| --- | --- | --- |
+| 기한 판단 | 신청 시각 < `expiresAt` | FR-CPN-05 "판단 시점은 신청 시각" |
+| 기본 선택 없음 | 목록은 순서만 정하고 서버가 고르지 않는다 | FR-CPN-06 · 11-25 (3) |
+| 남의 쿠폰 | `404`(존재 숨김), 다른 가게 · 상태 · 기한은 `409` | D2 실패 코드 「없는 … 쿠폰(남의 것 포함)」 · 「쓸 수 없는 쿠폰」 |
+
+#### 미확정 (3.5)
+
+| # | 내용 | 정해지지 않은 동안 | 결정 주체 |
+| --- | --- | --- | --- |
+| A-1 | 상인회 쿠폰(E20)을 같은 목록 · 같은 `couponId`로 받을지, 응답에 쿠폰 종류 칸을 더할지 | 가게 쿠폰만 다룬다 | E20 (#172) · D24 (#159) |
+| A-2 | 늦은 방문 처리(11-25 (5)) 때 '적용 취소' → '예약에 적용됨' 되돌리기 | 이 절에서는 하지 않는다 | E14 (#45) · D23 (#170) |
