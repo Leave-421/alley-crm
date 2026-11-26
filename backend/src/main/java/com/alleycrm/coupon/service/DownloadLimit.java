@@ -4,7 +4,7 @@ import com.alleycrm.coupon.domain.CouponStatus;
 import com.alleycrm.coupon.domain.DownloadStatus;
 import com.alleycrm.coupon.repository.CouponLimitRepository.PastDownload;
 import java.time.Duration;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 
@@ -22,13 +22,13 @@ final class DownloadLimit {
     /** '쿠폰 재발급 제한' 30일(05-policy 설정값, 정해진 값). 30 × 24시간. */
     static final Duration REDOWNLOAD_WAIT = Duration.ofHours(30L * 24);
 
-    record Result(DownloadStatus status, LocalDateTime nextDownloadableAt) {
+    record Result(DownloadStatus status, Instant nextDownloadableAt) {
     }
 
     private DownloadLimit() {
     }
 
-    static Result check(List<PastDownload> past, LocalDateTime now) {
+    static Result check(List<PastDownload> past, Instant now) {
         if (past.stream().anyMatch(coupon -> coupon.status() == CouponStatus.APPLIED)) {
             return new Result(DownloadStatus.APPLIED_UNUSED, null);
         }

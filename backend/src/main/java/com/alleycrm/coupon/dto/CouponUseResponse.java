@@ -1,9 +1,8 @@
 package com.alleycrm.coupon.dto;
 
+import java.time.Instant;
 import com.alleycrm.coupon.domain.Coupon;
 import com.alleycrm.coupon.domain.CouponStatus;
-import java.time.Instant;
-import java.time.ZoneOffset;
 
 /** 쿠폰 사용 확인 응답(CONTRACTS_API 3.6). ID는 문자열, 시각은 UTC. */
 public record CouponUseResponse(
@@ -19,6 +18,6 @@ public record CouponUseResponse(
                 String.valueOf(coupon.getReservationId()),
                 coupon.getStatus(),
                 coupon.getDiscountApplied(),
-                coupon.getUsedAt().toInstant(ZoneOffset.UTC));
+                coupon.getUsedAt());
     }
 }

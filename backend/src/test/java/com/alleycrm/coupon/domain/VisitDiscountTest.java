@@ -2,13 +2,14 @@ package com.alleycrm.coupon.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import org.junit.jupiter.api.Test;
 
 /** 방문 할인 계산(05-policy 「혜택과 비용」, FR-CPN-07 #3 · #5 · #6)과 쿠폰 기간(FR-CPN-05 #5). */
 class VisitDiscountTest {
 
-    private static final LocalDateTime NOW = LocalDateTime.of(2026, 12, 1, 9, 0);
+    private static final Instant NOW = Instant.parse("2026-12-01T09:00:00Z");
 
     @Test
     void 정액_할인은_방문_금액까지만_깎고_남는_할인은_사라진다_FR_CPN_07_3() {
@@ -43,7 +44,7 @@ class VisitDiscountTest {
 
         Coupon coupon = Coupon.download(9L, threeDays, 2L, 3L, NOW);
 
-        assertThat(coupon.getExpiresAt()).isEqualTo(NOW.plusHours(72));
+        assertThat(coupon.getExpiresAt()).isEqualTo(NOW.plus(72, ChronoUnit.HOURS));
         assertThat(coupon.getIssuerKind()).isEqualTo(CouponIssuer.STORE);
     }
 

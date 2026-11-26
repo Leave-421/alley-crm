@@ -6,8 +6,6 @@ import com.alleycrm.coupon.domain.CouponPolicy;
 import com.alleycrm.coupon.domain.CouponStatus;
 import com.alleycrm.coupon.domain.DownloadStatus;
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.List;
 
 /**
@@ -22,12 +20,12 @@ public record CouponOfferResponse(
         List<MyCoupon> myCoupons) {
 
     public static CouponOfferResponse of(long storeId, CouponPolicy event, DownloadStatus downloadStatus,
-            LocalDateTime nextDownloadableAt, List<Coupon> myCoupons) {
+            Instant nextDownloadableAt, List<Coupon> myCoupons) {
         return new CouponOfferResponse(
                 String.valueOf(storeId),
                 event == null ? null : OfferEvent.from(event),
                 downloadStatus,
-                toInstant(nextDownloadableAt),
+                nextDownloadableAt,
                 myCoupons.stream().map(MyCoupon::from).toList());
     }
 
@@ -62,11 +60,8 @@ public record CouponOfferResponse(
                     String.valueOf(coupon.getId()),
                     String.valueOf(coupon.getCouponPolicyId()),
                     coupon.getStatus(),
-                    toInstant(coupon.getExpiresAt()));
+                    coupon.getExpiresAt());
         }
     }
 
-    private static Instant toInstant(LocalDateTime utc) {
-        return utc == null ? null : utc.toInstant(ZoneOffset.UTC);
-    }
 }

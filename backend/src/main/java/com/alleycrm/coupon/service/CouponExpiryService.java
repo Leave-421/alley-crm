@@ -3,8 +3,7 @@ package com.alleycrm.coupon.service;
 import com.alleycrm.coupon.domain.CouponStatus;
 import com.alleycrm.coupon.repository.CouponRepository;
 import java.time.Clock;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,7 +26,7 @@ public class CouponExpiryService {
     /** '다운로드됨'이고 만료 시각이 지금(서버 시계)이거나 지난 쿠폰을 '기간 만료'로 바꾸고, 바꾼 수를 돌려준다. */
     @Transactional
     public int expireDue() {
-        LocalDateTime now = LocalDateTime.ofInstant(clock.instant().truncatedTo(ChronoUnit.MICROS), ZoneOffset.UTC);
+        Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
         return coupons.expireDue(now, CouponStatus.DOWNLOADED, CouponStatus.EXPIRED);
     }
 }

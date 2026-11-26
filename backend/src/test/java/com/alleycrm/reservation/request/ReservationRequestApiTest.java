@@ -73,7 +73,7 @@ class ReservationRequestApiTest {
 
     @Test
     void 단계는_order_순서로_등록된다() {
-        assertThat(service.stepOrders()).containsExactly(10, 20, 30, 60, 80, 85, 90);
+        assertThat(service.stepOrders()).containsExactly(10, 20, 30, 60, 70, 80, 82, 85, 90);
     }
 
     @Test

@@ -8,23 +8,47 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 내 가상 잔액 · 거래 내역(D9). 회원은 자기 지갑, 사장님은 자기 가게 지갑, 상인회는 권역 공동 기금.
  * 지갑 주인은 로그인 계정으로만 정하고 ID를 받지 않는다(IDOR).
+ * 가상 충전(D10): 회원(FR-RSV-08 #2)과 사장님 가게(FR-STL-06 #2, 기획 11-25 (4)). 상인회 기금은 충전하지 않는다.
  */
 @RestController
 class MyWalletController {
 
+    /** 한 번에 충전할 수 있는 금액(원) */
+    static final int MIN_CHARGE = 1_000;
+    static final int MAX_CHARGE = 1_000_000;
+
     private final WalletService wallets;
     private final JdbcTemplate jdbc;
-
     MyWalletController(WalletService wallets, JdbcTemplate jdbc) {
         this.wallets = wallets;
         this.jdbc = jdbc;
+    }
+
+    @PostMapping("/api/v1/wallets/me/charge")
+    @Transactional
+    WalletResponse charge(@RequestBody ChargeRequest req, Authentication auth) {
+        WalletOwner owner = ownerOf(auth);
+        if (WalletOwner.FUND.equals(owner.type())) {
+            throw new ApiException(ErrorCode.FORBIDDEN_ROLE);
+        }
+        if (req == null || req.amount() == null || req.amount() < MIN_CHARGE || req.amount() > MAX_CHARGE) {
+            throw new ApiException(ErrorCode.INVALID);
+        }
+        long balance = wallets.post(owner, WalletTxType.CHARGE, req.amount(), null);
+        return new WalletResponse(owner.type(), balance, WalletOwner.STORE.equals(owner.type()) && balance < 0);
+    }
+
+    record ChargeRequest(Integer amount) {
     }
 
     @GetMapping("/api/v1/wallets/me")
