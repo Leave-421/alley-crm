@@ -19,10 +19,14 @@ public interface ReservationRequestStep {
     int CONSENT = 50;
     /** 쿠폰 적용 (E13) */
     int COUPON = 60;
-    /** 예약금 (D10) */
+    /** 예약금 금액 정하기 (D10) */
     int DEPOSIT = 70;
     /** 저장 (D2) */
     int SAVE = 80;
+    /** 예약금 납부 기록 (D10) — 거래에 예약 id를 남기려고 저장 뒤에 둔다 */
+    int DEPOSIT_PAYMENT = 85;
+    /** 쿠폰 예약 연결 (E13) — 예약 id가 필요해 저장 뒤 */
+    int COUPON_LINK = 90;
 
     int order();
 

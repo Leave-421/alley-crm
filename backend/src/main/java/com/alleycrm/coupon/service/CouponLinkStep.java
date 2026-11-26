@@ -11,9 +11,6 @@ import org.springframework.stereotype.Component;
 @Component
 class CouponLinkStep implements ReservationRequestStep {
 
-    /** 저장(80) 다음. D2의 순서 상수에는 없고 계약 표(2 「예약 신청 처리 단계」)에 적었다. */
-    static final int COUPON_LINK = 90;
-
     private final CouponApplyService service;
 
     CouponLinkStep(CouponApplyService service) {
