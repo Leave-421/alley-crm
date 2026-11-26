@@ -15,6 +15,8 @@ export const customerRoutes = [
       { path: 'reservations', handle: { title: '내 예약' }, element: <PlaceholderPage screenId="G-04" title="내 예약" /> },
       { path: 'my', handle: { title: '마이' }, element: <PlaceholderPage screenId="G-10" title="마이" /> },
       { path: 'notifications', handle: { title: '알림함' }, element: <PlaceholderPage screenId="G-11" title="알림함" /> },
+      // 로그인 화면(G-08)의 '비회원 예약 조회' 진입 주소. 화면은 A13에서 만든다
+      { path: 'guest-reservation', handle: { title: '비회원 예약 조회' }, element: <PlaceholderPage screenId="G-13" title="비회원 예약 조회" /> },
     ],
   },
 ];
