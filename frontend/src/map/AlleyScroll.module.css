@@ -67,7 +67,7 @@
   gap: var(--space-2);
 }
 
-/* 가게를 고르면 화면 전체를 덮는 자리표시 패널(상세는 A4). 아래 보드 · 머리말이 비치지
+/* 가게를 고르면 화면 전체를 덮는 패널(내용은 StoreDetailPanel, A4). 아래 보드 · 머리말이 비치지
    않게 바탕 화면과 같은 불투명 배경을 쓴다(카드용 --color-surface는 반투명이라 못 씀) */
 .selectedPanel {
   position: fixed;
@@ -77,41 +77,7 @@
   width: 100%;
   max-width: var(--layout-max-width);
   z-index: 20;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
   padding: var(--space-5) var(--layout-gutter);
   background: var(--color-bg) var(--gradient-bg) fixed;
   overflow-y: auto;
-}
-
-.closeButton {
-  align-self: flex-start;
-  border: 0;
-  background: transparent;
-  color: var(--color-text-muted);
-  font-size: var(--text-base);
-  font-weight: var(--weight-semibold);
-  padding: 0;
-  min-height: 44px;
-  cursor: pointer;
-}
-
-.selectedName {
-  margin: 0;
-  font-size: var(--text-3xl);
-  font-weight: var(--weight-heavy);
-  color: var(--color-text);
-}
-
-.selectedMeta {
-  margin: 0;
-  font-size: var(--text-base);
-  color: var(--color-text-muted);
-}
-
-.selectedNote {
-  margin: var(--space-4) 0 0;
-  font-size: var(--text-base);
-  color: var(--color-text-muted);
 }

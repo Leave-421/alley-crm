@@ -16,6 +16,8 @@ export const customerRoutes = [
       // 골목 고르기(G-15, A25)는 아직 자리표시. 골목 3D 스크롤(G-01, A1)만 이 이슈에서 만든다
       { path: 'alleys', handle: { title: '골목 고르기' }, element: <PlaceholderPage screenId="G-15" title="골목 고르기" /> },
       { path: 'alleys/:alley', element: <AlleyScreen /> },
+      // 예약하기(G-02)는 A4의 '예약하기' 바가 가리키는 자리표시. 실제 화면은 A8(#28)에서 만든다
+      { path: 'alleys/:alley/reserve', handle: { title: '예약하기' }, element: <PlaceholderPage screenId="G-02" title="예약하기" /> },
       { path: 'reservations', handle: { title: '내 예약' }, element: <PlaceholderPage screenId="G-04" title="내 예약" /> },
       { path: 'my', handle: { title: '마이' }, element: <PlaceholderPage screenId="G-10" title="마이" /> },
       { path: 'notifications', handle: { title: '알림함' }, element: <PlaceholderPage screenId="G-11" title="알림함" /> },
