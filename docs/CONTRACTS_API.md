@@ -1293,7 +1293,7 @@ DB가 막지 않는 것(유형별 필수 칸, 확정 뒤 변경 금지, 중단�
 | # | 내용 | 정해지지 않은 동안 | 결정 주체 |
 | --- | --- | --- | --- |
 | S-1 | 사장님 예약 응답(D3 · D4 · D11 · O-13)의 `coupon` 칸 채우기 — E가 `CouponApplyService.appliedCouponFor(reservationId)`(3.5 모양)를 제공하고 D가 응답에 넣는다. 지금은 `null` | 사장님 화면은 사용 확인 API의 `conflict`로 판단 | D (#14 · #19) |
-| S-2 | 휴업 · 운영 중단 이벤트(`StoreBusinessStatusChangedEvent`, C22 PR #190)를 받는 E14 리스너 · 탈퇴 처리 때 `cancelUnusedForStore` 부르기 | 이벤트가 머지되면 E가 리스너를 붙인다. 탈퇴는 그 기능이 생길 때 C가 부른다 | E (#45) · C (C22 #116) |
+| S-2 | (휴업 · 운영 중단은 닫힘 — E14 리스너 #230) 탈퇴 처리 때 `cancelUnusedForStore` 부르기 | 탈퇴는 그 기능이 생길 때 C가 부른다 | C (C7) |
 | S-3 | 만료 작업 실행 주기 | 메서드만 둔다 | D (D7 #103) |
 
 ### 3.7 오늘의 코스 (E10 #52 · 계약 #210)
