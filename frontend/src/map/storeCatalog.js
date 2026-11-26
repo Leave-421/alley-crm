@@ -36,10 +36,16 @@ export const WEEKDAY_LABELS = Object.freeze({
   sun: '일',
 });
 
-/** closedDays(요일 코드 목록) → 화면 문구. 빈 목록이면 연중무휴(07-screens 공통) */
+/** closedDays(요일 코드 목록) → 목업 문구('매주 월요일 휴무' · '매주 월·화 휴무' · '연중무휴') */
 export function formatClosedDays(closedDays) {
   if (!closedDays || closedDays.length === 0) return '연중무휴';
-  return `매주 ${closedDays.map((day) => WEEKDAY_LABELS[day] ?? day).join('·')}요일 휴무`;
+  const days = closedDays.map((day) => WEEKDAY_LABELS[day] ?? day);
+  return days.length === 1 ? `매주 ${days[0]}요일 휴무` : `매주 ${days.join('·')} 휴무`;
+}
+
+/** 영업시간 → 목업 문구('11:30 – 21:00'). 승인 전이라 값이 없으면 '-' */
+export function formatHours(openTime, closeTime) {
+  return openTime && closeTime ? `${openTime} – ${closeTime}` : '-';
 }
 
 const SEED_STORES = [

@@ -1,83 +1,91 @@
-/* 이 화면은 B2 레이아웃(.content)처럼 평범하게 세로로 흐른다(내부 overflow 컨테이너 없음).
-   보드(AlleyCorridor)만 길게 늘어난 블록이고, 구역 표시·선택 패널은 하단 탭(B2)처럼
-   position: fixed로 화면에 떠 있는다. */
-.page {
+/* 시연 배너(RootLayout, 화면 위 고정) 아래 남은 화면 전체 */
+.viewport {
   position: relative;
-}
-
-.topBar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--layout-gutter);
-}
-
-.backLink {
-  color: var(--color-text-muted);
-  font-size: var(--text-base);
-  font-weight: var(--weight-semibold);
-  white-space: nowrap;
-}
-
-.title {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: var(--text-2xl);
-  color: var(--color-heading);
-  white-space: nowrap;
+  height: calc(100dvh - var(--demo-banner-height));
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-.boardArea {
-  position: relative;
+/* 여기 안은 전부 목업 좌표계(목업 px). 폭 · 높이 · 배율은 화면에 맞춰 JS가 정한다 */
+.design {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+  transform-origin: 0 0;
+  background: var(--gradient-bg);
 }
 
-/* 하단 탭(B2, position: fixed) 바로 위에 뜨는 구역 표시 · 이동 버튼 */
-.navBar {
-  position: fixed;
-  left: 50%;
-  bottom: calc(var(--tabbar-height) + var(--tabbar-gap) + var(--space-3) + env(safe-area-inset-bottom, 0px));
-  z-index: 9;
-  width: calc(100% - 2 * var(--space-5));
-  max-width: var(--tabbar-max-width);
-  transform: translateX(-50%);
+/* 목업 머리말(높이 56, 좌우 20, 뒤로 · 제목 · 알림 · 프로필). 넓은 화면에서는 폭 전체 */
+.headerWrap {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 12;
+  background: var(--color-gray-50);
+}
+
+.header {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3);
-  border-radius: var(--radius-xl);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-card);
+  justify-content: space-between;
+  height: 56px;
+  padding: 0 20px;
+  border-bottom: 1px solid rgba(82, 51, 68, 0.22);
 }
 
-.navLabel {
-  flex: 1;
+.headerLeft {
+  display: flex;
+  align-items: center;
   min-width: 0;
-  font-size: var(--text-base);
-  font-weight: var(--weight-bold);
-  color: var(--color-text);
-  white-space: nowrap;
+}
+
+.headerTitle {
+  margin: 0 0 0 12px;
   overflow: hidden;
+  color: var(--color-ink-900);
+  font-family: var(--font-sans);
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 800;
+  white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-.navButtons {
-  display: flex;
-  gap: var(--space-2);
+.headerLeft > .iconLink + .headerTitle {
+  margin-left: 12px;
 }
 
-/* 가게를 고르면 화면 전체를 덮는 패널(내용은 StoreDetailPanel, A4). 아래 보드 · 머리말이 비치지
-   않게 바탕 화면과 같은 불투명 배경을 쓴다(카드용 --color-surface는 반투명이라 못 씀) */
-.selectedPanel {
-  position: fixed;
-  inset: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 100%;
-  max-width: var(--layout-max-width);
-  z-index: 20;
-  padding: var(--space-5) var(--layout-gutter);
-  background: var(--color-bg) var(--gradient-bg) fixed;
-  overflow-y: auto;
+.headerLeft > .headerTitle:first-child {
+  margin-left: 0;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.iconLink {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: var(--color-ink-800);
+}
+
+/* 목업 '골목 둘러보기'(프레임 위에서 124px = 시연 배너 24 + 머리말 56 + 44) */
+.backToAlley {
+  position: absolute;
+  left: 16px;
+  top: 100px;
+  z-index: 13;
+  min-height: 44px;
+  gap: 6px;
+  /* 건물 사진 위에 떠 있어서 반투명이면 글자가 묻힌다 — 불투명 흰 바탕 */
+  background: #fff;
+  box-shadow: inset 0 0 0 1px rgba(63, 36, 42, 0.14), 0 4px 12px rgba(19, 10, 13, 0.18);
 }

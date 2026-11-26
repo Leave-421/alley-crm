@@ -1,67 +1,145 @@
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router';
-import Button from '@/components/Button/Button.jsx';
 import AlleyCorridor from './AlleyCorridor.jsx';
-import StoreDetailPanel from './StoreDetailPanel.jsx';
-import { SLOT_DEPTH, useAlleyBoard } from './useAlleyBoard.js';
-import { ALLEY_LABELS } from './storeCatalog.js';
+import StoreSheet from './StoreSheet.jsx';
+import { useAlleyBoard } from './useAlleyBoard.js';
+import { ALLEY_LABELS, MOCK_STORES } from './storeCatalog.js';
+import { buildFacadeImageMap, buildFillerNames } from './alleyIllustrations.js';
+import { DESIGN_WIDTH } from './alleyCamera.js';
+import chip from './chip.module.css';
 import styles from './AlleyScroll.module.css';
 
+const HEADER_HEIGHT = 56;
+const MIN_FRAME_HEIGHT = 640; // 이보다 짧은 화면은 전체를 줄인다
+const MAX_UI_SCALE = 1.1; // 넓은 화면에서 글자 · 버튼이 너무 커지지 않게
+
 /**
- * 골목 3D 스크롤 공용 컴포넌트(A1, #4 · A4, #11). 손님 화면(G-01) · 사장님 손님 흐름(O-07) · 상인회
- * 방문 흐름(A-03)이 같은 가게 데이터 · 같은 보드를 함께 쓴다(ARCHITECTURE 「3D 골목 보드」, FR-MAP-02).
- *
- * 가게를 고르면 StoreDetailPanel(A4)이 확대 내용을 채운다. 추천 실제 내용(A5) · 쿠폰 배지(A6)는
- * 그 이슈에서 StoreDetailPanel 안에 더한다.
+ * 화면 전체를 목업 좌표계(목업 px)로 쓰고 배율 하나로 맞춘다. 폰(폭 390)은 배율 1이라 목업과 완전히 같고,
+ * 더 작은 폰은 폭에 맞춰 줄인다. 넓은 화면은 배율을 1.1까지만 키우고 남는 폭은 머리말 · 골목이 채운다.
  */
-export default function AlleyScroll({ alley, stores, initialSelectedId = null, backTo }) {
-  const board = useAlleyBoard({ alley, stores, initialSelectedId });
+function useFrameScale(ref) {
+  const [box, setBox] = useState(() => ({ width: window.innerWidth, height: window.innerHeight }));
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) return undefined;
+    const observer = new ResizeObserver(([entry]) => {
+      setBox({ width: entry.contentRect.width, height: entry.contentRect.height });
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref]);
+  const scale = Math.min(box.width / DESIGN_WIDTH, box.height / MIN_FRAME_HEIGHT, MAX_UI_SCALE);
+  return { scale, frameWidth: box.width / scale, frameHeight: box.height / scale };
+}
+
+/**
+ * G-01 골목(3D 스크롤) · 가게 화면(A1 #4 · A4 #11). 확정 목업 GuestAlleyFront/Center/Back.dc.html을
+ * 그대로 옮긴 화면이라 앱 공통 머리말 · 하단 탭 없이 목업의 머리말을 쓴다(07-screens G-01 이동에도 하단 탭 없음).
+ * 데이터 층(useAlleyBoard) · 그리는 층(AlleyCorridor · alleyCamera · alleyIllustrations)은 사장님 O-07 ·
+ * 상인회 A-03 화면도 같이 쓴다(FR-MAP-02).
+ */
+export default function AlleyScroll({ alley, stores = MOCK_STORES, initialSelectedId = null, backTo }) {
+  const { storesInAlley, selectedStore, scrollDepth, setScrollDepth, selectStore, clearSelection } = useAlleyBoard({
+    alley,
+    stores,
+    initialSelectedId,
+  });
+  const facadeImages = useMemo(() => buildFacadeImageMap(stores), [stores]);
+  const fillerNames = useMemo(() => buildFillerNames(stores), [stores]);
+  const viewportRef = useRef(null);
+  const { scale, frameWidth, frameHeight } = useFrameScale(viewportRef);
+  const [duration, setDuration] = useState(initialSelectedId ? '0s' : '0.2s');
+  const [sheetMode, setSheetMode] = useState('peek');
   const alleyLabel = ALLEY_LABELS[alley] ?? alley;
-  const storeCount = board.storesInAlley.length;
-  const currentZone = storeCount > 0 ? Math.min(storeCount - 1, Math.round(board.scrollDepth / SLOT_DEPTH)) : 0;
+
+  const changeDepth = useCallback(
+    (depth, nextDuration) => {
+      setScrollDepth(depth);
+      setDuration(nextDuration);
+    },
+    [setScrollDepth],
+  );
+
+  function openStore(storeId) {
+    selectStore(storeId);
+    setDuration('0.56s');
+    setSheetMode('peek');
+  }
+
+  function closeStore() {
+    clearSelection();
+    setDuration('0.48s');
+    setSheetMode('peek');
+  }
 
   return (
-    <div className={styles.page}>
-      <div className={styles.topBar}>
-        {backTo && (
-          <Link to={backTo} className={styles.backLink}>
-            ‹ 골목 고르기
-          </Link>
-        )}
-        <h1 className={styles.title}>{alleyLabel} 골목</h1>
-      </div>
-
-      <div className={styles.boardArea}>
+    <div ref={viewportRef} className={styles.viewport}>
+      <div className={styles.design} style={{ width: frameWidth, height: frameHeight, transform: `scale(${scale})` }}>
         <AlleyCorridor
-          storesInAlley={board.storesInAlley}
-          scrollDepth={board.scrollDepth}
-          maxDepth={board.maxDepth}
-          selectedStoreId={board.selectedStoreId}
-          onScroll={board.setScrollDepth}
-          onSelectStore={board.selectStore}
-        />
-      </div>
+            alley={alley}
+            alleyLabel={alleyLabel}
+            storesInAlley={storesInAlley}
+            facadeImages={facadeImages}
+            fillerNames={fillerNames}
+            depth={scrollDepth}
+            duration={duration}
+            selectedStoreId={selectedStore?.id ?? null}
+            sceneWidth={frameWidth}
+            sceneHeight={frameHeight - HEADER_HEIGHT}
+            onDepthChange={changeDepth}
+            onSelectStore={openStore}
+          />
 
-      <div className={styles.navBar}>
-        <span className={styles.navLabel}>
-          {alleyLabel} 골목 · 구역 {storeCount > 0 ? currentZone + 1 : 0} / {storeCount}
-        </span>
-        <div className={styles.navButtons}>
-          {/* 깊이(scrollDepth)는 실제 창 스크롤 위치에서만 읽는다(AlleyCorridor) — 버튼은 state를
-              직접 바꾸지 않고 창을 실제로 스크롤시켜, 그 다음 스크롤 이벤트가 깊이를 갱신하게 한다 */}
-          <Button variant="secondary" onClick={() => window.scrollBy({ top: -SLOT_DEPTH, behavior: 'smooth' })} disabled={board.scrollDepth <= 0}>
-            뒤로
-          </Button>
-          <Button onClick={() => window.scrollBy({ top: SLOT_DEPTH, behavior: 'smooth' })} disabled={board.scrollDepth >= board.maxDepth}>
-            더 들어가기
-          </Button>
-        </div>
-      </div>
+          {selectedStore && (
+            <button type="button" className={`${chip.chip} ${styles.backToAlley}`} onClick={closeStore}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+              <span>골목 둘러보기</span>
+            </button>
+          )}
 
-      {board.selectedStore && (
-        <div className={styles.selectedPanel}>
-          <StoreDetailPanel store={board.selectedStore} alley={alley} alleyLabel={alleyLabel} onClose={board.clearSelection} />
-        </div>
-      )}
+          <div className={styles.headerWrap}>
+            <header className={styles.header}>
+              <div className={styles.headerLeft}>
+                {backTo && (
+                  <Link to={backTo} aria-label="뒤로" className={styles.iconLink}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M15 18l-6-6 6-6" />
+                    </svg>
+                  </Link>
+                )}
+                <h1 className={styles.headerTitle}>{alleyLabel} 골목</h1>
+              </div>
+              <div className={styles.headerRight}>
+                <Link to="/notifications" aria-label="알림함" className={styles.iconLink}>
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9" />
+                    <path d="M10.3 21a1.9 1.9 0 003.4 0" />
+                  </svg>
+                </Link>
+                <Link to="/demo" aria-label="프로필 · 역할 전환(시연 도구)" className={styles.iconLink}>
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9" />
+                    <circle cx="12" cy="10" r="3" />
+                    <path d="M6.5 18.5a6.5 6.5 0 0111 0" />
+                  </svg>
+                </Link>
+              </div>
+            </header>
+          </div>
+
+          <StoreSheet
+            store={selectedStore}
+            alley={alley}
+            alleyLabel={alleyLabel}
+            building={selectedStore ? facadeImages.get(selectedStore.id) : undefined}
+            scale={scale}
+            mode={sheetMode}
+            onModeChange={setSheetMode}
+            onClose={closeStore}
+          />
+      </div>
     </div>
   );
 }
