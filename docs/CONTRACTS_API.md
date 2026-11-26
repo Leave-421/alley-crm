@@ -598,6 +598,49 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
   - `receivedCount`: 내 가게가 받은(수수료를 낸) 확정 소개 수.
 - 실패: `invalid` · `unauthorized` · `forbidden_role`
 
+### 상인회 월 정산 (D17)
+
+권역은 로그인한 상인회 계정으로 정한다. 가게 단위 묶음 숫자만, 손님 정보는 없다(FR-ANL-05). 정산 달 = 방문 처리된 달(D15). 방문 전에 취소된 예약은 수수료가 없어 자동으로 빠진다(FR-STL-05 #2). 공동 기금 잔액 · 내역은 `GET /api/v1/wallets/me`(D9, 상인회 = 기금).
+
+#### `GET /api/v1/association/settlements/{month}` — 월 정산 (A-04)
+
+- 역할: 상인회. `month` = `YYYY-MM`.
+- 응답 `200`:
+
+```json
+{
+  "month": "2026-11",
+  "status": "aggregated",
+  "confirmedAt": null,
+  "canConfirm": true,
+  "unprocessedReportCount": 0,
+  "count": 2,
+  "totalFee": 2200,
+  "stores": [ { "storeId": "3", "storeName": "B", "count": 2, "totalFee": 2200, "avgVisitAmount": 27500, "couponCost": 0 } ]
+}
+```
+
+  - `status`: 확정 전이면 `aggregated`(수수료 기록에서 그때 집계), 확정 뒤 `confirmed`.
+  - `avgVisitAmount`: 가게별 소개 건 평균 방문 금액(**쿠폰 할인 후**, 원 단위 반올림). 낮은지 판단하는 표시는 없다(판단은 상인회 몫, 11-24 (5)).
+  - `unprocessedReportCount`: 그 달(예약 시작 달) 예약에 걸린, 처리 완료되지 않은 금액 · 미처리 신고 수(11-25 (5)).
+  - `canConfirm`: 확정 전 · 그 달이 끝남 · 처리 안 된 신고 0일 때 `true`.
+- 실패: `invalid`(month) · `unauthorized` · `forbidden_role`
+
+#### `POST /api/v1/association/settlements/{month}/confirm` — 확정 (FR-STL-05 #4)
+
+- 역할: 상인회. `X-XSRF-TOKEN` 필요. 본문 없음.
+- 상태 `confirmed`, 확정 시각을 남기고 그 달 수수료에 정산 id를 단다. **잔액 · 수수료는 바꾸지 않는다**(확인 기록, 11-24).
+- 응답 `200`: 위 GET과 같은 모양.
+- 실패: `conflict` — 이미 확정, 그 달이 아직 끝나지 않음, 처리되지 않은 신고가 있음(#5) · `invalid` · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+#### 정책에 따라 정한 것 (D17)
+
+| 항목 | 정한 것 | 근거 |
+| --- | --- | --- |
+| 확정 시점 | 그 달이 끝난 뒤(운영 시간대)부터 | FR-STL-05 예 '12월 1일 정산' |
+| 신고의 '그 달' | 신고된 예약의 시작 시각 달 | 05-policy 「방문 금액 확인 · 신고」 '원래 방문(예약) 달' |
+| 평균 방문 금액 | 쿠폰 할인 후 금액(`fee_base`) 평균, 원 단위 반올림 | 07-screens A-04 '쿠폰 할인 후' |
+
 ### 가상 잔액 · 거래 내역 (D9)
 
 실제 결제는 없다(NFR-02). 잔액이 바뀔 때마다 거래 내역이 한 줄 남는다(FR-STL-06). 회원 잔액은 마이너스가 되지 않고, 가게 잔액은 소개 수수료로 마이너스가 될 수 있다(기획 11-25 (4)).
