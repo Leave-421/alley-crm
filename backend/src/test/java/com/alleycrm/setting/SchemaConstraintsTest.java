@@ -108,6 +108,55 @@ class SchemaConstraintsTest {
     }
 
     @Test
+    void 상인회_쿠폰_정률은_최대_할인액이_필수() {
+        String sql = """
+                INSERT INTO association_coupon_event (region_id, title, benefit_type, discount_rate, max_discount_amount, total_quantity,
+                    eligible_store_scope, issue_start_at, issue_end_at, valid_start_at, valid_end_at, reserved_budget, confirmed_at)
+                VALUES (?, '행사', 'percent_discount', 20, ?, 10, 'selected', NOW(6), NOW(6) + INTERVAL 1 DAY, NOW(6), NOW(6) + INTERVAL 7 DAY, 50000, NOW(6))
+                """;
+        assertThatThrownBy(() -> jdbc.update(sql, regionId, null))
+                .isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("ck_acoupon_event_benefit");
+        jdbc.update(sql, regionId, 5000);
+    }
+
+    @Test
+    void 상인회_쿠폰은_같은_행사_같은_회원_1장이고_가게_칸은_비운다() {
+        long member = insert("INSERT INTO customer (type) VALUES ('member')");
+        long event = insert("INSERT INTO association_coupon_event (region_id, title, benefit_type, discount_amount, total_quantity, eligible_store_scope,"
+                + " issue_start_at, issue_end_at, valid_start_at, valid_end_at, reserved_budget, confirmed_at) VALUES (" + regionId
+                + ", '행사', 'fixed_discount', 1000, 10, 'all', NOW(6), NOW(6) + INTERVAL 1 DAY, NOW(6), NOW(6) + INTERVAL 7 DAY, 10000, NOW(6))");
+        String sql = "INSERT INTO coupon (customer_id, issuer_kind, association_event_id, downloaded_at, expires_at) VALUES (?, 'association', ?, NOW(6), NOW(6))";
+        jdbc.update(sql, member, event);
+
+        assertThatThrownBy(() -> jdbc.update(sql, member, event)).isInstanceOf(DataAccessException.class);
+        // 상인회 쿠폰에 가게 쿠폰 행사를 같이 채우면 막힌다
+        long policy = insert("INSERT INTO coupon_policy (store_id, benefit_type, discount_amount, total_quantity) VALUES (" + storeA + ", 'fixed_discount', 1000, 10)");
+        long other = insert("INSERT INTO customer (type) VALUES ('member')");
+        assertThatThrownBy(() -> jdbc.update(
+                "INSERT INTO coupon (customer_id, issuer_kind, association_event_id, coupon_policy_id, downloaded_at, expires_at) VALUES (?, 'association', ?, ?, NOW(6), NOW(6))",
+                other, event, policy))
+                .isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("ck_coupon_issuer");
+    }
+
+    @Test
+    void 방문_신고는_처리_완료일_때만_결과가_있고_신고당_정정은_한_번() {
+        long member = insert("INSERT INTO customer (type) VALUES ('member')");
+        long r = reservation("R-VR", storeA);
+        assertThatThrownBy(() -> jdbc.update(
+                "INSERT INTO visit_report (reservation_id, customer_id, type, status, result, created_at) VALUES (?, ?, 'amount', 'received', 'valid', NOW(6))", r, member))
+                .isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("ck_visit_report_result");
+        long report = insert("INSERT INTO visit_report (reservation_id, customer_id, type, status, result, handled_at, created_at) VALUES ("
+                + r + ", " + member + ", 'amount', 'done', 'valid', NOW(6), NOW(6))");
+        String fix = "INSERT INTO visit_amount_correction (reservation_id, report_id, original_amount, corrected_amount, settlement_month, created_at) VALUES (?, ?, 30000, 40000, '2026-11', NOW(6))";
+        jdbc.update(fix, r, report);
+
+        assertThatThrownBy(() -> jdbc.update(fix, r, report)).isInstanceOf(DataAccessException.class);
+    }
+
+    @Test
     void 지갑은_주인당_하나() {
         jdbc.update("INSERT INTO wallet (owner_type, owner_id) VALUES ('store', ?)", storeA);
 
