@@ -1661,3 +1661,118 @@ DB가 막지 않는 것(유형별 필수 칸, 확정 뒤 변경 금지, 중단�
 | 받는 기간 끝 | 지금보다 뒤여야 함(이미 끝난 행사를 만들지 않음) | — | B |
 | 고른 가게 | 그 권역의 승인된 가게만. 아니면 `invalid` | FR-CPN-12 "참여 가게" | — |
 | 목록 | 페이지 없이 전부 | A-10 행사별 발급 수 · 남은 예산 | B |
+
+### 3.9 상인회 쿠폰 받기 (E19 #162 · 계약 #251)
+
+> 상태: **계약.** 구현은 #162에서 한다. 프론트 목(G-11 알림함의 상인회 쿠폰 행사 카드)은 이 절을 따른다. 행사는 3.8, 예약 적용은 E20(#172).
+> 기준: 기획 저장소 `05-policy.md` 「상인회 쿠폰」, `03-requirements.md` FR-CPN-13 · FR-NTF-03, `07-screens.md` G-11, 결정 기록 11-25 (5). 알림 만들기 규칙은 1절 「알림 (C14)」.
+
+상인회 쿠폰 행사는 **회원 알림함**에 알림으로 뜨고, 회원은 알림에서 **선착순으로** 받는다. 같은 행사에서 한 사람당 1장이다. 수량이 다 나가면 알림은 그대로 두고 카드를 '마감'으로 보여준다. **비회원은 받을 수 없다**(FR-CPN-13).
+
+#### 행사 알림 (서버 내부, E19 → C14)
+
+- E18 행사 만들기(3.8 `POST`)가 같은 트랜잭션에서 `AssociationCouponOpenedEvent(eventId, regionId)`를 내보낸다(`com.alleycrm.coupon`).
+- C14가 `@TransactionalEventListener`(커밋 뒤)로 받아 **회원 계정(`account.role = customer`) 전부**에게 `notifyAccount(accountId, "association_coupon_opened", { "associationCouponEventId": "5" })`로 알림을 만든다(1절 「알림」 규칙: 기능은 이벤트, 알림은 C14). 기금이 모자라 행사 생성이 되돌아가면 알림도 없다.
+- 비회원 예약(`guest_reservation`)에게는 만들지 않는다(FR-CPN-13 #3).
+- 알림은 마감 · 중단 뒤에도 지우지 않는다. 카드 상태는 아래 `GET`으로 그때 정한다.
+
+| `type` | 받는 쪽 | `payload` | 만드는 곳 |
+| --- | --- | --- | --- |
+| `association_coupon_opened` | 회원 계정 전부 | `{ "associationCouponEventId" }` | 상인회 쿠폰 행사 만들기 커밋 뒤(`AssociationCouponOpenedEvent`, C14 리스너) |
+
+**AssociationCouponOffer** (회원이 보는 행사 카드):
+
+```json
+{
+  "id": "5",
+  "title": "12월 골목 주말 할인",
+  "benefitType": "percent_discount",
+  "discountAmount": null,
+  "discountPercent": 10,
+  "maxDiscountAmount": 5000,
+  "eligibleStoreScope": "selected",
+  "stores": [ { "id": "3", "name": "구름 디저트" }, { "id": "7", "name": "달빛 포차" } ],
+  "issueStartAt": "2026-12-01T00:00:00Z",
+  "issueEndAt": "2026-12-07T15:00:00Z",
+  "validStartAt": "2026-12-01T00:00:00Z",
+  "validEndAt": "2026-12-14T15:00:00Z",
+  "status": "available",
+  "myCouponId": null
+}
+```
+
+| 필드 | 뜻 |
+| --- | --- |
+| 혜택 · 기간 칸 | 3.8 AssociationCouponEvent와 같다 |
+| `stores` | 쓸 수 있는 가게. `selected`면 고른 가게(ID 순, 이름 포함), `all`이면 `[]` — 화면은 '모든 참여 가게'로 보여준다 |
+| `status` | 이 회원에게 보이는 카드 상태(`CONTRACTS.md` 「3」 `associationCouponOffer.status`). 아래 순서로 처음 맞는 것: `received` 이미 받음 → `closed` 마감(다 나감 · 중단 · 받는 기간 끝) → `upcoming` 받는 기간 전 → `available` 받을 수 있음 |
+| `myCouponId` | 받았으면 그 쿠폰 ID, 아니면 `null` |
+
+- 발급 수 · 남은 수 · 예산은 회원에게 보여주지 않는다.
+
+### `GET /api/v1/association-coupon-events/{eventId}` — 상인회 쿠폰 행사 카드 (G-11)
+
+- 역할: 회원 손님. 비로그인 `401 unauthorized`, 사장님 · 상인회 · 비회원 제한 세션 `403 forbidden_role`.
+- 응답 `200`: AssociationCouponOffer.
+- 실패: `not_found`(없는 행사, 숫자가 아닌 ID) · `unauthorized` · `forbidden_role`
+
+### `POST /api/v1/association-coupon-events/{eventId}/claim` — 상인회 쿠폰 받기 (선착순)
+
+- 역할: 회원 손님(위와 같음). `X-XSRF-TOKEN` 필요. 요청 본문 없음.
+- 검사 순서:
+  1. 없는 행사면 `404 not_found`.
+  2. 이미 이 행사 쿠폰을 받았으면 `409 conflict`(한 사람당 1장, FR-CPN-13 #2).
+  3. 받을 수 없으면 `409 conflict`: 다 나감(FR-CPN-13 #1) · 중단 · 받는 기간 전 · 받는 기간 끝(#4). 화면은 위 `GET`의 `status`로 '마감'을 보여준다(에러 응답에 이유를 담지 않는다).
+- 응답 `201` (Coupon, 3.4와 같은 모양에 상인회 칸):
+
+  ```json
+  {
+    "couponId": "801",
+    "issuerKind": "association",
+    "associationCouponEventId": "5",
+    "eventId": null,
+    "storeId": null,
+    "status": "downloaded",
+    "benefitType": "percent_discount",
+    "discountAmount": null,
+    "discountPercent": 10,
+    "maxDiscountAmount": 5000,
+    "serviceName": null,
+    "conditions": null,
+    "downloadedAt": "2026-12-01T09:00:00Z",
+    "expiresAt": "2026-12-14T15:00:00Z"
+  }
+  ```
+
+  - `issuerKind`는 `coupon.issuerKind`(`CONTRACTS.md` 「3」). 가게 쿠폰 칸(`eventId` · `storeId`)은 `null`, 쓸 수 있는 가게는 행사 카드의 `stores`.
+  - `expiresAt` = 행사의 `validEndAt`(3.8 「받은 쿠폰」).
+- 실패: `unauthorized` · `forbidden_role` · `not_found` · `conflict` · `csrf_invalid`
+
+#### 원자 처리 (서버 내부, NFR-09)
+
+- 한 트랜잭션에서 **발급 수 조건부 UPDATE를 먼저** 한다(3.8 「발급 수 늘리기」). 바뀐 행이 0이면 `409`. 이 UPDATE가 행사 행을 잠가, 같은 행사의 받기가 커밋까지 한 줄로 선다.
+- 그다음 쿠폰을 넣는다. 같은 회원이 동시에 두 번 눌러도 `uk_coupon_association_member`가 한 장만 남기고, 그 위반은 `409 conflict`로 바꾸며 발급 수 증가도 함께 되돌린다.
+- 동시에 많이 눌러도 받은 수는 총수량을 넘지 않는다(E9와 같은 방식으로 검증).
+
+#### 정책에 따라 정한 것 (3.9)
+
+| 항목 | 정한 것 | 근거 |
+| --- | --- | --- |
+| 알림 받는 사람 | 회원 계정 전부(권역 선택이 v1 제외라 한 권역) | FR-CPN-13 "회원 알림함", v1 제외: 권역 선택 |
+| 알림 만드는 곳 | 기능은 이벤트, 알림은 C14 리스너 | 1절 「알림」 서버 내부 규칙 |
+| 마감 표시 | 알림은 남기고 카드 `status`로 | FR-CPN-13 #1 |
+
+#### 구현 기준 (정책에 명시 없음 — 관련 담당 확인 요청)
+
+| 항목 | 이 계약의 기준 | 정책 근거 | 확인할 담당 |
+| --- | --- | --- | --- |
+| 알림 시점 | 행사를 만들 때 한 번(받는 기간이 나중에 시작해도). 그 전에는 카드가 `upcoming` | FR-CPN-13 | A (G-11) |
+| 받기 실패 이유 | 모두 `409 conflict`, 이유는 `GET`의 `status`로 | 새 에러 코드를 만들지 않음 | A |
+| 남은 수 표시 | 회원에게 보여주지 않음 | 05-policy에 없음 | A |
+
+#### 미확정 (3.9)
+
+| # | 내용 | 정해지지 않은 동안 | 결정 주체 |
+| --- | --- | --- | --- |
+| U-1 | C14 리스너: `AssociationCouponOpenedEvent` → 회원 전부에게 `association_coupon_opened` 알림, `NotificationType` 상수 · 1절 표 줄 | E19는 이벤트만 내보낸다. 알림함에 행사가 뜨지 않으므로 화면은 목으로 확인 | C (#42) |
+| U-2 | 회원 쿠폰함 · 예약 화면의 쿠폰 목록에 상인회 쿠폰을 넣는 것(3.5 A-1) | E20에서 정한다 | E (#172) |
