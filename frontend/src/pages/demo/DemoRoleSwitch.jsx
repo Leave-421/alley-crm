@@ -4,7 +4,7 @@ import { login, logout } from '@/api/auth.js';
 import { ApiError } from '@/api/client.js';
 import { ROLE_HOME } from '@/auth/roles.js';
 import { ANONYMOUS_SESSION, SESSION_STATUS, sessionFromAccount, useSession } from '@/auth/session.js';
-import { DEMO_PASSWORD, DEMO_ROLES } from '@/demo/demoAccounts.js';
+import { DEMO_ROLES } from '@/demo/demoAccounts.js';
 import styles from './DemoTools.module.css';
 
 const IS_MOCK = import.meta.env.MODE === 'mock';
@@ -37,10 +37,10 @@ export default function DemoRoleSwitch() {
         navigate('/');
         return;
       }
-      if (!DEMO_PASSWORD && !IS_MOCK) {
-        throw new Error('시연 계정 비밀번호가 없어요. frontend/.env.development.local에 VITE_DEMO_PASSWORD를 넣어 주세요.');
+      if (!item.password && !IS_MOCK) {
+        throw new Error(`시연 계정 비밀번호가 없어요. frontend/.env.development.local에 ${item.passwordEnv}를 넣어 주세요.`);
       }
-      const account = await login(item.loginId, DEMO_PASSWORD || 'mock-only-password');
+      const account = await login(item.loginId, item.password || 'mock-only-password');
       session.setSession(sessionFromAccount(account));
       navigate(ROLE_HOME[account.role] ?? '/');
     } catch (caught) {
