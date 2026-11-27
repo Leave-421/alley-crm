@@ -21,7 +21,9 @@ public record ReservationResponse(
         boolean fromRecommendation,
         Integer visitAmount,
         Instant visitedAt,
-        Integer refundAmount) {
+        Integer refundAmount,
+        Instant pendingStartAt,
+        Integer pendingPartySize) {
 
     /**
      * 적용된 쿠폰(CONTRACTS_API 3.5 · 예약 응답 {@code coupon}). 혜택 칸의 뜻은 3.2 CouponEvent와 같다.
@@ -53,6 +55,8 @@ public record ReservationResponse(
                 r.getCourseProposalId() != null,
                 r.getVisitAmount(),
                 r.getVisitedAt(),
-                r.getRefundAmount());
+                r.getRefundAmount(),
+                r.getPendingStartAt(),
+                r.getPendingPartySize());
     }
 }

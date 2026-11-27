@@ -7,6 +7,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -27,6 +28,18 @@ class CustomerReservationController {
     @PostMapping("/api/v1/reservations/{id}/cancel")
     ReservationResponse cancel(@PathVariable long id, Authentication auth) {
         return ReservationResponse.of(states.cancelByCustomer(memberCustomerId(auth), id), null);
+    }
+
+    /** 예약 변경(D8, FR-RSV-07): 바꿀 날짜(startAt) · 인원(partySize) 중 하나 이상. 사장님이 다시 승인한다 */
+    @PostMapping("/api/v1/reservations/{id}/change")
+    ReservationResponse change(@PathVariable long id, @RequestBody ChangeRequest body, Authentication auth) {
+        if (body == null || (body.startAt() == null && body.partySize() == null)) {
+            throw new ApiException(ErrorCode.INVALID);
+        }
+        return ReservationResponse.of(states.requestChange(memberCustomerId(auth), id, body.startAt(), body.partySize()), null);
+    }
+
+    record ChangeRequest(java.time.Instant startAt, Integer partySize) {
     }
 
     private long memberCustomerId(Authentication auth) {

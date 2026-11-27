@@ -2,10 +2,13 @@ package com.alleycrm.notification;
 
 import com.alleycrm.common.error.ApiException;
 import com.alleycrm.common.error.ErrorCode;
+import com.alleycrm.customer.CustomerService;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -28,11 +31,13 @@ public class NotificationService {
     private final JdbcTemplate jdbc;
     private final Clock clock;
     private final ObjectMapper json;
+    private final CustomerService customers;
 
-    NotificationService(JdbcTemplate jdbc, Clock clock, ObjectMapper json) {
+    NotificationService(JdbcTemplate jdbc, Clock clock, ObjectMapper json, CustomerService customers) {
         this.jdbc = jdbc;
         this.clock = clock;
         this.json = json;
+        this.customers = customers;
     }
 
     /** 회원 · 사장님 계정에게 */
@@ -47,36 +52,108 @@ public class NotificationService {
         insert(NotificationType.RECIPIENT_GUEST_RESERVATION, reservationId, type, payload);
     }
 
+    /** 예약한 손님에게: 회원이면 그 계정, 비회원이면 그 예약(FR-NTF-02) */
+    @Transactional
+    public void notifyReservationCustomer(long reservationId, long customerId, String type, Map<String, Object> payload) {
+        customers.memberAccountId(customerId).ifPresentOrElse(
+                accountId -> notifyAccount(accountId, type, payload),
+                () -> notifyGuestReservation(reservationId, type, payload));
+    }
+
+    /** 그 예약에 대해 이 종류의 알림을 이미 만들었는지(payload.reservationId 기준) */
+    @Transactional(readOnly = true)
+    boolean existsForReservation(String type, long reservationId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+                SELECT EXISTS (SELECT 1 FROM notification
+                               WHERE type = ? AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.reservationId')) = ?)
+                """, Boolean.class, type, String.valueOf(reservationId)));
+    }
+
     /** 계정의 알림, 최근 것부터 */
     @Transactional(readOnly = true)
     public List<Notification> pageForAccount(long accountId, int page, int size) {
-        return jdbc.query("""
-                SELECT id, type, payload, read_at, created_at FROM notification
-                WHERE recipient_type = ? AND recipient_id = ?
-                ORDER BY created_at DESC, id DESC
-                LIMIT ? OFFSET ?
-                """, rowMapper(), NotificationType.RECIPIENT_ACCOUNT, accountId, size, (long) page * size);
+        return page(NotificationType.RECIPIENT_ACCOUNT, List.of(accountId), page, size);
     }
 
     @Transactional(readOnly = true)
     public Counts countsForAccount(long accountId) {
-        return jdbc.queryForObject("""
-                SELECT COUNT(*) AS total, COALESCE(SUM(read_at IS NULL), 0) AS unread FROM notification
-                WHERE recipient_type = ? AND recipient_id = ?
-                """, (rs, i) -> new Counts(rs.getLong("total"), rs.getLong("unread")),
-                NotificationType.RECIPIENT_ACCOUNT, accountId);
+        return counts(NotificationType.RECIPIENT_ACCOUNT, List.of(accountId));
     }
 
     /** 받은 사람만 읽음 처리할 수 있다. 남의 알림은 존재를 숨기고 404. 이미 읽었으면 처음 시각을 유지한다. */
     @Transactional
     public void markAccountNotificationRead(long accountId, long notificationId) {
-        Integer mine = jdbc.queryForObject("""
-                SELECT COUNT(*) FROM notification WHERE id = ? AND recipient_type = ? AND recipient_id = ?
-                """, Integer.class, notificationId, NotificationType.RECIPIENT_ACCOUNT, accountId);
+        markRead(NotificationType.RECIPIENT_ACCOUNT, List.of(accountId), notificationId);
+    }
+
+    /** 비회원 예약 조회 제한 세션(C13): 그 세션이 다루는 예약들의 알림, 최근 것부터 */
+    @Transactional(readOnly = true)
+    public List<Notification> pageForGuestReservations(List<Long> reservationIds, int page, int size) {
+        return page(NotificationType.RECIPIENT_GUEST_RESERVATION, reservationIds, page, size);
+    }
+
+    @Transactional(readOnly = true)
+    public Counts countsForGuestReservations(List<Long> reservationIds) {
+        return counts(NotificationType.RECIPIENT_GUEST_RESERVATION, reservationIds);
+    }
+
+    /** 그 세션 예약의 알림이 아니면 404. */
+    @Transactional
+    public void markGuestNotificationRead(List<Long> reservationIds, long notificationId) {
+        markRead(NotificationType.RECIPIENT_GUEST_RESERVATION, reservationIds, notificationId);
+    }
+
+    private List<Notification> page(String recipientType, List<Long> recipientIds, int page, int size) {
+        if (recipientIds.isEmpty()) {
+            return List.of();
+        }
+        return jdbc.query("""
+                SELECT id, type, payload, read_at, created_at FROM notification
+                WHERE recipient_type = ? AND recipient_id IN (%s)
+                ORDER BY created_at DESC, id DESC
+                LIMIT ? OFFSET ?
+                """.formatted(placeholders(recipientIds)), rowMapper(),
+                args(recipientType, recipientIds, size, (long) page * size));
+    }
+
+    private Counts counts(String recipientType, List<Long> recipientIds) {
+        if (recipientIds.isEmpty()) {
+            return new Counts(0, 0);
+        }
+        return jdbc.queryForObject("""
+                SELECT COUNT(*) AS total, COALESCE(SUM(read_at IS NULL), 0) AS unread FROM notification
+                WHERE recipient_type = ? AND recipient_id IN (%s)
+                """.formatted(placeholders(recipientIds)),
+                (rs, i) -> new Counts(rs.getLong("total"), rs.getLong("unread")), args(recipientType, recipientIds));
+    }
+
+    private void markRead(String recipientType, List<Long> recipientIds, long notificationId) {
+        Integer mine = recipientIds.isEmpty() ? Integer.valueOf(0) : jdbc.queryForObject("""
+                SELECT COUNT(*) FROM notification WHERE id = ? AND recipient_type = ? AND recipient_id IN (%s)
+                """.formatted(placeholders(recipientIds)), Integer.class,
+                args(notificationId, recipientType, recipientIds));
         if (mine == null || mine == 0) {
             throw new ApiException(ErrorCode.NOT_FOUND);
         }
         jdbc.update("UPDATE notification SET read_at = ? WHERE id = ? AND read_at IS NULL", now(), notificationId);
+    }
+
+    /** IN 절의 자리표시자. 값은 항상 매개변수로 바인딩한다. */
+    private static String placeholders(List<Long> ids) {
+        return String.join(", ", Collections.nCopies(ids.size(), "?"));
+    }
+
+    /** 앞 값 · ID 목록 · 뒤 값을 바인딩 순서대로 편다. */
+    private static Object[] args(Object... parts) {
+        List<Object> out = new ArrayList<>();
+        for (Object part : parts) {
+            if (part instanceof List<?> list) {
+                out.addAll(list);
+            } else {
+                out.add(part);
+            }
+        }
+        return out.toArray();
     }
 
     private void insert(String recipientType, long recipientId, String type, Map<String, Object> payload) {

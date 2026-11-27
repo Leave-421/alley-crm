@@ -222,6 +222,29 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 - 예약 가능 시간(D5 「슬롯 계산」)과 예약 신청 검사가 바뀐 값을 바로 쓴다(FR-STO-02 #4). 이미 받은 예약은 그대로 둔다.
 - 실패: `invalid` · `unauthorized` · `forbidden_role` · `csrf_invalid`
 
+### 비회원 예약 조회 (C13)
+
+비회원은 계정이 없어서 예약번호 + 전화번호로 확인하고, **그 전화번호의 비회원 예약만** 다루는 제한 세션을 받는다(FR-AUTH-03, G-13). 세션 규칙은 `CONTRACTS.md` 「6」 「비회원 제한 세션」.
+
+#### `POST /api/v1/guest/lookup` — 비회원 예약 확인 · 제한 세션 시작
+
+- 역할: 누구나(로그인 불필요). `X-XSRF-TOKEN` 필요.
+- 요청: `{ "reservationNo": "string", "phone": "01012345678" }` — `phone`은 예약 신청의 비회원 `guest.phone`과 같은 형식(숫자 10 ~ 11자). 예약번호는 대소문자를 구분하지 않는다.
+- 맞으면 세션 ID를 새로 발급하고(세션 고정 방지) 제한 세션을 시작한다. 이미 로그인한 계정 세션이었다면 제한 세션으로 바뀐다. 끝낼 때는 `POST /api/v1/auth/logout`.
+- 응답 `200`: 그 예약(`Reservation`, D2 「예약 응답」. 비회원이라 `coupon`은 `null`). 손님 이름 · 전화번호는 응답에 없다.
+- 실패: `invalid`(형식) · `unauthorized`(예약번호가 없거나 전화번호가 다름 — 둘을 구분하지 않는다, FR-AUTH-03 #3. 회원 예약 · 파기된 비회원 예약도 같다) · `csrf_invalid`
+
+#### `GET /api/v1/guest/reservations` — 내 비회원 예약 목록
+
+- 역할: 비회원 제한 세션만. 로그인 안 함 `401 unauthorized`, 계정 세션 `403 forbidden_role`.
+- 응답 `200`: `{ "items": [Reservation] }` — 그 전화번호의 (파기되지 않은) 비회원 예약 전체, 방문 일시가 늦은 것부터. 페이지 없음(비회원 한 명의 예약 수).
+
+#### 다른 기능이 제한 세션을 받는 법 (서버 내부)
+
+- 예약 변경 · 취소(D), 정식 코스 제안(3.1), 지도 추천의 '같은 날 제외'(3.1) 등 비회원 제한 세션을 받는 기능은 `@AuthenticationPrincipal GuestPrincipal`(또는 principal 타입 확인)으로 세션을 알아보고, 대상 예약이 `GuestSessionService.reservationIds(guest)` 안에 없으면 `404 not_found`(IDOR).
+- 제한 세션으로 새 로그인 필요 경로를 열려면 `SecurityConfig`의 비회원 허용 경로에 더한다(C 확인).
+- 예약 신청(D2)은 제한 세션에서도 비회원 신청이다(`GuestPrincipal`은 계정 이름이 없다).
+
 ### 알림 (C14)
 
 앱 · 웹 안 알림함(G-11 손님 · O-10 사장님). 실제 문자 · 카카오 발송은 없다. 알림을 받는 쪽은 계정(회원 · 사장님) 또는 비회원 예약이다(`CONTRACTS.md` 「3」 `notification.recipientType`).
@@ -239,11 +262,20 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 | `type` | 받는 쪽 | `payload` | 만드는 곳 |
 | --- | --- | --- | --- |
 | `reservation_requested` | 그 가게 사장님 | `{ "reservationId" }` | 예약 신청 커밋 뒤(`ReservationRequestedEvent`) |
-| 나머지 종류 | — | 만드는 기능(D · E 이벤트)이 생길 때 C14에서 이 표에 더한다 | — |
+| `reservation_confirmed` | 예약한 손님 | `{ "reservationId" }` | 승인 커밋 뒤(`ReservationStatusChangedEvent` → `confirmed`) |
+| `reservation_rejected` | 예약한 손님 | `{ "reservationId", "nextCourseReservationIds": ["string"] }` | 거절 · 자동 거절 커밋 뒤(`canceled` + `store_rejected`). `nextCourseReservationIds`는 이 예약을 기준 가게 예약으로 둔 다음 코스 예약 중 그대로 남은(신청 · 확정) 것, 없으면 `[]`(FR-NTF-03 #2) |
+| `reservation_canceled` | 예약한 손님 | `{ "reservationId" }` | 자동 취소 커밋 뒤(`canceled` + `auto_canceled`). 손님이 스스로 취소한 것(`customer_canceled`)은 알림을 만들지 않는다 |
+| `reminder` | 예약한 손님 | `{ "reservationId" }` | 자동 작업 `reservation_reminder`: 방문 일시가 30분 안으로 들어온 확정 예약마다 한 번. 화면은 이 알림에서 늦을 것 같아요(G-07)로 보낸다(FR-NTF-03 #3) |
+| `store_join_result` | 그 가게 사장님 | `{ "storeId", "joinStatus" }` | 가입 승인 · 거절 커밋 뒤(`StoreJoinDecidedEvent`) |
+| `association_coupon_opened` | 회원 계정 전부 | `{ "associationCouponEventId" }` | 3.9 「행사 알림」 |
+| `coupon_status` | 회원 | `{ "couponId", "status" }` (`used` · `expired`) | **미연결.** E14가 사용 완료 · 만료 때 이벤트를 내보내면 C14가 리스너를 단다. 비회원은 쿠폰이 없어 만들지 않는다(FR-NTF-03 #4 · #5) |
+| `change_requested` · `change_approved` · `change_rejected` · `delay_reported` · `next_store_recommended` · `visit_amount_recorded` · `visit_report_check_requested` | — | — | **미연결.** 그 기능(예약 변경 · 지연 입력 D, 다음 가게 추천 E, 방문 금액 D21, 신고 C23)을 만드는 PR이 이벤트를 내보내고 이 표에 줄을 더한다 |
+
+"예약한 손님"은 회원이면 그 계정(`account`), 비회원이면 그 예약(`guest_reservation`)이다. 기능 쪽은 `notifyReservationCustomer(reservationId, customerId, type, payload)`로 같은 규칙을 쓴다.
 
 #### `GET /api/v1/notifications` — 내 알림 목록
 
-- 역할: 로그인한 계정(회원 · 사장님 · 상인회). 받는 쪽은 로그인 계정으로만 정하고 ID를 받지 않는다. 비회원 예약의 알림은 비회원 예약 조회 제한 세션(C13)에서 연다.
+- 역할: 로그인한 계정(회원 · 사장님 · 상인회), 비회원 제한 세션(C13). 받는 쪽은 세션으로만 정하고 ID를 받지 않는다. 비회원 제한 세션이면 그 전화번호 비회원 예약들의 알림(`recipientType = guest_reservation`)을 모아 준다.
 - 페이지네이션(공통 규칙), 최근 것부터.
 - 응답 `200`: 공통 페이지 + `unreadCount`(종 아이콘 표시용, 전체 안 읽은 수)
   `{ "items": [Notification], "page": 0, "size": 20, "totalElements": 3, "totalPages": 1, "unreadCount": 2 }`
@@ -251,14 +283,14 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 
 #### `POST /api/v1/notifications/{notificationId}/read` — 읽음 처리
 
-- 역할: 그 알림을 받은 계정. 이미 읽은 알림이면 그대로 둔다(처음 읽은 시각 유지).
+- 역할: 그 알림을 받은 계정, 또는 그 알림의 예약을 다루는 비회원 제한 세션. 이미 읽은 알림이면 그대로 둔다(처음 읽은 시각 유지).
 - 응답 `204`
 - 실패: `not_found`(없는 알림 · 남의 알림) · `unauthorized` · `csrf_invalid`
 
 #### 서버 내부: `NotificationService` (D · E가 씀)
 
 - 알림은 `NotificationService`로만 만든다. `notification` 테이블에 직접 넣지 않는다.
-- `notifyAccount(accountId, type, payload)` · `notifyGuestReservation(reservationId, type, payload)`. `payload`는 `Map<String, Object>`.
+- `notifyAccount(accountId, type, payload)` · `notifyGuestReservation(reservationId, type, payload)` · `notifyReservationCustomer(reservationId, customerId, type, payload)`(예약한 손님에게, 회원 · 비회원을 알아서 고른다). `payload`는 `Map<String, Object>`.
 - **트랜잭션 커밋 뒤에 만든다.** 기능 쪽은 이벤트를 내보내고, C14가 `@TransactionalEventListener`(커밋 뒤)로 받아 알림을 만든다. 롤백된 일에는 알림이 남지 않는다.
 - 생성 시각은 서버 시계(D18)를 따른다.
 
@@ -312,7 +344,9 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
   "fromRecommendation": false,
   "visitAmount": null,
   "visitedAt": null,
-  "refundAmount": null
+  "refundAmount": null,
+  "pendingStartAt": null,
+  "pendingPartySize": null
 }
 ```
 
@@ -323,6 +357,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 - `courseRootId`: '다음 코스로 예약하기'로 만든 예약만 기준 가게 예약 id(D12). 아니면 `null`.
 - `fromRecommendation`: 사장님 화면의 '추천으로 왔어요' 표시용. **보낸 가게 id · 이름은 어떤 응답에도 넣지 않는다**(FR-CUS-05).
 - `refundAmount`: 손님 취소(D6) 때 돌려준 예약금(원). 손님 취소가 아니면 `null`.
+- `pendingStartAt` · `pendingPartySize`: 변경 신청(D8) 중 바꿀 값. 변경 대기가 아니면 `null`. 대기 중에는 `status`가 `requested`이고 `startAt` · `partySize`는 원래 값이다.
 - `visitAmount` · `visitedAt`: 방문 처리(D11) 때 사장님이 넣은 결제 금액(쿠폰 할인 전, 원)과 처리 시각. 방문 전이면 `null`.
 - 응답에 손님 이름 · 전화번호는 넣지 않는다. 사장님용 목록(D4)은 가린 이름만 따로 정한다.
 
@@ -410,6 +445,60 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 - 환불은 상태 변경 이벤트를 받은 예약금 환불(D10)이 같은 트랜잭션에서 한다. 회원은 잔액으로, 비회원은 전화번호 기록으로. 쿠폰 적용 취소(E) · 알림(C)도 같은 이벤트로.
 - 실패: `not_found` · `conflict`(신청 · 확정이 아님, 마감 지남) · `unauthorized` · `forbidden_role` · `csrf_invalid`
 - **비회원 취소:** 비회원 예약 조회 세션(C13)이 생기면 같은 서비스 `ReservationStateService.cancelByCustomer(customerId, reservationId)`를 부른다(규칙 · 응답 같음).
+
+### 예약 변경 (D8)
+
+#### `POST /api/v1/reservations/{id}/change` — 회원 손님 예약 변경 (G-05, FR-RSV-07)
+
+- 역할: 회원 손님(내 예약). `X-XSRF-TOKEN` 필요. 비회원은 비회원 예약 조회 세션(C13)에서 같은 `ReservationStateService.requestChange`를 부른다.
+- 요청: `{ "startAt": "2026-11-29T10:00:00Z", "partySize": 3 }` — 둘 중 하나 이상(바뀐 값이 없으면 `invalid`).
+- `confirmed`만, **가게 취소 마감 전까지**(기획 11-27). 새 시각 · 인원은 예약 신청과 같은 규칙(영업시간 · 휴무일 · 기간 · 자리 · 한 팀 최대 인원).
+- 결과: `status: "requested"`, 원래 `startAt` · `partySize`는 그대로, `pendingStartAt` · `pendingPartySize`에 바꿀 값(#1). 돈은 움직이지 않는다. 응답 `200`: `Reservation`.
+- 인원이 늘어 회원이 더 내야 하면 지금 잔액을 확인한다(모자라면 `insufficient_balance`, 충전 안내).
+- 실패: `invalid` · `not_found`(남의 예약) · `conflict`(확정이 아님 · 이미 변경 대기 · 마감 지남) · `slot_unavailable` · `insufficient_balance` · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+#### 사장님 처리 (D3 API 그대로)
+
+| 동작 | 변경 건이면 |
+| --- | --- |
+| `POST /api/v1/owner/reservations/{id}/confirm` | 자리를 다시 확인하고 예약금 차액을 정산(늘면 더 냄 · 줄면 돌려받음, 회원은 잔액 · 비회원은 전화번호 기록), 바꾼 값으로 `confirmed`(#2). 회원 잔액이 모자라면 `409 insufficient_balance` — 변경은 대기 그대로 |
+| `POST /api/v1/owner/reservations/{id}/reject` | 원래 값으로 `confirmed` 유지, 돈은 그대로(#3). 취소가 아니다 |
+| 자동 거절(D7) | 원래 시각과 바뀐 시각 중 이른 쪽까지 승인이 없으면 변경만 거절, 원래 값 유지(#4) |
+
+같은 예약 ID라 적용된 쿠폰은 그대로다(05-policy).
+
+### 내 예약 · 코스 묶음 (D13)
+
+#### `GET /api/v1/reservations/mine` — 내 예약 (G-04, FR-RSV-12)
+
+- 역할: 회원 손님(내 예약만). 비회원은 비회원 예약 조회(C13).
+- 응답 `200`: 묶음 목록. 묶음은 가장 이른 예약 시각 순, 묶음 안은 시간순.
+
+```json
+{
+  "items": [
+    {
+      "courseRootId": "10",
+      "reservations": [
+        { "id": "10", "reservationNo": "K7Q2M9XA", "storeId": "1", "storeName": "골목 카페", "startAt": "2026-11-28T09:00:00Z",
+          "partySize": 2, "status": "canceled", "cancelReason": "store_rejected", "requestedAt": "2026-11-25T00:00:00Z",
+          "depositAmount": 10000, "refundAmount": null, "visitAmount": null, "visitedAt": null, "courseRootId": null,
+          "coupon": null, "cancelable": false, "refundIfCanceled": null },
+        { "id": "11", "storeName": "골목 주점", "startAt": "2026-11-28T11:00:00Z", "status": "requested", "courseRootId": "10",
+          "cancelable": true, "refundIfCanceled": 10000 }
+      ]
+    },
+    { "courseRootId": null, "reservations": [ { "id": "12" } ] }
+  ]
+}
+```
+
+  - **묶음:** '다음 코스로 예약하기'로 만든 예약(`courseRootId` 있음)은 기준 예약과 한 묶음(묶음의 `courseRootId` = 기준 예약 id). 따로 한 일반 예약은 혼자 한 묶음(`courseRootId: null`)(#3).
+  - 기준 예약이 취소 · 거절돼도 묶음은 그대로이고 그 예약의 `status`가 `canceled`로 보인다. 다음 코스 예약은 자동 취소하지 않는다(#1 · #2). 거절 때 '다음 코스는 그대로' 알림은 C14가 `reservation_rejected`에서 보낸다.
+  - `cancelable` · `refundIfCanceled`: 지금 취소할 수 있는지와 그때 돌려받는 예약금(D6 규칙: 24시간 전 100%, 마감 전 가게 비율, 마감 뒤 취소 불가 → `false` · `null`). 화면의 '취소할 때 환불 금액' 안내(G-04).
+  - `refundAmount`: 이미 손님 취소한 예약의 실제 환불액.
+  - 보낸 가게 · 수수료는 넣지 않는다(FR-CUS-05, 11-25 (5)).
+- 실패: `unauthorized` · `forbidden_role`(회원이 아님)
 
 ### 예약 운영 설정 · 슬롯 (D5)
 
@@ -534,6 +623,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 | 메서드 | 대상 | 결과 |
 | --- | --- | --- |
 | `autoRejectDue()` | `requested`이고 `startAt` ≤ 지금 | `canceled` · `store_rejected` (FR-RSV-03 #3, 거절과 같은 결과) |
+| `autoRejectDue()` (변경 건) | 변경 대기이고 원래 시각과 바뀐 시각 중 이른 쪽 ≤ 지금 | 변경만 자동 거절, 원래 값으로 `confirmed`(FR-RSV-07 #4) |
 | `autoCancelDue()` | `confirmed`이고 예약일(운영 시간대) 다음 날이 끝남 = `startAt` < (오늘 − 1일) 00:00 | `canceled` · `auto_canceled` (FR-RSV-02 #1) |
 
 방문 처리된 예약은 바꾸지 않는다(FR-RSV-02 #2). 사장님 처리와 겹쳐도 행을 잠그고 상태를 다시 확인해 한 번만 바뀐다.
@@ -560,7 +650,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 | --- | --- | --- |
 | 예약금 환불 (D10 · D6) | `@EventListener` (같은 트랜잭션, 실패하면 상태 변경도 취소) | `store_rejected` → 100% 환불, `auto_canceled` → 환불 없음(05-policy 「예약 상태」). 손님 취소는 D6 |
 | 쿠폰 적용 취소 (E) | `@EventListener` | 방문 전 취소면 적용 쿠폰 → `apply_canceled`(30일 제한 유지) |
-| 알림 (C14 · C15) | `@TransactionalEventListener` (커밋 뒤) | 승인 · 거절 알림 |
+| 알림 (C14 · C15) | `@TransactionalEventListener` (커밋 뒤) | 확정 · 거절 · 자동 취소 알림(1절 「알림」 표) |
 
 #### `POST /api/v1/owner/reservations/{id}/visit` — 방문 처리 (D11)
 
@@ -1376,7 +1466,7 @@ DB가 막지 않는 것(유형별 필수 칸, 확정 뒤 변경 금지, 중단�
 
 | # | 내용 | 정해지지 않은 동안 | 결정 주체 |
 | --- | --- | --- | --- |
-| A-1 | 상인회 쿠폰(E20)을 같은 목록 · 같은 `couponId`로 받을지, 응답에 쿠폰 종류 칸을 더할지 | 가게 쿠폰만 다룬다 | E20 (#172) · D24 (#159) |
+| A-1 | (닫힘) 상인회 쿠폰도 같은 목록 · 같은 `couponId`, 종류는 `issuerKind` → 3.10 | — | E20 (#172) |
 | A-2 | (닫힘) 늦은 방문 처리(11-25 (5)) 때 '적용 취소' → '예약에 적용됨' 되돌리기 → 3.6 「늦은 방문 처리」 | — | E14 (#45) · D23 (#170) |
 
 ### 3.6 쿠폰 상태 · 만료 · 사용 확인 (E14 #45 · 계약 #187)
@@ -1792,5 +1882,58 @@ DB가 막지 않는 것(유형별 필수 칸, 확정 뒤 변경 금지, 중단�
 
 | # | 내용 | 정해지지 않은 동안 | 결정 주체 |
 | --- | --- | --- | --- |
-| U-1 | C14 리스너: `AssociationCouponOpenedEvent` → 회원 전부에게 `association_coupon_opened` 알림, `NotificationType` 상수 · 1절 표 줄 | E19는 이벤트만 내보낸다. 알림함에 행사가 뜨지 않으므로 화면은 목으로 확인 | C (#42) |
 | U-2 | 회원 쿠폰함 · 예약 화면의 쿠폰 목록에 상인회 쿠폰을 넣는 것(3.5 A-1) | E20에서 정한다 | E (#172) |
+
+### 3.10 상인회 쿠폰 적용 · 기금 부담 (E20 #172 · 계약 #257)
+
+> 상태: **계약.** 구현은 #172에서 한다. 3.5(쿠폰 적용) · 3.6(방문 할인 · 사용 확인)에 상인회 쿠폰을 더하는 절이다. 행사는 3.8, 받기는 3.9, 수수료는 2절 D15, 예산 돌려주기는 2절 D20.
+> 기준: 기획 저장소 `05-policy.md` 「상인회 쿠폰」, `03-requirements.md` FR-CPN-06 · 14 · FR-STL-02, 결정 기록 11-25 (5).
+
+상인회 쿠폰은 **행사가 정한 가게의 예약에만** 쓴다. 예약 한 건에는 가게 쿠폰과 상인회 쿠폰 중 **한 장만** 적용한다(FR-CPN-06 · 14). 할인은 **공동 기금**이 부담하고, 수수료는 가게 쿠폰과 같이 할인 후 금액 × 수수료율이다. 소개를 만들지 않고 추천 순위에 쓰지 않으며, 사용 확인은 방문 처리와 따로 사장님이 한다.
+
+#### Coupon에 더하는 칸 (3.4 · 3.5 · 3.9 공통)
+
+| 필드 | 뜻 |
+| --- | --- |
+| `issuerKind` | `store` 가게 쿠폰 · `association` 상인회 쿠폰(`CONTRACTS.md` 「3」 `coupon.issuerKind`) |
+| `associationCouponEventId` | 상인회 쿠폰이면 받은 행사 ID(3.8), 가게 쿠폰이면 `null` |
+
+- 가게 쿠폰은 지금처럼 `eventId` · `storeId`가 있고 `issuerKind: "store"`, `associationCouponEventId: null`이다.
+- 상인회 쿠폰은 `eventId` · `storeId` · `serviceName` · `conditions`가 `null`이다(3.9 받기 응답과 같은 모양). 쓸 수 있는 가게는 행사 카드(3.9 `GET`)의 `stores`.
+
+#### `GET /api/v1/coupons/usable?storeId=` (3.5)에 상인회 쿠폰을 더한다 — 3.5 미확정 A-1 닫음
+
+- 같은 목록 · 같은 `couponId`로 준다. 이 회원의 쿠폰 중 **그 가게에서 지금 쓸 수 있는** 것: 가게 쿠폰(3.5 그대로)과 아래 조건의 상인회 쿠폰.
+- 상인회 쿠폰을 그 가게에서 쓸 수 있음(3.8 「쓸 수 있는 가게 · 기간」):
+  - 상태 `downloaded`, 지금 < `expiresAt`(= 행사 `validEndAt`), **행사 `validStartAt` ≤ 지금**
+  - 쓸 수 있는 가게: `all`이면 그 가게가 행사 권역의 승인된 가게, `selected`면 행사가 고른 가게에 있음
+- 정렬: 종류와 상관없이 `expiresAt` 오름차순(같으면 `couponId` 순). 서버가 고르지 않는다(FR-CPN-06).
+
+#### 예약 신청 단계 60 · 90 (3.5)에 상인회 쿠폰을 더한다
+
+| 조건(위에서부터) | 실패 |
+| --- | --- |
+| 쿠폰이 없거나 이 회원의 쿠폰이 아님 | `404 not_found` |
+| 가게 쿠폰: 대상 가게가 신청한 가게가 아님 / 상인회 쿠폰: 신청한 가게가 쓸 수 있는 가게가 아님(FR-CPN-14 #2) | `409 conflict` |
+| 상태가 `downloaded`가 아님 | `409 conflict` |
+| 신청 시각 ≥ `expiresAt`, 상인회 쿠폰은 신청 시각 < 행사 `validStartAt`도 | `409 conflict` |
+
+- 쿠폰은 한 장만(`couponId` 하나, 배열이면 `400 invalid`) — 가게 쿠폰과 상인회 쿠폰을 같이 쓸 수 없다(FR-CPN-14 #1).
+- 적용 · 방문 전 취소 · 늦은 방문 되돌리기 · 만료는 가게 쿠폰과 같다(3.5 · 3.6). 만료는 `expiresAt`(= 행사 `validEndAt`)으로 E14 `expireDue`가 한다.
+- 예약 응답 · 사장님 예약 응답의 `coupon`(3.5 `AppliedCoupon`)도 상인회 쿠폰을 같은 모양으로 채운다(혜택은 행사 값, `serviceName: null`).
+
+#### 방문 할인 · 기금 부담 (3.6에 더함)
+
+- `CouponVisitService.discountFor(reservationId, visitAmount)`가 상인회 쿠폰도 준다: `VisitCouponDiscount(couponId, issuerKind = ASSOCIATION, discountAmount, couponCost = discountAmount)`. 할인액 계산은 3.2 「할인액」과 같다(정액은 방문 금액까지, 정률은 `max_discount_amount`까지, 1원 미만 버림).
+- 방문 처리 때 `recordDiscount`가 상인회 쿠폰에도 실제 할인액을 `discount_applied`에 남긴다. 상태는 '예약에 적용됨' 그대로이고 사용 확인(3.6 `coupon-use`)으로 '사용 완료'가 된다(FR-CPN-14 #4).
+- **수수료(D15)**: 계산 금액 = 방문 금액 − 상인회 쿠폰 할인. `referral_fee.coupon_cost`는 0(가게 부담 아님). 가게 잔액에서 쿠폰 비용을 빼지 않는다(FR-CPN-14 #3) — D15가 `issuerKind`로 이미 이렇게 한다.
+- **기금 부담 기록**: 할인액은 행사를 만들 때 잡은 기금 예산(3.8 `reservedBudget`)에서 쓰인 것으로 본다. 쿠폰의 `discount_applied`가 그 기록이고, 3.8 `usedBudget`과 2절 D20 `releaseDue`(쓰지 않은 예산 돌려주기)가 이 값을 읽는다. 따로 거래를 만들지 않는다(예산을 잡을 때 기금에서 이미 뺐다).
+
+#### 정책에 따라 정한 것 (3.10)
+
+| 항목 | 정한 것 | 근거 |
+| --- | --- | --- |
+| 목록 · ID | 가게 쿠폰과 같은 목록 · 같은 `couponId`, 종류는 `issuerKind` | FR-CPN-06 예약 화면은 회원이 한 장 고름 |
+| 쓸 수 있는 기간 시작 | 신청 시각 < 행사 `validStartAt`이면 쓸 수 없음 | 05-policy "기한은 예약 신청 시각으로 판단" |
+| 기금 부담 기록 | 쿠폰 `discount_applied`(새 거래 없음) | FR-CPN-12 예산은 만들 때 기금에서 미리 잡음 |
+| 가게 휴업 · 운영 중단 | 상인회 쿠폰은 바꾸지 않는다(다른 가게에서 쓸 수 있음). 그 가게 예약이 취소되면 3.5대로 적용 취소 | FR-CPN-07 #4는 대상 가게가 하나인 가게 쿠폰 규칙 |
