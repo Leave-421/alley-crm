@@ -28,7 +28,12 @@ import java.util.Set;
  *   <li>취소 10% 안팎: 하루 전 · 당일 손님 취소, 가게 거절(NFR-08)</li>
  *   <li>나머지는 방문 처리, 방문 금액(쿠폰 할인 전)을 업종 · 인원으로 만든다</li>
  * </ul>
- * 같은 날 이어 방문(20대 카페 → 디저트) · 노출 · 코스 제안 · 소개는 가상 데이터 2(E17)가 이 결과 위에 더한다.
+ * 그 뒤 가상 데이터 2의 6단계(E17 #262, 같은 날 연속 방문)를 같은 계획에 더한다:
+ * <ul>
+ *   <li>20대 카페 → 디저트(NFR-08 패턴 1): 카페 방문 뒤 같은 날 바로 다음 방문으로 디저트를 20대에게 훨씬 자주</li>
+ *   <li>3곳 이어 방문: 오늘의 코스(FR-CRS-11)가 보이도록 평일 · 주말 × 점심 · 오후 · 저녁 칸마다 같은 동선을 5명 이상</li>
+ * </ul>
+ * 노출 · 코스 제안 · 소개(7 ~ 10단계)와 쿠폰 사례는 E17의 다음 Task가 더한다.
  */
 public final class DemoReservationPlanner {
 
@@ -99,6 +104,7 @@ public final class DemoReservationPlanner {
                 }
             }
         }
+        new SameDayVisits(customers, reservations, teamsPerSlot, reservationNos).add();
         return new Plan(customers, reservations);
     }
 
@@ -299,6 +305,232 @@ public final class DemoReservationPlanner {
                 return no.toString();
             }
         }
+    }
+
+    // ---- 같은 날 연속 방문 (E17, 06-data 「가상 데이터 생성」 6단계) ----
+
+    /** 20대 손님의 카페 방문 뒤 같은 날 디저트를 이어 갈 비율(NFR-08 패턴 1). */
+    static final double CAFE_TO_DESSERT_TWENTIES = 0.5;
+    /** 다른 연령대 · 연령대 모름의 비율. 20대와 차이가 패턴이 된다. */
+    static final double CAFE_TO_DESSERT_OTHERS = 0.06;
+    /** 이어 갈 다음 가게 슬롯을 찾는 범위(앞 방문이 끝난 뒤). */
+    static final Duration FOLLOW_UP_WINDOW = Duration.ofHours(3);
+    /** 오늘의 코스 동선마다 만들 고유 손님 수(작은 묶음 숨김 기준 5명 이상, FR-CRS-11). */
+    static final int COURSE_MIN_CUSTOMERS = 5;
+    static final int COURSE_MAX_CUSTOMERS = 12;
+    private static final int COURSE_ATTEMPTS = 600;
+
+    /**
+     * 오늘의 코스 동선 틀: 요일 구분 · 첫 방문 시각대 · 가게 3곳(시드 코드). 칸마다 첫 가게가 다른 동선을 둔다.
+     * 시각대는 추천 시간대 구간(점심 11 ~ 14 · 오후 14 ~ 17 · 저녁 17 ~ 21)과 같다.
+     */
+    record CourseTemplate(boolean weekend, int fromHour, int toHour, List<String> storeCodes) {
+    }
+
+    static final List<CourseTemplate> COURSES = List.of(
+            new CourseTemplate(false, 11, 14, List.of("S03", "S05", "S08")),
+            new CourseTemplate(false, 11, 14, List.of("S06", "S04", "S01")),
+            new CourseTemplate(false, 14, 17, List.of("S01", "S08", "S10")),
+            new CourseTemplate(false, 14, 17, List.of("S04", "S02", "S05")),
+            new CourseTemplate(false, 17, 21, List.of("S03", "S08", "S11")),
+            new CourseTemplate(false, 17, 21, List.of("S12", "S07", "S14")),
+            new CourseTemplate(true, 11, 14, List.of("S06", "S05", "S08")),
+            new CourseTemplate(true, 11, 14, List.of("S09", "S10", "S07")),
+            new CourseTemplate(true, 14, 17, List.of("S15", "S08", "S10")),
+            new CourseTemplate(true, 14, 17, List.of("S01", "S08", "S04")),
+            new CourseTemplate(true, 17, 21, List.of("S12", "S08", "S11")),
+            new CourseTemplate(true, 17, 21, List.of("S09", "S07", "S14")));
+
+    /** 기존 계획에 같은 날 이어 방문을 더한다. 손님 · 날짜별로 이미 있는 예약을 보고, 사이에 다른 방문이 끼지 않게 한다. */
+    private final class SameDayVisits {
+
+        private final List<Customer> customers;
+        private final List<Reservation> reservations;
+        private final Map<String, Integer> teamsPerSlot;
+        private final Set<String> reservationNos;
+        private final Map<String, SeedRegionData.Store> byCode = new HashMap<>();
+        /** 손님 · 운영 시간대 날짜 → 그날 예약 시작 시각들. */
+        private final Map<String, List<Instant>> busy = new HashMap<>();
+
+        SameDayVisits(List<Customer> customers, List<Reservation> reservations, Map<String, Integer> teamsPerSlot,
+                Set<String> reservationNos) {
+            this.customers = customers;
+            this.reservations = reservations;
+            this.teamsPerSlot = teamsPerSlot;
+            this.reservationNos = reservationNos;
+            stores.forEach(s -> byCode.put(s.code(), s));
+            reservations.forEach(this::markBusy);
+        }
+
+        void add() {
+            cafeToDessert();
+            courses();
+        }
+
+        /** NFR-08 패턴 1: 방문한 카페 예약마다 연령대별 비율로 같은 날 바로 다음 방문을 디저트로. */
+        private void cafeToDessert() {
+            List<SeedRegionData.Store> desserts = stores.stream().filter(s -> s.category() == SeedCategory.DESSERT).toList();
+            if (desserts.isEmpty()) {
+                return;
+            }
+            for (Reservation cafe : List.copyOf(reservations)) {
+                SeedRegionData.Store store = byCode.get(cafe.storeCode());
+                if (!"visited".equals(cafe.status()) || store.category() != SeedCategory.CAFE) {
+                    continue;
+                }
+                Customer customer = customers.get(cafe.customerIndex());
+                double rate = "age_20_or_under".equals(customer.ageGroup()) ? CAFE_TO_DESSERT_TWENTIES : CAFE_TO_DESSERT_OTHERS;
+                if (random.nextDouble() >= rate) {
+                    continue;
+                }
+                SeedRegionData.Store dessert = desserts.get(random.nextInt(desserts.size()));
+                Instant earliest = cafe.startAt().plus(Duration.ofMinutes(store.slotMinutes()));
+                LocalTime next = nextFreeSlot(customer, dessert, cafe.startAt(), earliest);
+                if (next != null) {
+                    book(customer, dessert, LocalDateTime.of(localDate(cafe.startAt()), next));
+                }
+            }
+        }
+
+        /** 오늘의 코스 동선마다 그날 다른 예약이 없는 손님 · 날을 골라 3곳을 이어 방문시킨다. 셋 다 방문한 손님 수를 센다. */
+        private void courses() {
+            for (CourseTemplate template : COURSES) {
+                List<SeedRegionData.Store> route = template.storeCodes().stream().map(byCode::get).toList();
+                if (route.contains(null)) {
+                    continue;
+                }
+                int target = between(COURSE_MIN_CUSTOMERS, COURSE_MAX_CUSTOMERS);
+                int done = 0;
+                for (int attempt = 0; attempt < COURSE_ATTEMPTS && done < target; attempt++) {
+                    Customer customer = customers.get(random.nextInt(customers.size()));
+                    LocalDate day = dayOf(template.weekend());
+                    if (busy.containsKey(busyKey(customer, day))) {
+                        continue;
+                    }
+                    List<LocalDateTime> starts = routeStarts(route, day, template);
+                    if (starts == null) {
+                        continue;
+                    }
+                    boolean allVisited = true;
+                    for (int i = 0; i < route.size(); i++) {
+                        allVisited &= "visited".equals(book(customer, route.get(i), starts.get(i)).status());
+                    }
+                    if (allVisited) {
+                        done++;
+                    }
+                }
+            }
+        }
+
+        /** 첫 가게는 그 시각대 안의 빈 슬롯, 다음 가게는 앞 방문이 끝난 뒤 가장 이른 빈 슬롯. 하나라도 없으면 null. */
+        private List<LocalDateTime> routeStarts(List<SeedRegionData.Store> route, LocalDate day, CourseTemplate template) {
+            for (SeedRegionData.Store store : route) {
+                if (store.closedDays().contains(dayCode(day.getDayOfWeek()))) {
+                    return null;
+                }
+            }
+            List<LocalTime> firsts = slotStarts(route.get(0)).stream()
+                    .filter(t -> t.getHour() >= template.fromHour() && t.getHour() < template.toHour())
+                    .filter(t -> hasRoom(route.get(0), LocalDateTime.of(day, t)))
+                    .toList();
+            if (firsts.isEmpty()) {
+                return null;
+            }
+            List<LocalDateTime> starts = new ArrayList<>();
+            starts.add(LocalDateTime.of(day, firsts.get(random.nextInt(firsts.size()))));
+            for (int i = 1; i < route.size(); i++) {
+                SeedRegionData.Store store = route.get(i);
+                LocalDateTime after = starts.get(i - 1).plusMinutes(route.get(i - 1).slotMinutes());
+                LocalDateTime next = slotStarts(store).stream()
+                        .map(t -> LocalDateTime.of(day, t))
+                        .filter(at -> !at.isBefore(after) && at.isBefore(after.plus(FOLLOW_UP_WINDOW)))
+                        .filter(at -> hasRoom(store, at))
+                        .findFirst().orElse(null);
+                if (next == null) {
+                    return null;
+                }
+                starts.add(next);
+            }
+            return starts;
+        }
+
+        /**
+         * 앞 방문(previousStart) 뒤 같은 날 이 가게의 가장 이른 빈 슬롯. 그 사이에 이 손님의 다른 예약이 있거나
+         * 휴무일 · 범위 밖이면 null.
+         */
+        private LocalTime nextFreeSlot(Customer customer, SeedRegionData.Store store, Instant previousStart, Instant earliest) {
+            LocalDate day = localDate(previousStart);
+            if (store.closedDays().contains(dayCode(day.getDayOfWeek()))) {
+                return null;
+            }
+            Instant latest = earliest.plus(FOLLOW_UP_WINDOW);
+            for (LocalTime t : slotStarts(store)) {
+                Instant at = LocalDateTime.of(day, t).atZone(SERVICE_ZONE).toInstant();
+                if (at.isBefore(earliest) || !at.isBefore(latest) || !hasRoom(store, LocalDateTime.of(day, t))) {
+                    continue;
+                }
+                boolean between = busy.getOrDefault(busyKey(customer, day), List.of()).stream()
+                        .anyMatch(other -> other.isAfter(previousStart) && !other.isAfter(at));
+                return between ? null : t;
+            }
+            return null;
+        }
+
+        /** 이어 방문 예약 하나. 취소 · 방문은 E16과 같은 비율로 정한다(취소 10% 안팎 유지). */
+        private Reservation book(Customer customer, SeedRegionData.Store store, LocalDateTime start) {
+            teamsPerSlot.merge(slotKey(store, start), 1, Integer::sum);
+            Reservation r = outcome(customer, store, start.atZone(SERVICE_ZONE).toInstant(), partySize(store),
+                    reservationNo(reservationNos));
+            reservations.add(r);
+            markBusy(r);
+            return r;
+        }
+
+        private boolean hasRoom(SeedRegionData.Store store, LocalDateTime start) {
+            return teamsPerSlot.getOrDefault(slotKey(store, start), 0) < store.capacityPerSlot();
+        }
+
+        /** 기간 안에서 평일 또는 주말 하루. */
+        private LocalDate dayOf(boolean weekend) {
+            long days = ChronoUnit.DAYS.between(PERIOD_START, PERIOD_END) + 1;
+            while (true) {
+                LocalDate day = PERIOD_START.plusDays(random.nextInt((int) days));
+                boolean isWeekend = day.getDayOfWeek() == DayOfWeek.SATURDAY || day.getDayOfWeek() == DayOfWeek.SUNDAY;
+                if (isWeekend == weekend) {
+                    return day;
+                }
+            }
+        }
+
+        private void markBusy(Reservation r) {
+            busy.computeIfAbsent(busyKey(customers.get(r.customerIndex()), localDate(r.startAt())), k -> new ArrayList<>())
+                    .add(r.startAt());
+        }
+
+        private String busyKey(Customer customer, LocalDate day) {
+            return customer.index() + "@" + day;
+        }
+
+        private LocalDate localDate(Instant at) {
+            return LocalDateTime.ofInstant(at, SERVICE_ZONE).toLocalDate();
+        }
+    }
+
+    /** E16 슬롯 키(가게 @ 날짜 T 시작). 슬롯당 팀 수를 센다. */
+    private static String slotKey(SeedRegionData.Store store, LocalDateTime start) {
+        return store.code() + "@" + start.toLocalDate() + "T" + start.toLocalTime();
+    }
+
+    /** 영업시간 안의 슬롯 시작 시각들. 마지막 슬롯은 영업 종료까지 끝나야 한다(D5). */
+    private static List<LocalTime> slotStarts(SeedRegionData.Store store) {
+        List<LocalTime> starts = new ArrayList<>();
+        LocalTime t = store.openTime();
+        while (!t.plusMinutes(store.slotMinutes()).isAfter(store.closeTime())
+                && t.plusMinutes(store.slotMinutes()).isAfter(t)) {
+            starts.add(t);
+            t = t.plusMinutes(store.slotMinutes());
+        }
+        return starts;
     }
 
     // ---- 도우미 ----
