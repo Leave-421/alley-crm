@@ -1,0 +1,83 @@
+/* 확정 목업 GuestPolicy: 안내 한 줄 + 펼치는 카드 7개(모서리 20, 머리 56px · 15px 굵게, 본문 14/22) */
+/* 글 읽는 화면이라 넓은 화면에서도 720px 안쪽으로 줄이고 가운데에 둔다 */
+.page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-2) var(--layout-gutter) 0;
+}
+
+.lead {
+  margin: var(--space-1) 0 14px;
+  color: var(--color-text-muted);
+  font-size: var(--text-base);
+  line-height: 22px;
+}
+
+.card {
+  margin-bottom: 10px;
+  overflow: hidden;
+  border: 1px solid var(--color-surface-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.heading {
+  margin: 0;
+  font-size: inherit;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 56px;
+  padding: 0 var(--space-4);
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+  text-align: left;
+  cursor: pointer;
+}
+
+.toggle:focus-visible {
+  outline: 2px solid var(--color-ink-700);
+  outline-offset: -2px;
+}
+
+.chevron {
+  flex: none;
+  transition: transform var(--duration-fast);
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+.body {
+  margin: 0;
+  padding: 0 var(--space-4) var(--space-4);
+  list-style: none;
+  color: var(--color-text-muted);
+  font-size: var(--text-base);
+  line-height: 22px;
+}
+
+.body li {
+  position: relative;
+  padding-left: 12px;
+}
+
+.body li + li {
+  margin-top: var(--space-1);
+}
+
+/* 목업의 '· ' 글머리 */
+.body li::before {
+  content: '·';
+  position: absolute;
+  left: 0;
+}
