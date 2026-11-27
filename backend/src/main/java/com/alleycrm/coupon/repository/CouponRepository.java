@@ -24,15 +24,15 @@ public interface CouponRepository extends JpaRepository<Coupon, Long> {
     List<Coupon> findByCustomerIdAndTargetStoreIdAndStatusAndExpiresAtAfterOrderByExpiresAtAscIdAsc(
             Long customerId, Long targetStoreId, CouponStatus status, Instant now);
 
-    /** 예약 신청의 쿠폰: 이 회원의 것만 찾고 행을 잠근다. 같은 쿠폰으로 동시에 신청해도 한 신청만 통과한다. */
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    /** 이 회원의 한 종류 쿠폰 중 그 상태이고 기한 전인 것(예약 화면 목록, 3.10 상인회 쿠폰). */
+    /** 이 회원의 한 종류 쿠폰 중 그 상태이고 기한 전인 것(예약 화면 목록, 3.10 상인회 쿠폰). 잠그지 않는다. */
     List<Coupon> findByCustomerIdAndIssuerKindAndStatusAndExpiresAtAfter(Long customerId, CouponIssuer issuerKind,
             CouponStatus status, Instant now);
 
     /** 이 회원이 받은 상인회 쿠폰(한 행사에 한 장, uk_coupon_association_member). */
     Optional<Coupon> findByAssociationEventIdAndCustomerId(Long associationEventId, Long customerId);
 
+    /** 예약 신청의 쿠폰: 이 회원의 것만 찾고 행을 잠근다. 같은 쿠폰으로 동시에 신청해도 한 신청만 통과한다. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<Coupon> findWithLockByIdAndCustomerId(Long id, Long customerId);
 
     /** 예약의 쿠폰(그 상태 중 하나)을 잠가 찾는다. 예약 한 건에 적용 · 사용된 쿠폰은 하나다. */
@@ -55,7 +55,7 @@ public interface CouponRepository extends JpaRepository<Coupon, Long> {
      * 만료 대상(그 상태이고 만료 시각이 지금이거나 지남)을 잠그고 읽는다. 읽은 뒤 예약에 적용되는 쿠폰과 겹치지 않게 한다(3.6).
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    List<Coupon> findByStatusAndExpiresAtLessThanEqualOrderByIdAsc(CouponStatus status, Instant now);
+    List<Coupon> findWithLockByStatusAndExpiresAtLessThanEqualOrderByIdAsc(CouponStatus status, Instant now);
 
     /** 가게가 대상인 쿠폰 중 그 상태들을 '적용 취소'로(운영 중단 · 탈퇴). 바뀐 행 수. */
     @Modifying(flushAutomatically = true)
