@@ -15,5 +15,7 @@ export default function AlleyScreen() {
 
   if (!ALLEYS.includes(alley)) return <NotFoundPage />;
 
-  return <AlleyScroll alley={alley} initialSelectedId={searchParams.get('focus')} backTo="/alleys" />;
+  const focus = searchParams.get('focus');
+  // 추천 카드로 다른 골목 가게에 갈 때(A5)도 같은 라우트라, 골목 · 가게가 바뀌면 처음 상태로 다시 연다
+  return <AlleyScroll key={`${alley}:${focus ?? ''}`} alley={alley} initialSelectedId={focus} backTo="/alleys" />;
 }
