@@ -6,6 +6,7 @@ import com.alleycrm.TestcontainersConfiguration;
 import com.alleycrm.account.AccountService;
 import com.alleycrm.common.time.AppClock;
 import com.alleycrm.coupon.AssociationCouponOpenedEvent;
+import com.alleycrm.coupon.CouponStatusChangedEvent;
 import com.alleycrm.recommend.NextStoreRecommendedEvent;
 import com.alleycrm.reservation.ReservationStateService;
 import com.alleycrm.reservation.ReservationStatusChangedEvent;
@@ -148,6 +149,25 @@ class NotificationDeliveryTest {
                 .containsExactly(Map.of("type", "change_approved", "payload", Map.of("reservationId", String.valueOf(approved))));
         assertThat(notices("guest_reservation", rejected))
                 .containsExactly(Map.of("type", "change_rejected", "payload", Map.of("reservationId", String.valueOf(rejected))));
+    }
+
+    @Test
+    void FR_NTF_03_4_5_쿠폰_사용_완료_만료는_회원_계정에_비회원과_롤백은_없음() {
+        tx.executeWithoutResult(s -> {
+            events.publishEvent(new CouponStatusChangedEvent(11L, memberCustomerId, "used"));
+            events.publishEvent(new CouponStatusChangedEvent(12L, memberCustomerId, "expired"));
+            events.publishEvent(new CouponStatusChangedEvent(13L, guestCustomerId, "used"));
+        });
+        tx.executeWithoutResult(s -> {
+            events.publishEvent(new CouponStatusChangedEvent(14L, memberCustomerId, "used"));
+            s.setRollbackOnly();
+        });
+
+        assertThat(notices("account", memberAccountId)).containsExactly(
+                Map.of("type", "coupon_status", "payload", Map.of("couponId", "11", "status", "used")),
+                Map.of("type", "coupon_status", "payload", Map.of("couponId", "12", "status", "expired")));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM notification WHERE type = 'coupon_status'", Integer.class))
+                .isEqualTo(2);
     }
 
     @Test
