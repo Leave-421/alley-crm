@@ -6,6 +6,7 @@ import AlleyPickPage from '@/pages/customer/alleys/AlleyPickPage.jsx';
 import HomePage from '@/pages/customer/home/HomePage.jsx';
 import MyPage from '@/pages/customer/my/MyPage.jsx';
 import PolicyPage from '@/pages/customer/policy/PolicyPage.jsx';
+import ChangeReservationPage from '@/pages/customer/reserve/ChangeReservationPage.jsx';
 import NextCoursePage from '@/pages/customer/reserve/NextCoursePage.jsx';
 import ReservePage from '@/pages/customer/reserve/ReservePage.jsx';
 import MyReservationsPage from '@/pages/customer/trips/MyReservationsPage.jsx';
@@ -26,6 +27,7 @@ export const customerRoutes = [
       // 다음 코스 예약(G-03): G-02 완료 화면의 '다음 코스로 예약하기' → ?store=추천가게ID&proposal=정식제안ID
       { path: 'reservations/:reservationId/next', handle: { title: '다음 코스 예약' }, element: <NextCoursePage /> }, // G-03 A10
       { path: 'reservations', handle: { title: '내 예약' }, element: <MyReservationsPage /> }, // G-04 A11
+      { path: 'reservations/:reservationId/change', handle: { title: '예약 변경' }, element: <ChangeReservationPage /> }, // G-05 A12
       // 마이(G-10)는 비회원에게도 '로그인하고 쿠폰 받기'를 보여줘서 가드를 걸지 않는다(회원 부분은 화면이 나눈다)
       { path: 'my', handle: { title: '마이' }, element: <MyPage /> }, // G-10 A14
       { path: 'policy', handle: { title: '정책 · 개인정보' }, element: <PolicyPage /> }, // G-12 A16

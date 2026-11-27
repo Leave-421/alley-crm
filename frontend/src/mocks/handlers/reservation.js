@@ -76,6 +76,10 @@ function seedMyReservations(accountId) {
     { id: `m-${accountId}-10`, storeId: 'S03', startAt: kstAt(1, '18:00'), status: 'canceled', cancelReason: 'store_rejected', depositAmount: 10000, refundAmount: 10000 },
     { id: `m-${accountId}-11`, storeId: 'S06', startAt: kstAt(1, '19:30'), status: 'confirmed', courseRootId: `m-${accountId}-10`, depositAmount: 10000 },
     { id: `m-${accountId}-20`, storeId: 'S11', startAt: kstAt(3, '18:30'), status: 'requested', partySize: 3, depositAmount: 15000 },
+    // 곧 시작 · 가게 취소 마감이 지난 확정 예약(취소 · 변경 잠김을 볼 수 있게)
+    { id: `m-${accountId}-21`, storeId: 'S04', startAt: new Date(Date.now() + offsetMs + 90 * 60_000).toISOString(), status: 'confirmed', depositAmount: 10000 },
+    // 변경 승인 대기: 원래 19:00 · 2명 → 바꾼 20:00 · 4명(D8)
+    { id: `m-${accountId}-22`, storeId: 'S09', startAt: kstAt(4, '19:00'), status: 'requested', depositAmount: 10000, pendingStartAt: kstAt(4, '20:00'), pendingPartySize: 4 },
     { id: `m-${accountId}-30`, storeId: 'S07', startAt: kstAt(-5, '12:00'), status: 'visited', depositAmount: 0, visitAmount: 32000, visitedAt: kstAt(-5, '12:05') },
     { id: `m-${accountId}-31`, storeId: 'S13', startAt: kstAt(-9, '19:00'), status: 'canceled', cancelReason: 'customer_canceled', depositAmount: 10000, refundAmount: 10000 },
     { id: `m-${accountId}-32`, storeId: 'S02', startAt: kstAt(-12, '15:00'), status: 'canceled', cancelReason: 'auto_canceled', depositAmount: 10000 },
@@ -85,19 +89,40 @@ function seedMyReservations(accountId) {
   }
 }
 
-/** 내 예약 한 줄(D13 모양): 가게 이름 · 지금 취소할 수 있는지 · 그때 환불액을 붙인다 */
-function toMineRow(reservation) {
+// 목 가게의 취소 마감(예약 시각 − 2시간)과 하루 전이 지난 뒤 환불 비율(D6). 실제 값은 가게 · 권역 설정
+const MOCK_CANCEL_DEADLINE_MS = 2 * 60 * 60_000;
+const MOCK_LATE_REFUND_RATE = 0.5;
+
+/** 지금 취소하면 돌려받는 예약금. 마감이 지났거나 신청 · 확정이 아니면 null(취소 불가) */
+function refundIfCanceledNow(reservation) {
   const nowMs = Date.now() + offsetMs;
   const startMs = Date.parse(reservation.startAt);
   const active = reservation.status === 'requested' || reservation.status === 'confirmed';
-  const cancelable = active && startMs > nowMs;
+  if (!active || startMs - nowMs <= MOCK_CANCEL_DEADLINE_MS) return null;
+  return startMs - nowMs >= DAY_MS ? reservation.depositAmount : Math.floor(reservation.depositAmount * MOCK_LATE_REFUND_RATE);
+}
+
+/** 내 예약 한 줄(D13 모양): 가게 이름 · 지금 취소할 수 있는지 · 그때 환불액을 붙인다 */
+function toMineRow(reservation) {
+  const refund = refundIfCanceledNow(reservation);
   const { accountId: _accountId, ...rest } = reservation; // 계정 ID는 응답에 넣지 않는다
   return {
     ...rest,
     storeName: MOCK_STORES.find((store) => store.id === reservation.storeId)?.name ?? '',
-    cancelable,
-    refundIfCanceled: cancelable ? (startMs - nowMs >= DAY_MS ? reservation.depositAmount : Math.floor(reservation.depositAmount * 0.5)) : null,
+    cancelable: refund !== null,
+    refundIfCanceled: refund,
   };
+}
+
+/** 회원 손님의 자기 예약을 찾는다(남의 예약 · 없는 예약은 404, IDOR). 통과하면 { reservation } */
+function findOwnReservation(id) {
+  const blocked = rejectAnonymous();
+  if (blocked) return { blocked };
+  const account = getMockAccount();
+  if (account.role !== 'customer') return { blocked: errorResponse(403, 'forbidden_role', '손님만 할 수 있어요.') };
+  const reservation = customerReservations.get(id);
+  if (!reservation || reservation.accountId !== account.id) return { blocked: errorResponse(404, 'not_found', '예약을 찾을 수 없어요.') };
+  return { reservation };
 }
 
 /** 다음 코스(D12) 검사: 기준 예약이 없으면 not_found, 같은 가게 · 같은 날 기준 시각과 같거나 이르면 conflict. 통과하면 null */
@@ -347,6 +372,39 @@ export const reservationHandlers = [
     });
     items.sort((a, b) => Date.parse(a.reservations[0].startAt) - Date.parse(b.reservations[0].startAt));
     return HttpResponse.json({ items });
+  }),
+
+  // POST /api/v1/reservations/{id}/cancel (D6) — 회원 손님 취소. 24시간 전 100%, 마감 전 가게 비율, 마감 뒤 409
+  http.post('/api/v1/reservations/:id/cancel', (info) => {
+    const csrf = rejectInvalidCsrf(info);
+    if (csrf) return csrf;
+    const { blocked, reservation } = findOwnReservation(info.params.id);
+    if (blocked) return blocked;
+    const refund = refundIfCanceledNow(reservation);
+    if (refund === null) return errorResponse(409, 'conflict', '취소할 수 없는 예약이에요.');
+    Object.assign(reservation, { status: 'canceled', cancelReason: 'customer_canceled', refundAmount: refund, pendingStartAt: null, pendingPartySize: null });
+    return HttpResponse.json(toMineRow(reservation));
+  }),
+
+  // POST /api/v1/reservations/{id}/change (D8) — 확정만, 마감 전까지. 신청으로 되돌리고 바꿀 값은 pending 칸에(돈은 그대로)
+  http.post('/api/v1/reservations/:id/change', async (info) => {
+    const csrf = rejectInvalidCsrf(info);
+    if (csrf) return csrf;
+    const { blocked, reservation } = findOwnReservation(info.params.id);
+    if (blocked) return blocked;
+    const body = await info.request.json().catch(() => null);
+    const startAt = body?.startAt ?? null;
+    const partySize = body?.partySize ?? null;
+    const changed = (startAt && startAt !== reservation.startAt) || (partySize && partySize !== reservation.partySize);
+    if (!changed || (partySize !== null && (!Number.isInteger(partySize) || partySize < 1 || partySize > MOCK_MAX_PARTY_SIZE))) {
+      return errorResponse(400, 'invalid', '바뀐 내용을 확인해 주세요.');
+    }
+    if (reservation.status !== 'confirmed' || reservation.pendingStartAt || reservation.pendingPartySize || refundIfCanceledNow(reservation) === null) {
+      return errorResponse(409, 'conflict', '지금은 변경할 수 없는 예약이에요.');
+    }
+    if (startAt && Date.parse(startAt) <= Date.now() + offsetMs) return errorResponse(409, 'slot_unavailable', '예약할 수 없는 시간이에요.');
+    Object.assign(reservation, { status: 'requested', pendingStartAt: startAt ?? reservation.startAt, pendingPartySize: partySize ?? reservation.partySize });
+    return HttpResponse.json(toMineRow(reservation));
   }),
 
   // GET /api/v1/stores/{storeId}/available-slots?date= (D5) — 누구나. 가게 영업시간을 슬롯 30분으로 나눈다
