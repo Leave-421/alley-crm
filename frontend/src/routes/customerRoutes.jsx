@@ -1,7 +1,7 @@
 import AppLayout from '@/layouts/AppLayout.jsx';
 import { CUSTOMER_MENU } from '@/layouts/menus.js';
-import PlaceholderPage from '@/pages/PlaceholderPage.jsx';
 import AlleyScreen from '@/pages/customer/alley/AlleyScreen.jsx';
+import GuestReservationPage from '@/pages/customer/guest/GuestReservationPage.jsx';
 import AlleyPickPage from '@/pages/customer/alleys/AlleyPickPage.jsx';
 import HomePage from '@/pages/customer/home/HomePage.jsx';
 import MyPage from '@/pages/customer/my/MyPage.jsx';
@@ -32,8 +32,9 @@ export const customerRoutes = [
       { path: 'my', handle: { title: '마이' }, element: <MyPage /> }, // G-10 A14
       { path: 'policy', handle: { title: '정책 · 개인정보' }, element: <PolicyPage /> }, // G-12 A16
       { path: 'notifications', handle: { title: '알림함' }, element: <NotificationsPage /> }, // G-11 A15(사장님 O-10과 같은 화면)
-      // 로그인 화면(G-08)의 '비회원 예약 조회' 진입 주소. 화면은 A13에서 만든다
-      { path: 'guest-reservation', handle: { title: '비회원 예약 조회' }, element: <PlaceholderPage screenId="G-13" title="비회원 예약 조회" /> },
+      // 비회원 예약 조회(G-13): 로그인 화면(G-08) · G-02 완료 화면에서 진입. 알림은 같은 알림함을 비회원 모드로 연다
+      { path: 'guest-reservation', handle: { title: '비회원 예약 조회' }, element: <GuestReservationPage /> }, // G-13 A13
+      { path: 'guest-reservation/notifications', handle: { title: '알림함' }, element: <NotificationsPage guest /> },
     ],
   },
   // 골목(G-01, A1 · A4)은 확정 목업처럼 화면 전체를 3D 골목으로 쓰고 자체 머리말을 둔다(공통 머리말 · 하단 탭 없음)

@@ -28,6 +28,11 @@ const NOTIFICATIONS = {
     { id: 'n-o4', type: 'reservation_canceled', payload: { reservationId: 'r-295' }, readAt: minutesAgo(60 * 20), createdAt: minutesAgo(60 * 26) },
   ],
   association: [],
+  // 비회원 제한 세션(C13): 그 전화번호 비회원 예약들의 알림. 쿠폰 알림은 없다(FR-NTF-03)
+  guest: [
+    { id: 'n-g1', type: 'reservation_confirmed', payload: { reservationId: 'g-1' }, readAt: null, createdAt: minutesAgo(40) },
+    { id: 'n-g2', type: 'next_store_recommended', payload: { reservationId: 'g-2', baseStoreId: 'S12' }, readAt: minutesAgo(60 * 20), createdAt: minutesAgo(60 * 22) },
+  ],
 };
 
 const listFor = (role) => NOTIFICATIONS[role] ?? [];
