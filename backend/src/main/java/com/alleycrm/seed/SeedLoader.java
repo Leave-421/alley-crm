@@ -12,7 +12,8 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>넣는 순서: ① 초기화 → ② 권역 · 가게(E1) → ③ 시연용 고정 계정(#141, {@link DemoAccountSeeder})
  * → ④ 공공데이터 기본값(E2, {@link PublicStatSeeder}) → ⑤ 가상 데이터 1: 손님 · 예약 · 취소 · 방문(E16, {@link DemoReservationSeeder}).
- * → ⑥ 가상 데이터 2: 방문자 · 노출 · 정식 코스 제안 · 코스 연결 · 소개 수수료 · 정산(E17, {@link DemoCourseSeeder}).
+ * → ⑥ 가상 데이터 2: 방문자 · 노출 · 정식 코스 제안 · 코스 연결 · 소개 수수료 · 정산(E17, {@link DemoCourseSeeder})
+ * → ⑦ 쿠폰 시연 사례(E17, {@link DemoCouponSeeder}).
  */
 @Component
 @Profile("seed")
@@ -27,9 +28,11 @@ class SeedLoader {
     private final PublicStatSeeder publicStats;
     private final DemoReservationSeeder demoReservations;
     private final DemoCourseSeeder demoCourses;
+    private final DemoCouponSeeder demoCoupons;
 
     SeedLoader(JdbcTemplate jdbc, SeedTableCleaner cleaner, RegionStoreSeeder regionStores, DemoAccountSeeder demoAccounts,
-            PublicStatSeeder publicStats, DemoReservationSeeder demoReservations, DemoCourseSeeder demoCourses) {
+            PublicStatSeeder publicStats, DemoReservationSeeder demoReservations, DemoCourseSeeder demoCourses,
+            DemoCouponSeeder demoCoupons) {
         this.jdbc = jdbc;
         this.cleaner = cleaner;
         this.regionStores = regionStores;
@@ -37,10 +40,12 @@ class SeedLoader {
         this.publicStats = publicStats;
         this.demoReservations = demoReservations;
         this.demoCourses = demoCourses;
+        this.demoCoupons = demoCoupons;
     }
 
     record Result(List<String> clearedTables, RegionStoreSeeder.Result regionStores, List<String> demoAccounts,
-            int publicStats, DemoReservationSeeder.Result demoReservations, DemoCourseSeeder.Result demoCourses) {
+            int publicStats, DemoReservationSeeder.Result demoReservations, DemoCourseSeeder.Result demoCourses,
+            DemoCouponSeeder.Result demoCoupons) {
     }
 
     @Transactional
@@ -53,7 +58,8 @@ class SeedLoader {
             int stats = publicStats.insert(PublicStatFile.load());
             DemoReservationSeeder.Result reservations = demoReservations.insert(regionStoreData, stores);
             DemoCourseSeeder.Result courses = demoCourses.insert(regionStoreData, stores, reservations);
-            return new Result(cleared, stores, accounts, stats, reservations, courses);
+            DemoCouponSeeder.Result coupons = demoCoupons.insert(regionStoreData, stores, reservations, courses);
+            return new Result(cleared, stores, accounts, stats, reservations, courses, coupons);
         } finally {
             releaseLock();
         }
