@@ -15,6 +15,7 @@ import java.time.Instant;
  * @param visitAmount 사장님이 넣은 결제 금액(쿠폰 할인 전, 원)
  * @param courseProposalId 소개 후보면 정식 코스 제안 id, 아니면 null
  * @param senderStoreId 소개 후보면 보낸 가게 id, 아니면 null(응답 · 알림에 내보내지 않는다)
+ * @param settlementAt 정산 달을 정하는 시각. 보통 방문 처리 시각, 늦은 방문 처리(D23)는 원래 예약 시각(FR-STL-09 #3)
  */
 public record VisitProcessedEvent(
         long reservationId,
@@ -23,5 +24,6 @@ public record VisitProcessedEvent(
         int visitAmount,
         Instant visitedAt,
         Long courseProposalId,
-        Long senderStoreId) {
+        Long senderStoreId,
+        Instant settlementAt) {
 }

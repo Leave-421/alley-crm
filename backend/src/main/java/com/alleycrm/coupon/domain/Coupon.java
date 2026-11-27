@@ -167,6 +167,14 @@ public class Coupon {
     }
 
     /** 사장님 사용 확인(FR-CPN-08 #1). 방문 처리됐는지는 부르는 쪽이 확인한다. */
+    /** 기한이 지난 '다운로드됨' 쿠폰을 '기간 만료'로(FR-CPN-05 #2). 다른 상태는 바꾸지 않는다. */
+    public void expire() {
+        if (status != CouponStatus.DOWNLOADED) {
+            throw new IllegalStateException("다운로드됨 쿠폰만 만료한다: " + status);
+        }
+        this.status = CouponStatus.EXPIRED;
+    }
+
     public void markUsed(Instant now) {
         if (status != CouponStatus.APPLIED) {
             throw new IllegalStateException("예약에 적용된 쿠폰만 사용 확인한다: " + status);

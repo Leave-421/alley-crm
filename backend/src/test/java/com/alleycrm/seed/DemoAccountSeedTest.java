@@ -85,9 +85,9 @@ class DemoAccountSeedTest {
     @Test
     void 비밀번호_환경_변수가_비면_그_계정은_만들지_않는다() {
         RegionStoreSeeder.Result stores = loader.resetAndLoad(data).regionStores();
-        // 가상 데이터 1 · 2(E16 · E17)의 기록이 손님을 가리킨다: 가리키는 쪽부터 지운다
+        // 가상 데이터 1 · 2(E16 · E17)의 기록(쿠폰 포함)이 손님을 가리킨다: 가리키는 쪽부터 지운다
         jdbc.update("UPDATE reservation SET course_root_id = NULL, course_proposal_id = NULL");
-        for (String table : new String[] {"referral_fee", "wallet_tx", "wallet", "recommendation_exposure",
+        for (String table : new String[] {"coupon", "referral_fee", "wallet_tx", "wallet", "recommendation_exposure",
                 "course_proposal", "visitor", "reservation"}) {
             jdbc.update("DELETE FROM " + table);
         }

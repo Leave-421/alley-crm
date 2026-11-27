@@ -88,6 +88,12 @@ class RecommendationRepository {
                         rs.getObject("start_at", LocalDateTime.class)), reservationId).stream().findFirst();
     }
 
+    /** 회원 손님인지(다음 가게 추천 알림의 요청자 식별, 3.11). */
+    boolean isMember(long customerId) {
+        return jdbc.queryForList("SELECT type FROM customer WHERE id = ?", String.class, customerId).stream()
+                .anyMatch("member"::equals);
+    }
+
     long regionOf(long storeId) {
         return jdbc.queryForObject("SELECT region_id FROM store WHERE id = ?", Long.class, storeId);
     }

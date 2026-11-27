@@ -81,6 +81,7 @@ export default function FundSettlementPage() {
       <nav className={styles.links} aria-label="정산 바로가기">
         <Link to="/association/settlement/fund">공동 기금 적립 내역 ›</Link>
         <Link to="/association/settlement/coupons">상인회 쿠폰 관리 ›</Link>
+        <Link to="/association/settlement/reports">신고 처리 ›</Link>
       </nav>
     </main>
   );
@@ -229,7 +230,7 @@ function ConfirmBlocker({ data, isThisMonth }) {
   if (data.unprocessedReportCount > 0) {
     return (
       <p className={styles.warning}>
-        처리되지 않은 신고가 {data.unprocessedReportCount}건 있어 확정할 수 없어요. 신고를 먼저 처리해 주세요(FR-STL-05).
+        처리되지 않은 신고가 {data.unprocessedReportCount}건 있어 확정할 수 없어요. <Link to="/association/settlement/reports">신고를 먼저 처리해 주세요 ›</Link>
       </p>
     );
   }

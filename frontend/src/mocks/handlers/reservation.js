@@ -47,6 +47,95 @@ function mockReservationNo() {
   return Array.from({ length: 8 }, () => RESERVATION_NO_CHARS[Math.floor(Math.random() * RESERVATION_NO_CHARS.length)]).join('');
 }
 
+const serviceDay = (ms) => new Date(ms + KST_OFFSET_MS).toISOString().slice(0, 10);
+
+// 이 탭에서 신청한 손님 예약(다음 코스의 기준 예약 검사 · 정식 코스 제안 목이 쓴다). 새로고침하면 비워진다
+const customerReservations = new Map();
+
+/** 목 손님 예약 하나(정식 코스 제안 목 recommendation.js가 기준 예약을 찾을 때 쓴다) */
+export function findMockCustomerReservation(id) {
+  return customerReservations.get(id) ?? null;
+}
+
+// 내 예약(D13) 목: 회원이 처음 열 때 그 계정의 예약을 몇 건 깔아 둔다(코스 묶음 · 기준 예약 거절 · 지난 예약 · 취소 사유를 다 볼 수 있게)
+const seededAccounts = new Set();
+const DAY_MS = 86_400_000;
+
+/** 운영 시간대 날짜(오늘 + days)의 HH:mm → UTC ISO */
+function kstAt(days, time) {
+  const day = serviceDay(Date.now() + offsetMs + days * DAY_MS);
+  return new Date(Date.parse(`${day}T${time}:00Z`) - KST_OFFSET_MS).toISOString();
+}
+
+function seedMyReservations(accountId) {
+  if (seededAccounts.has(accountId)) return;
+  seededAccounts.add(accountId);
+  const base = { partySize: 2, cancelReason: null, requestNote: null, coupon: null, courseRootId: null, fromRecommendation: false, visitAmount: null, visitedAt: null, refundAmount: null, pendingStartAt: null, pendingPartySize: null };
+  const rows = [
+    // 코스 묶음: 기준 가게 예약은 가게가 거절했지만 다음 코스 예약은 그대로(FR-RSV-12)
+    { id: `m-${accountId}-10`, storeId: 'S03', startAt: kstAt(1, '18:00'), status: 'canceled', cancelReason: 'store_rejected', depositAmount: 10000, refundAmount: 10000 },
+    { id: `m-${accountId}-11`, storeId: 'S06', startAt: kstAt(1, '19:30'), status: 'confirmed', courseRootId: `m-${accountId}-10`, depositAmount: 10000 },
+    { id: `m-${accountId}-20`, storeId: 'S11', startAt: kstAt(3, '18:30'), status: 'requested', partySize: 3, depositAmount: 15000 },
+    // 곧 시작 · 가게 취소 마감이 지난 확정 예약(취소 · 변경 잠김을 볼 수 있게)
+    { id: `m-${accountId}-21`, storeId: 'S04', startAt: new Date(Date.now() + offsetMs + 90 * 60_000).toISOString(), status: 'confirmed', depositAmount: 10000 },
+    // 변경 승인 대기: 원래 19:00 · 2명 → 바꾼 20:00 · 4명(D8)
+    { id: `m-${accountId}-22`, storeId: 'S09', startAt: kstAt(4, '19:00'), status: 'requested', depositAmount: 10000, pendingStartAt: kstAt(4, '20:00'), pendingPartySize: 4 },
+    { id: `m-${accountId}-30`, storeId: 'S07', startAt: kstAt(-5, '12:00'), status: 'visited', depositAmount: 0, visitAmount: 32000, visitedAt: kstAt(-5, '12:05') },
+    { id: `m-${accountId}-31`, storeId: 'S13', startAt: kstAt(-9, '19:00'), status: 'canceled', cancelReason: 'customer_canceled', depositAmount: 10000, refundAmount: 10000 },
+    { id: `m-${accountId}-32`, storeId: 'S02', startAt: kstAt(-12, '15:00'), status: 'canceled', cancelReason: 'auto_canceled', depositAmount: 10000 },
+  ];
+  for (const row of rows) {
+    customerReservations.set(row.id, { ...base, reservationNo: mockReservationNo(), requestedAt: kstAt(-14, '10:00'), ...row, accountId });
+  }
+}
+
+// 목 가게의 취소 마감(예약 시각 − 2시간)과 하루 전이 지난 뒤 환불 비율(D6). 실제 값은 가게 · 권역 설정
+const MOCK_CANCEL_DEADLINE_MS = 2 * 60 * 60_000;
+const MOCK_LATE_REFUND_RATE = 0.5;
+
+/** 지금 취소하면 돌려받는 예약금. 마감이 지났거나 신청 · 확정이 아니면 null(취소 불가) */
+function refundIfCanceledNow(reservation) {
+  const nowMs = Date.now() + offsetMs;
+  const startMs = Date.parse(reservation.startAt);
+  const active = reservation.status === 'requested' || reservation.status === 'confirmed';
+  if (!active || startMs - nowMs <= MOCK_CANCEL_DEADLINE_MS) return null;
+  return startMs - nowMs >= DAY_MS ? reservation.depositAmount : Math.floor(reservation.depositAmount * MOCK_LATE_REFUND_RATE);
+}
+
+/** 내 예약 한 줄(D13 모양): 가게 이름 · 지금 취소할 수 있는지 · 그때 환불액을 붙인다 */
+function toMineRow(reservation) {
+  const refund = refundIfCanceledNow(reservation);
+  const { accountId: _accountId, ...rest } = reservation; // 계정 ID는 응답에 넣지 않는다
+  return {
+    ...rest,
+    storeName: MOCK_STORES.find((store) => store.id === reservation.storeId)?.name ?? '',
+    cancelable: refund !== null,
+    refundIfCanceled: refund,
+  };
+}
+
+/** 회원 손님의 자기 예약을 찾는다(남의 예약 · 없는 예약은 404, IDOR). 통과하면 { reservation } */
+function findOwnReservation(id) {
+  const blocked = rejectAnonymous();
+  if (blocked) return { blocked };
+  const account = getMockAccount();
+  if (account.role !== 'customer') return { blocked: errorResponse(403, 'forbidden_role', '손님만 할 수 있어요.') };
+  const reservation = customerReservations.get(id);
+  if (!reservation || reservation.accountId !== account.id) return { blocked: errorResponse(404, 'not_found', '예약을 찾을 수 없어요.') };
+  return { reservation };
+}
+
+/** 다음 코스(D12) 검사: 기준 예약이 없으면 not_found, 같은 가게 · 같은 날 기준 시각과 같거나 이르면 conflict. 통과하면 null */
+function rejectBadCourse(body) {
+  if (!body.courseRootId) return null;
+  const root = customerReservations.get(body.courseRootId);
+  if (!root) return errorResponse(404, 'not_found', '기준 예약을 찾을 수 없어요.');
+  if (root.storeId === body.storeId) return errorResponse(409, 'conflict', '기준 예약과 같은 가게예요.');
+  const sameDay = serviceDay(Date.parse(root.startAt)) === serviceDay(Date.parse(body.startAt));
+  if (sameDay && Date.parse(body.startAt) <= Date.parse(root.startAt)) return errorResponse(409, 'conflict', '같은 날은 기준 예약보다 늦은 시간만 예약할 수 있어요.');
+  return null;
+}
+
 /** 사장님 API의 역할 검사: 로그인 안 함 401, 사장님이 아니면 403 forbidden_role. 통과하면 null. */
 function rejectNonOwner() {
   return rejectAnonymous() ?? (getMockAccount().role === 'owner' ? null : errorResponse(403, 'forbidden_role', '사장님만 볼 수 있어요.'));
@@ -106,9 +195,20 @@ function discountFor(coupon, visitAmount) {
   return 0;
 }
 
+// 실시간 알림 목(ownerNotificationStream.js)이 '새 예약'을 넣는 곳. 날짜 → 그날 더 들어온 예약들
+const incomingByDate = new Map();
+const INCOMING_TEMPLATE = { time: '22:00', partySize: 2, status: 'requested', cancelReason: null, customerType: 'guest', maskedName: '윤*솔', fromRecommendation: true, requestNote: '방금 들어온 예약', depositAmount: 0 };
+
+/** 그날 새 신청 예약을 하나 더한다(목). 더한 예약 id를 돌려준다. */
+export function addMockIncomingReservation(date) {
+  const list = incomingByDate.get(date) ?? [];
+  incomingByDate.set(date, [...list, { ...INCOMING_TEMPLATE, time: `22:${String(list.length * 10).padStart(2, '0')}` }]);
+  return `${date.replaceAll('-', '')}-${MOCK_DAY.length + list.length + 1}`;
+}
+
 function mockOwnerReservations(date) {
   const day = date.replaceAll('-', '');
-  return MOCK_DAY.map((item, index) => {
+  return [...MOCK_DAY, ...(incomingByDate.get(date) ?? [])].map((item, index) => {
     const id = `${day}-${index + 1}`;
     const changed = decided.get(id) ?? {};
     const startAt = new Date(`${date}T${changed.time ?? item.time}:00+09:00`);
@@ -121,7 +221,7 @@ function mockOwnerReservations(date) {
     const visitedAt = changed.visitedAt ?? (item.status === 'visited' ? startAt.toISOString() : null);
     return {
       id,
-      reservationNo: `K7Q2M9X${'ABCDEFGHJ'[index]}`, // 8자, 헷갈리는 0 O 1 I 없음(계약)
+      reservationNo: `K7Q2M9X${'ABCDEFGHJKLMNPQR'[index] ?? 'Z'}`, // 8자, 헷갈리는 0 O 1 I 없음(계약)
       startAt: startAt.toISOString(),
       partySize: changed.partySize ?? item.partySize,
       pendingStartAt: pending ? new Date(`${date}T${pending.time}:00+09:00`).toISOString() : null,
@@ -142,7 +242,7 @@ function mockOwnerReservations(date) {
       visitedAt,
       ...referralOf({ status, fromRecommendation: item.fromRecommendation, coupon: MOCK_APPLIED_COUPONS[index] ?? null, visitAmount }),
     };
-  });
+  }).sort((a, b) => a.startAt.localeCompare(b.startAt)); // 시각 순(D4)
 }
 
 /** 목 예약 id('YYYYMMDD-n')로 그날 목록에서 찾는다. 없으면 null. */
@@ -252,6 +352,61 @@ export const reservationHandlers = [
     return HttpResponse.json({ ...found, referralFeeRate: REFERRAL_FEE_RATE });
   }),
 
+  // GET /api/v1/reservations/mine (D13) — 회원 손님의 내 예약. 묶음 = 기준 예약 + 그 다음 코스들, 묶음은 가장 이른 시각 순 · 안은 시간순
+  http.get('/api/v1/reservations/mine', () => {
+    const blocked = rejectAnonymous();
+    if (blocked) return blocked;
+    const account = getMockAccount();
+    if (account.role !== 'customer') return errorResponse(403, 'forbidden_role', '손님만 볼 수 있어요.');
+    seedMyReservations(account.id);
+    const mine = [...customerReservations.values()].filter((item) => item.accountId === account.id);
+    const groups = new Map();
+    for (const reservation of mine) {
+      const key = reservation.courseRootId ?? reservation.id;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(reservation);
+    }
+    const items = [...groups.entries()].map(([key, list]) => {
+      const sorted = list.sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt));
+      return { courseRootId: sorted.length > 1 ? key : null, reservations: sorted.map(toMineRow) };
+    });
+    items.sort((a, b) => Date.parse(a.reservations[0].startAt) - Date.parse(b.reservations[0].startAt));
+    return HttpResponse.json({ items });
+  }),
+
+  // POST /api/v1/reservations/{id}/cancel (D6) — 회원 손님 취소. 24시간 전 100%, 마감 전 가게 비율, 마감 뒤 409
+  http.post('/api/v1/reservations/:id/cancel', (info) => {
+    const csrf = rejectInvalidCsrf(info);
+    if (csrf) return csrf;
+    const { blocked, reservation } = findOwnReservation(info.params.id);
+    if (blocked) return blocked;
+    const refund = refundIfCanceledNow(reservation);
+    if (refund === null) return errorResponse(409, 'conflict', '취소할 수 없는 예약이에요.');
+    Object.assign(reservation, { status: 'canceled', cancelReason: 'customer_canceled', refundAmount: refund, pendingStartAt: null, pendingPartySize: null });
+    return HttpResponse.json(toMineRow(reservation));
+  }),
+
+  // POST /api/v1/reservations/{id}/change (D8) — 확정만, 마감 전까지. 신청으로 되돌리고 바꿀 값은 pending 칸에(돈은 그대로)
+  http.post('/api/v1/reservations/:id/change', async (info) => {
+    const csrf = rejectInvalidCsrf(info);
+    if (csrf) return csrf;
+    const { blocked, reservation } = findOwnReservation(info.params.id);
+    if (blocked) return blocked;
+    const body = await info.request.json().catch(() => null);
+    const startAt = body?.startAt ?? null;
+    const partySize = body?.partySize ?? null;
+    const changed = (startAt && startAt !== reservation.startAt) || (partySize && partySize !== reservation.partySize);
+    if (!changed || (partySize !== null && (!Number.isInteger(partySize) || partySize < 1 || partySize > MOCK_MAX_PARTY_SIZE))) {
+      return errorResponse(400, 'invalid', '바뀐 내용을 확인해 주세요.');
+    }
+    if (reservation.status !== 'confirmed' || reservation.pendingStartAt || reservation.pendingPartySize || refundIfCanceledNow(reservation) === null) {
+      return errorResponse(409, 'conflict', '지금은 변경할 수 없는 예약이에요.');
+    }
+    if (startAt && Date.parse(startAt) <= Date.now() + offsetMs) return errorResponse(409, 'slot_unavailable', '예약할 수 없는 시간이에요.');
+    Object.assign(reservation, { status: 'requested', pendingStartAt: startAt ?? reservation.startAt, pendingPartySize: partySize ?? reservation.partySize });
+    return HttpResponse.json(toMineRow(reservation));
+  }),
+
   // GET /api/v1/stores/{storeId}/available-slots?date= (D5) — 누구나. 가게 영업시간을 슬롯 30분으로 나눈다
   http.get('/api/v1/stores/:storeId/available-slots', ({ params, request }) => {
     const store = MOCK_STORES.find((item) => item.id === params.storeId);
@@ -260,12 +415,18 @@ export const reservationHandlers = [
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date))) {
       return errorResponse(400, 'invalid', '날짜를 확인해 주세요.');
     }
+    // after(다음 코스의 기준 예약 시각): 같은 날은 그보다 늦은 슬롯만 돌려준다. 다른 날은 영향 없음(D12)
+    const after = new URL(request.url).searchParams.get('after');
+    const afterMs = after ? Date.parse(after) : NaN;
+    const slots = mockSlots(store, date, Date.now() + offsetMs).filter(
+      (slot) => Number.isNaN(afterMs) || serviceDay(afterMs) !== date || Date.parse(slot.startAt) > afterMs,
+    );
     return HttpResponse.json({
       date,
       acceptingReservations: true,
       maxPartySize: MOCK_MAX_PARTY_SIZE,
       depositPerPerson: MOCK_DEPOSIT_PER_PERSON,
-      slots: mockSlots(store, date, Date.now() + offsetMs),
+      slots,
     });
   }),
 
@@ -284,29 +445,31 @@ export const reservationHandlers = [
     if (!MOCK_STORES.some((item) => item.id === body.storeId)) return errorResponse(404, 'not_found', '가게를 찾을 수 없어요.');
     const nowIso = new Date(Date.now() + offsetMs).toISOString();
     if (Date.parse(body.startAt) <= Date.now() + offsetMs) return errorResponse(409, 'slot_unavailable', '예약할 수 없는 시간이에요.');
-    return HttpResponse.json(
-      {
-        id: String(Date.now()),
-        reservationNo: mockReservationNo(),
-        storeId: body.storeId,
-        startAt: body.startAt,
-        partySize: body.partySize,
-        status: 'requested',
-        cancelReason: null,
-        requestedAt: nowIso,
-        requestNote: body.requestNote ?? null,
-        depositAmount: MOCK_DEPOSIT_PER_PERSON * body.partySize,
-        coupon: null,
-        courseRootId: null,
-        fromRecommendation: false,
-        visitAmount: null,
-        visitedAt: null,
-        refundAmount: null,
-        pendingStartAt: null,
-        pendingPartySize: null,
-      },
-      { status: 201 },
-    );
+    const badCourse = rejectBadCourse(body);
+    if (badCourse) return badCourse;
+    const reservation = {
+      id: String(Date.now()),
+      reservationNo: mockReservationNo(),
+      storeId: body.storeId,
+      startAt: body.startAt,
+      partySize: body.partySize,
+      status: 'requested',
+      cancelReason: null,
+      requestedAt: nowIso,
+      requestNote: body.requestNote ?? null,
+      depositAmount: MOCK_DEPOSIT_PER_PERSON * body.partySize,
+      // 쿠폰은 회원만(비회원이 보내면 무시). 목 쿠폰은 coupon.js의 사용 가능 쿠폰과 같은 3,000원 할인
+      coupon: account && body.couponId ? { couponId: body.couponId, benefitType: 'fixed_discount', discountAmount: 3000, discountPercent: null, maxDiscountAmount: null, serviceName: null } : null,
+      courseRootId: body.courseRootId ?? null,
+      fromRecommendation: false,
+      visitAmount: null,
+      visitedAt: null,
+      refundAmount: null,
+      pendingStartAt: null,
+      pendingPartySize: null,
+    };
+    customerReservations.set(reservation.id, { ...reservation, accountId: account?.id ?? null });
+    return HttpResponse.json(reservation, { status: 201 });
   }),
 
   http.get('/api/v1/demo/clock', () => rejectAnonymous() ?? clockResponse()),

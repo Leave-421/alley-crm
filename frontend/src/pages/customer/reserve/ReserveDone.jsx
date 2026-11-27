@@ -1,27 +1,30 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import buttonStyles from '@/components/Button/Button.module.css';
-import { RECOMMENDATION_BADGE_LABELS, getRecommendations } from '@/api/recommendations.js';
+import { RECOMMENDATION_BADGE_LABELS } from '@/api/recommendations.js';
 import { ALLEY_LABELS, CATEGORY_LABELS } from '@/map/storeCatalog.js';
+import { loadRecommendationCards, nextCourseLink } from './recommendationCards.js';
 import { formatDateKey, formatSlotTime, serviceDateKey } from './reserveTime.js';
 import styles from './ReservePage.module.css';
 
 /**
- * 예약 신청 완료(G-02 완료 화면). 상태 '신청', 비회원은 예약번호(FR-AUTH-03), 그리고 기준 가게를 신청해서 열린
- * 다음 코스 추천 3곳(FR-RSV-11, FR-CRS-01)과 '다음 코스로 예약하기'.
+ * 예약 신청 완료(G-02 · G-03 완료 화면). 상태 '신청', 비회원은 예약번호(FR-AUTH-03).
+ * 기준 가게 예약이면 다음 코스 추천 3곳과 '다음 코스로 예약하기'(FR-RSV-11, FR-CRS-01),
+ * 다음 코스 예약이면 이어서 볼 곳 3곳('…골목에서 보기')과 '내 예약 보기'(코스로 묶여 보임).
  */
-export default function ReserveDone({ store, alley, reservation, isMember }) {
+export default function ReserveDone({ store, alley, reservation, isMember, isCourse = false }) {
   const [recommendation, setRecommendation] = useState(null); // { data } | { error }
 
   useEffect(() => {
     let active = true;
-    getRecommendations(store.id)
+    // 회원의 기준 가게 예약은 정식 제안(소개 후보가 되게), 비회원(제한 세션 없음) · 다음 코스 완료는 지도 추천
+    loadRecommendationCards({ reservationId: reservation.id, storeId: store.id, useProposals: isMember && !isCourse })
       .then((data) => active && setRecommendation({ data }))
       .catch((error) => active && setRecommendation({ error }));
     return () => {
       active = false;
     };
-  }, [store.id]);
+  }, [reservation, store.id, isMember, isCourse]);
 
   const items = recommendation?.data?.items ?? [];
   const publicData = recommendation?.data?.publicData;
@@ -31,7 +34,7 @@ export default function ReserveDone({ store, alley, reservation, isMember }) {
       <div className={styles.doneIcon} aria-hidden="true">
         ✓
       </div>
-      <h1 className={`${styles.title} ${styles.doneTitle}`}>예약을 신청했어요</h1>
+      <h1 className={`${styles.title} ${styles.doneTitle}`}>{isCourse ? '다음 코스로 예약했어요' : '예약을 신청했어요'}</h1>
 
       <div className={styles.layout}>
         <div>
@@ -55,6 +58,12 @@ export default function ReserveDone({ store, alley, reservation, isMember }) {
                 <b className={styles.num}>{reservation.depositAmount.toLocaleString('ko-KR')}원</b>
               </div>
             )}
+            {reservation.coupon && (
+              <div className={styles.doneRow}>
+                <span>쿠폰</span>
+                <b>적용</b>
+              </div>
+            )}
             {!isMember && (
               <div className={styles.reservationNo}>
                 <span className={styles.cap}>예약번호 · 비회원 예약 조회에 써요</span>
@@ -64,12 +73,16 @@ export default function ReserveDone({ store, alley, reservation, isMember }) {
             <span className={`${styles.badge} ${styles.statusBadge}`}>신청 · 가게 확인 후 확정</span>
           </section>
 
-          <div className={styles.info}>{store.name} 예약을 신청해서 다음 코스 예약이 열렸어요. 같은 날 이어서 가기 좋은 3곳을 보여드려요.</div>
+          <div className={styles.info}>
+            {isCourse
+              ? '기준 가게 예약과 한 코스로 묶였어요. 내 예약에서 시간순으로 함께 볼 수 있어요.'
+              : `${store.name} 예약을 신청해서 다음 코스 예약이 열렸어요. 같은 날 이어서 가기 좋은 3곳을 보여드려요.`}
+          </div>
         </div>
 
         <section aria-labelledby="next-course">
           <h2 id="next-course" className={styles.sectionTitle}>
-            다음 코스 추천 3곳
+            {isCourse ? '이어서 볼 곳 3곳' : '다음 코스 추천 3곳'}
           </h2>
           {!recommendation && <p className={styles.notice}>추천을 불러오는 중이에요…</p>}
           {recommendation?.error && <p className={styles.notice}>추천을 불러오지 못했어요.</p>}
@@ -87,12 +100,11 @@ export default function ReserveDone({ store, alley, reservation, isMember }) {
                 </div>
                 <p className={styles.cap}>{card.reasonText}</p>
                 <div className={styles.recActions}>
-                  <Link
-                    to={`/reservations/${encodeURIComponent(reservation.id)}/next?store=${encodeURIComponent(card.store.id)}`}
-                    className={`${buttonStyles.button} ${buttonStyles.primary} ${styles.recPrimary}`}
-                  >
-                    다음 코스로 예약하기
-                  </Link>
+                  {!isCourse && (
+                    <Link {...nextCourseLink(reservation, card)} className={`${buttonStyles.button} ${buttonStyles.primary} ${styles.recPrimary}`}>
+                      다음 코스로 예약하기
+                    </Link>
+                  )}
                   <Link to={`/alleys/${card.store.alley}`} className={styles.recLink}>
                     {ALLEY_LABELS[card.store.alley] ?? ''} 골목에서 보기
                   </Link>

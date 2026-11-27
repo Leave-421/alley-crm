@@ -88,6 +88,13 @@ public class Reservation {
         this.visitedAt = now;
     }
 
+    /** 늦은 방문 처리(D23): 자동 취소 → 방문. 취소 사유 · 시각은 지운다. 확인은 부르는 쪽이 한다 */
+    void lateVisit(int amount, Instant now) {
+        visit(amount, now);
+        this.cancelReason = null;
+        this.canceledAt = null;
+    }
+
     /** 신청 → 확정(D3). 상태 확인은 부르는 쪽(ReservationStateService)이 한다 */
     void confirm(Instant now) {
         this.status = ReservationStatus.CONFIRMED;

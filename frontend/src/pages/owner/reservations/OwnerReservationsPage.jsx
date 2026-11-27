@@ -4,8 +4,25 @@ import { getClock } from '@/api/demoClock.js';
 import { getOwnerReservations } from '@/api/ownerReservations.js';
 import Button from '@/components/Button/Button.jsx';
 import ReservationCard from './ReservationCard.jsx';
+import { RESERVATION_RELOAD_TYPES, STREAM_STATUS, useOwnerNotificationStream } from './useOwnerNotificationStream.js';
 import { addDays, formatDayLabel, formatTime, isDateKey, toDateKey } from './reservationFormat.js';
 import styles from './OwnerReservations.module.css';
+
+/** 실시간 알림 종류별 안내(C15 RESERVATION_RELOAD_TYPES) */
+const REALTIME_NOTICES = {
+  reservation_requested: '새 예약 신청이 들어왔어요. 목록을 새로 불러왔어요.',
+  change_requested: '손님이 예약 변경을 요청했어요. 목록을 새로 불러왔어요.',
+  reservation_canceled: '예약이 취소됐어요. 목록을 새로 불러왔어요.',
+  delay_reported: '손님이 늦는다고 알려 왔어요. 목록을 새로 불러왔어요.',
+};
+
+/** 실시간 연결 상태 글자(색만으로 나누지 않음, NFR-11) */
+const STREAM_LABELS = {
+  [STREAM_STATUS.CONNECTING]: '실시간 연결 중…',
+  [STREAM_STATUS.OPEN]: '● 새 예약을 실시간으로 받고 있어요',
+  [STREAM_STATUS.RECONNECTING]: '○ 실시간 연결이 끊겨 다시 연결하는 중이에요. 새로 고침하면 최신 목록을 볼 수 있어요.',
+  [STREAM_STATUS.CLOSED]: '○ 실시간으로 받지 못하고 있어요. 새로 고침하면 최신 목록을 볼 수 있어요.',
+};
 
 const AUTO_RULES =
   '신청은 예약 시각까지 승인하지 않으면 자동 거절돼요(예약금 100% 환불). 확정 예약은 예약일 다음 날까지 방문 처리나 취소가 없으면 자동 취소돼요(환불 없음).';
@@ -65,6 +82,14 @@ export default function OwnerReservationsPage() {
   }, [requestKey]);
 
   const [notice, setNotice] = useState(null);
+
+  // 새 예약 · 변경 요청 · 취소 · 지연 입력을 새로 고침 없이 받는다(B9, FR-NTF-01 · NFR-05, C15 SSE).
+  // 알림이 오면 보고 있는 날짜의 목록을 다시 불러온다(계약 C15 '예약 목록을 다시 불러오면 된다').
+  const streamStatus = useOwnerNotificationStream((notification) => {
+    if (!RESERVATION_RELOAD_TYPES.includes(notification.type)) return;
+    setNotice(REALTIME_NOTICES[notification.type]);
+    setReloadCount((count) => count + 1);
+  });
 
   function moveTo(nextKey) {
     setNotice(null);
@@ -149,12 +174,17 @@ export default function OwnerReservationsPage() {
         </p>
       )}
 
+      <p className={styles.realtime} role="status" aria-live="polite">
+        {STREAM_LABELS[streamStatus]}
+      </p>
+
       <p className={styles.rules}>{AUTO_RULES}</p>
 
       {/* O-01 → O-03 '예약 운영 설정'(B10) · O-12 '가게 정보'(B24)(07-screens O-01 이동) */}
       <nav className={styles.links} aria-label="예약 관리 바로가기">
         <Link to="/owner/settings">예약 운영 설정 ›</Link>
         <Link to="/owner/store">가게 정보 ›</Link>
+        <Link to="/owner/reports">신고 확인 ›</Link>
       </nav>
 
       {notice && (

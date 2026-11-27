@@ -45,6 +45,7 @@
 }
 
 .iconButton {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -57,4 +58,23 @@
 .content {
   /* 좌우 여백은 화면이 정한다. 하단 탭에 가리지 않게 탭 높이 + 여백만큼 비운다 */
   padding: 0 0 calc(var(--tabbar-height) + var(--tabbar-gap) + var(--space-6) + env(safe-area-inset-bottom, 0px));
+}
+
+/* 안 읽은 알림 수(#292): 종 아이콘 오른쪽 위 */
+.badge {
+  position: absolute;
+  top: 6px;
+  right: 4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border: 2px solid var(--color-bg);
+  border-radius: var(--radius-pill);
+  background: var(--color-unread-dot);
+  color: var(--color-white);
+  font-size: 10px;
+  font-weight: var(--weight-bold);
+  line-height: 14px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }

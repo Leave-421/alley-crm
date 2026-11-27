@@ -47,7 +47,9 @@ class OwnerReferralController {
         long regionId = jdbc.queryForObject("SELECT region_id FROM store WHERE id = ?", Long.class, storeId);
         List<FeeItem> items = jdbc.query("""
                 SELECT f.reservation_id, r.reservation_no, c.name, r.visited_at, f.visit_amount, f.coupon_discount,
-                       f.fee_base, f.fee_rate, f.fee_amount, f.coupon_cost
+                       f.fee_base, f.fee_rate, f.fee_amount, f.coupon_cost,
+                       (SELECT COALESCE(SUM(x.fee_difference), 0) FROM visit_amount_correction x
+                        WHERE x.reservation_id = f.reservation_id) AS fee_difference
                 FROM referral_fee f
                 JOIN reservation r ON r.id = f.reservation_id
                 JOIN customer c ON c.id = r.customer_id
@@ -63,7 +65,8 @@ class OwnerReferralController {
                 rs.getInt("fee_base"),
                 rs.getBigDecimal("fee_rate"),
                 rs.getInt("fee_amount"),
-                rs.getInt("coupon_cost")), storeId, m);
+                rs.getInt("coupon_cost"),
+                rs.getInt("fee_difference")), storeId, m);
         List<String> status = jdbc.queryForList("SELECT status FROM settlement WHERE region_id = ? AND month = ?",
                 String.class, regionId, m);
 
@@ -73,7 +76,7 @@ class OwnerReferralController {
         out.put("settlementStatus", status.isEmpty() ? null : status.get(0));
         out.put("referralFeeRate", settings.getDecimal(regionId, SettingKey.REFERRAL_FEE_RATE));
         out.put("count", items.size());
-        out.put("totalFee", items.stream().mapToLong(FeeItem::feeAmount).sum());
+        out.put("totalFee", items.stream().mapToLong(i -> i.feeAmount() + i.feeDifference()).sum());
         out.put("totalCouponCost", items.stream().mapToLong(FeeItem::couponCost).sum());
         out.put("items", items);
         return out;
@@ -111,7 +114,8 @@ class OwnerReferralController {
             int feeBase,
             BigDecimal feeRate,
             int feeAmount,
-            int couponCost) {
+            int couponCost,
+            int feeDifference) {
     }
 
     private static String month(String value) {

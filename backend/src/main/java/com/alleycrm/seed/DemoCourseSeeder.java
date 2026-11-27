@@ -50,8 +50,12 @@ class DemoCourseSeeder {
         this.properties = properties;
     }
 
+    /**
+     * @param exploration 방문자 · 노출 계획(쿠폰 사례가 이어 씀)
+     * @param visitorIds 계획의 방문자 번호 → 방문자 ID
+     */
     record Result(int visitors, int exposures, int proposals, int courseReservations, int referralFees,
-            long totalFee, int confirmedSettlements) {
+            long totalFee, int confirmedSettlements, DemoExplorationPlanner.Plan exploration, Map<Integer, Long> visitorIds) {
     }
 
     Result insert(SeedRegionData data, RegionStoreSeeder.Result regionStores, DemoReservationSeeder.Result reservations) {
@@ -67,7 +71,7 @@ class DemoCourseSeeder {
         Fees fees = insertReferralFees(plan, reservations.reservationIds(), storeIds, regionStores.regionId());
         int confirmed = confirmSettlements(regionStores.regionId(), fees.months());
         return new Result(exploration.visitors().size(), exploration.exposures().size(), plan.proposals().size(),
-                plan.courseLinks().size(), fees.count(), fees.total(), confirmed);
+                plan.courseLinks().size(), fees.count(), fees.total(), confirmed, exploration, visitorIds);
     }
 
     // ---- 탐색 기록 ----

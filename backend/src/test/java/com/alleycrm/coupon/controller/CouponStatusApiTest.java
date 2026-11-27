@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.alleycrm.TestcontainersConfiguration;
 import com.alleycrm.common.TestCsrf;
 import com.alleycrm.common.time.AppClock;
+import com.alleycrm.coupon.CouponStatusChangedEvent;
 import com.alleycrm.coupon.domain.CouponIssuer;
 import com.alleycrm.coupon.dto.VisitCouponDiscount;
 import com.alleycrm.coupon.service.CouponApplyService;
@@ -18,9 +19,11 @@ import com.alleycrm.coupon.service.CouponVisitService;
 import com.alleycrm.reservation.ReservationStateService;
 import com.alleycrm.reservation.ReservationStatusChangedEvent;
 import com.alleycrm.store.StoreBusinessStatusChangedEvent;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.UUID;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.AfterEach;
@@ -36,6 +39,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.context.event.ApplicationEvents;
+import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,6 +51,7 @@ import org.springframework.transaction.annotation.Transactional;
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
 @Transactional
+@RecordApplicationEvents
 class CouponStatusApiTest {
 
     private static final String PASSWORD = "password1";
@@ -82,6 +88,9 @@ class CouponStatusApiTest {
 
     @Autowired
     ApplicationEventPublisher events;
+
+    @Autowired
+    ApplicationEvents recorded;
 
     long region;
     long store;
@@ -165,6 +174,8 @@ class CouponStatusApiTest {
                 .andExpect(jsonPath("$.usedAt").value(Matchers.endsWith("Z")));
         assertThat(statusOf(coupon)).isEqualTo("used");
         assertThat(applyService.appliedCouponFor(reservation).couponId()).isEqualTo(String.valueOf(coupon));
+        // 회원 알림용 이벤트(3.6 「쿠폰 상태 알림」, FR-NTF-03 #4)
+        assertThat(statusEvents()).containsExactly(new CouponStatusChangedEvent(coupon, customer, "used"));
     }
 
     @Test
@@ -195,6 +206,7 @@ class CouponStatusApiTest {
                     .andExpect(jsonPath("$.error.code").value("conflict"));
         }
         assertThat(statusOf(coupon)).isEqualTo("applied");
+        assertThat(statusEvents()).isEmpty();
 
         reservationStates.visit(store, notVisited, 10000);
         mvc.perform(post("/api/v1/owner/reservations/" + notVisited + "/coupon-use").session(owner)
@@ -203,6 +215,7 @@ class CouponStatusApiTest {
         mvc.perform(post("/api/v1/owner/reservations/" + notVisited + "/coupon-use").session(owner)
                         .with(TestCsrf.csrf(mvc)))
                 .andExpect(status().isConflict());
+        assertThat(statusEvents()).containsExactly(new CouponStatusChangedEvent(coupon, customer, "used"));
     }
 
     @Test
@@ -237,6 +250,29 @@ class CouponStatusApiTest {
                 .andExpect(jsonPath("$.error.code").value("csrf_invalid"));
     }
 
+    // ---- 예약 변경(D8) ----
+
+    @Test
+    void 같은_예약_ID로_날짜만_바꾸면_승인돼도_거절돼도_쿠폰_적용이_유지된다_FR_CPN_07_2() {
+        // 예약은 12-03 15:00, 바꿀 날은 12-04 15:00(Asia/Seoul). 24시간 넘게 남아 변경 마감 전
+        long reservation = reservation(store, "confirmed");
+        jdbc.update("UPDATE reservation SET start_at = ? WHERE id = ?", NOW_UTC.plusDays(2).plusHours(5), reservation);
+        long coupon = coupon(fixedEvent, store, NOW_UTC.minusDays(1), "applied", reservation);
+        Instant nextDay = NOW.plus(Duration.ofDays(3).plusHours(5));
+
+        reservationStates.requestChange(customer, reservation, nextDay, null);
+        assertThat(statusOf(coupon)).isEqualTo("applied");
+        assertThat(reservationStates.reject(store, reservation).getStartAt()).isNotEqualTo(nextDay); // 변경 거절
+        assertThat(statusOf(coupon)).isEqualTo("applied");
+
+        reservationStates.requestChange(customer, reservation, nextDay, null);
+        assertThat(reservationStates.confirm(store, reservation).getStartAt()).isEqualTo(nextDay); // 변경 승인
+        assertThat(statusOf(coupon)).isEqualTo("applied");
+        assertThat(jdbc.queryForObject("SELECT reservation_id FROM coupon WHERE id = ?", Long.class, coupon))
+                .isEqualTo(reservation);
+        assertThat(applyService.appliedCouponFor(reservation).couponId()).isEqualTo(String.valueOf(coupon));
+    }
+
     // ---- 만료 ----
 
     @Test
@@ -250,6 +286,22 @@ class CouponStatusApiTest {
         assertThat(statusOf(due)).isEqualTo("expired");
         assertThat(statusOf(valid)).isEqualTo("downloaded");
         assertThat(statusOf(appliedPast)).isEqualTo("applied");
+        // 바뀐 쿠폰에만 회원 알림용 이벤트(3.6 「쿠폰 상태 알림」, FR-NTF-03 #5)
+        assertThat(statusEvents()).filteredOn(e -> e.couponId() == due || e.couponId() == valid
+                        || e.couponId() == appliedPast)
+                .containsExactly(new CouponStatusChangedEvent(due, customer, "expired"));
+    }
+
+    @Test
+    void 이미_만료된_쿠폰은_다시_만료하지_않고_이벤트도_다시_내지_않는다() {
+        long due = coupon(fixedEvent, store, NOW_UTC.minusDays(8), "downloaded", null);
+
+        expiryService.expireDue();
+        expiryService.expireDue();
+
+        assertThat(statusOf(due)).isEqualTo("expired");
+        assertThat(statusEvents()).filteredOn(e -> e.couponId() == due)
+                .containsExactly(new CouponStatusChangedEvent(due, customer, "expired"));
     }
 
     // ---- 가게 운영 중단 · 탈퇴 ----
@@ -324,6 +376,10 @@ class CouponStatusApiTest {
     }
 
     // ---- 준비 ----
+
+    private List<CouponStatusChangedEvent> statusEvents() {
+        return recorded.stream(CouponStatusChangedEvent.class).toList();
+    }
 
     private long store(String name) {
         return insert("INSERT INTO store (region_id, name, category, alley, join_status, open_time, close_time) VALUES ("

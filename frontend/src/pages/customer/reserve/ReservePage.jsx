@@ -5,8 +5,9 @@ import { ApiError } from '@/api/client.js';
 import { AGE_GROUP_LABELS, GENDER_LABELS, GUEST_LIMITS, createReservation, getAvailableSlots } from '@/api/reservations.js';
 import { SESSION_STATUS, useSession } from '@/auth/session.js';
 import { MOCK_STORES } from '@/map/storeCatalog.js';
+import { couponBenefitText, getUsableCoupons } from '@/api/coupons.js';
 import ReserveDone from './ReserveDone.jsx';
-import { formatSlotTime, upcomingDays } from './reserveTime.js';
+import { formatDateKey, formatSlotTime, serviceDateKey, upcomingDays } from './reserveTime.js';
 import styles from './ReservePage.module.css';
 
 const DATE_CHOICES = 7; // 목업: '날짜 · 7일 안에서 선택'
@@ -27,7 +28,10 @@ function submitErrorMessage(error) {
     case 'forbidden_role':
       return '손님 계정으로만 예약할 수 있어요.';
     case 'not_found':
-      return '가게를 찾을 수 없어요.';
+      return '가게나 기준 예약을 찾을 수 없어요.';
+    case 'conflict':
+      // 다음 코스: 기준 예약 취소 · 거절, 같은 날 기준 시각과 같거나 이름, 같은 가게 / 쓸 수 없는 쿠폰(D12 · 3.5)
+      return '이 예약은 신청할 수 없어요. 기준 가게 예약이 취소됐거나, 같은 날 기준 예약보다 이른 시간이거나, 쿠폰을 쓸 수 없어요.';
     case 'invalid':
       return '입력한 내용을 확인해 주세요.';
     default:
@@ -44,6 +48,15 @@ export default function ReservePage() {
   const { alley } = useParams();
   const [searchParams] = useSearchParams();
   const store = MOCK_STORES.find((item) => item.id === searchParams.get('store'));
+  return <ReserveFlow store={store} alley={alley} />;
+}
+
+/**
+ * 예약 입력 → 신청 → 완료. G-02(기준 가게)와 G-03(다음 코스)이 같이 쓴다.
+ * course: 다음 코스일 때 { rootReservationId, rootStoreId, rootStartAt, proposalId | null } — 기준 예약을 보여주고,
+ * 예약 가능 시간에 after(기준 시각)를 넣어 같은 날은 그보다 늦은 시간만 받으며, 신청에 courseRootId · courseProposalId를 싣는다.
+ */
+export function ReserveFlow({ store, alley, course = null }) {
   const { status, role, account } = useSession();
   const loggedIn = status === SESSION_STATUS.AUTHENTICATED;
   const isMember = loggedIn && role === 'customer';
@@ -59,18 +72,32 @@ export default function ReservePage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [result, setResult] = useState(null);
+  const [coupons, setCoupons] = useState(null); // 회원의 이 가게 사용 가능한 쿠폰 { data } | { error }
+  const [couponId, setCouponId] = useState(null); // 기본값 '적용 안 함', 자동 선택 없음(FR-CPN-06)
+  const rootStartAt = course?.rootStartAt ?? null;
 
   useEffect(() => {
     if (!store) return undefined;
     let active = true;
     const key = `${dateKey}#${reloadCount}`;
-    getAvailableSlots(store.id, dateKey)
+    getAvailableSlots(store.id, dateKey, rootStartAt)
       .then((data) => active && setAvailability({ key, data }))
       .catch((error) => active && setAvailability({ key, error }));
     return () => {
       active = false;
     };
-  }, [store, dateKey, reloadCount]);
+  }, [store, dateKey, reloadCount, rootStartAt]);
+
+  useEffect(() => {
+    if (!store || !isMember) return undefined;
+    let active = true;
+    getUsableCoupons(store.id)
+      .then((data) => active && setCoupons({ data }))
+      .catch((error) => active && setCoupons({ error }));
+    return () => {
+      active = false;
+    };
+  }, [store, isMember]);
 
   if (!store) {
     return (
@@ -86,7 +113,7 @@ export default function ReservePage() {
   }
 
   if (result) {
-    return <ReserveDone store={store} alley={alley} reservation={result} isMember={isMember} />;
+    return <ReserveDone store={store} alley={alley} reservation={result} isMember={isMember} isCourse={Boolean(course)} />;
   }
 
   const current = availability?.key === `${dateKey}#${reloadCount}` ? availability : null;
@@ -120,6 +147,9 @@ export default function ReservePage() {
         startAt: slotStartAt,
         partySize: party,
         guest: isMember ? null : { name: guest.name.trim(), phone: guest.phone, gender: guest.gender, ageGroup: guest.ageGroup },
+        couponId: isMember ? couponId : null,
+        courseRootId: course?.rootReservationId ?? null,
+        courseProposalId: course?.proposalId ?? null,
       });
       setResult(reservation);
     } catch (error) {
@@ -135,8 +165,20 @@ export default function ReservePage() {
 
   return (
     <main className={styles.page}>
-      <span className={styles.badge}>먼저 예약하는 가게</span>
+      <span className={styles.badge}>{course ? '다음 코스로 예약하는 가게' : '먼저 예약하는 가게'}</span>
       <h1 className={styles.title}>{store.name}</h1>
+      {course && (
+        <section className={`${styles.card} ${styles.rootCard}`} aria-label="기준 가게 예약">
+          <span className={styles.label}>기준 가게 예약</span>
+          <div className={styles.rootLine}>
+            <b>{MOCK_STORES.find((item) => item.id === course.rootStoreId)?.name ?? '기준 가게'}</b>
+            <span className={styles.num}>
+              {formatDateKey(serviceDateKey(Date.parse(course.rootStartAt)))} {formatSlotTime(course.rootStartAt)}
+            </span>
+          </div>
+          <p className={styles.cap}>같은 날은 이 시간보다 늦은 시간만 고를 수 있어요. 다른 날짜는 모든 시간을 고를 수 있어요.</p>
+        </section>
+      )}
 
       <div className={styles.layout}>
         <div>
@@ -283,6 +325,47 @@ export default function ReservePage() {
             <p className={styles.cap}>
               공유한 정보는 다음 방문 추천과 집계 계산에만 써요. 동의하지 않으면 예약할 수 없어요. <Link to="/policy">정책 · 개인정보</Link>
             </p>
+          </section>
+
+          <section className={styles.card} aria-labelledby="reserve-coupon">
+            <h2 id="reserve-coupon" className={styles.label}>
+              쿠폰
+            </h2>
+            {isMember ? (
+              <div className={styles.couponList} role="radiogroup" aria-label="적용할 쿠폰">
+                {[{ couponId: null }, ...(coupons?.data?.items ?? [])].map((coupon) => {
+                  const on = couponId === coupon.couponId;
+                  return (
+                    <button
+                      key={coupon.couponId ?? 'none'}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      className={on ? `${styles.couponOption} ${styles.couponOn}` : styles.couponOption}
+                      onClick={() => setCouponId(coupon.couponId)}
+                    >
+                      <span className={styles.radio} aria-hidden="true" />
+                      {coupon.couponId === null ? (
+                        <span>적용 안 함</span>
+                      ) : (
+                        <span>
+                          <b>{couponBenefitText(coupon)}</b>
+                          <span className={styles.couponSub}>
+                            {formatDateKey(serviceDateKey(Date.parse(coupon.expiresAt)))} {formatSlotTime(coupon.expiresAt)}까지
+                          </span>
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+                {coupons?.error && <p className={styles.cap}>쿠폰을 불러오지 못했어요. 쿠폰 없이 예약할 수 있어요.</p>}
+                {coupons?.data && coupons.data.items.length === 0 && <p className={styles.cap}>이 가게에서 쓸 수 있는 쿠폰이 없어요.</p>}
+              </div>
+            ) : (
+              <p className={styles.cap}>
+                쿠폰은 회원만 쓸 수 있어요. {!loggedIn && <Link to="/login">로그인하고 쿠폰 쓰기</Link>}
+              </p>
+            )}
           </section>
 
           {deposit > 0 && (

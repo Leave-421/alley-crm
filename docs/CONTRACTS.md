@@ -37,6 +37,7 @@ D1(#12)에서 정한 enum 값의 **유일한 목록**이다. DB에는 이 문자
 | 성별 `gender` | `female` 여성 · `male` 남성. **응답 안 함은 `null`** |
 | 연령대 `ageGroup` | `age_20_or_under` 20대 이하 · `age_30s` 30대 · `age_40s` 40대 · `age_50_or_over` 50대 이상. 모르면 `null` |
 | 공유 항목 `shareItem` | `name` 이름 · `phone` 연락처 · `visited_stores` 방문한 가게 목록 (이 셋은 항상 공유, 끌 수 없음) · `party_size` 인원 · `visit_datetime` 방문 일시 · `gender_age_group` 성별·연령대 (상인회가 켜고 끔, FR-CUS-06) |
+| 손님 등급 `customer.grade` | `new` 신규(방문 1회) · `regular` 일반(2회) · `loyal` 단골(3회 이상) · `at_risk` 이탈 위험(단골인데 마지막 방문 후 60일 넘게 미방문). 그 가게 방문 처리 기준, 방문이 없으면 `null` (C10) |
 | 데이터 출처 `dataSource` | `real` 실제 운영 · `demo` 시연용 가상 · `public` 외부 공개 통계 (NFR-10) |
 | 예약 상태 `reservation.status` | `requested` 신청 → `confirmed` 확정 → `visited` 방문, 그리고 `canceled` 취소 (노쇼 상태 없음) |
 | 취소 사유 `reservation.cancelReason` | `customer_canceled` 손님 취소 · `store_rejected` 가게 거절(자동 거절 포함) · `auto_canceled` 자동 취소 |
@@ -55,7 +56,7 @@ D1(#12)에서 정한 enum 값의 **유일한 목록**이다. DB에는 이 문자
 | 방문 신고 상태 `visitReport.status` | `received` 접수 → `owner_check_requested` 사장님 확인 요청 → `done` 처리 완료 |
 | 방문 신고 결과 `visitReport.result` | `valid` 맞음 · `invalid` 아님 (`done`일 때만. 허위 신고 페널티 없음) |
 | 지갑 주인 `wallet.ownerType` | `customer` 회원 손님 · `store` 가게 · `fund` 상인회 기금 |
-| 거래 종류 `walletTx.type` | `charge` 충전 · `deposit_paid` 예약금 납부 · `deposit_refunded` 예약금 환불 · `referral_fee_charged` 소개 수수료 차감 · `fund_deposited` 기금 입금 · `fund_budget_reserved` 기금 예산 잡기 · `fund_budget_released` 기금 예산 해제(상인회 쿠폰 행사) · `fee_difference_charged` 수수료 차액 차감 · `fee_difference_deposited` 수수료 차액 기금 입금(방문 금액 정정) (11-25 (5)) |
+| 거래 종류 `walletTx.type` | `charge` 충전 · `deposit_paid` 예약금 납부 · `deposit_refunded` 예약금 환불 · `referral_fee_charged` 소개 수수료 차감 · `fund_deposited` 기금 입금 · `fund_budget_reserved` 기금 예산 잡기 · `fund_budget_released` 기금 예산 해제(상인회 쿠폰 행사) · `fee_difference_charged` 수수료 차액 차감 · `fee_difference_deposited` 수수료 차액 기금 입금(방문 금액 정정) (11-25 (5)) · `fee_difference_withdrawn` 수수료 차액 기금 출금 · `fee_difference_refunded` 수수료 차액 가게 환급(정정으로 수수료가 줄 때) (11-27 (2)) |
 | 월 정산 상태 `settlement.status` | `aggregated` 집계됨 · `confirmed` 확정 |
 | 알림 받는 쪽 `notification.recipientType` | `account` 계정(회원 · 사장님) · `guest_reservation` 비회원 예약 |
 | 알림 종류 `notification.type` | `reservation_requested` 새 예약 · `reservation_confirmed` 확정 · `reservation_rejected` 거절 · `reservation_canceled` 취소 · `change_requested` 변경 요청 · `change_approved` 변경 승인 · `change_rejected` 변경 거절 · `reminder` 리마인드 · `delay_reported` 지연 입력 · `next_store_recommended` 다음 가게 추천 · `coupon_status` 쿠폰 상태 · `store_join_result` 가게 가입 결과. 종류를 늘리는 것은 C14에서 이 표를 고친다 11-25 (5)로 더함: `visit_amount_recorded` 방문 금액(회원) · `association_coupon_opened` 상인회 쿠폰 행사(회원) · `visit_report_check_requested` 신고 확인 요청(사장님). |
@@ -120,7 +121,7 @@ D1(#12)에서 정한 enum 값의 **유일한 목록**이다. DB에는 이 문자
 ## 6. 인증 · 세션 · CSRF
 
 - 서버 세션 쿠키(Spring Security HttpSession). JWT를 쓰지 않는다. 세션 쿠키는 `HttpOnly` · `SameSite=Lax`, HTTPS에서 `Secure`.
-- 기본은 모든 `/api/**`가 로그인 필요다. 로그인 없이 여는 경로는 이 절에 적는다: `GET /api/v1/csrf`, `GET /actuator/health`, `POST /api/v1/auth/signup`, `POST /api/v1/auth/login`, `POST /api/v1/store-joins`, `GET /api/v1/stores`, `GET /api/v1/regions`, `GET /api/v1/stores/{storeId}/available-slots`, `POST /api/v1/reservations`, `GET /api/v1/recommendations`, `POST /api/v1/recommendation-exposures`, `POST /api/v1/store-clicks`, `GET /api/v1/coupon-offers/{storeId}`, `GET /api/v1/today-courses`, `POST /api/v1/guest/lookup`. (3.3 `POST /api/v1/course-previews`는 그 API를 만드는 PR에서 더한다.) 로그인 없이 여는 `POST`도 CSRF 토큰은 필요하다.
+- 기본은 모든 `/api/**`가 로그인 필요다. 로그인 없이 여는 경로는 이 절에 적는다: `GET /api/v1/csrf`, `GET /actuator/health`, `POST /api/v1/auth/signup`, `POST /api/v1/auth/login`, `POST /api/v1/store-joins`, `GET /api/v1/stores`, `GET /api/v1/regions`, `GET /api/v1/stores/{storeId}/available-slots`, `POST /api/v1/reservations`, `GET /api/v1/recommendations`, `POST /api/v1/recommendation-exposures`, `POST /api/v1/store-clicks`, `GET /api/v1/coupon-offers/{storeId}`, `GET /api/v1/today-courses`, `POST /api/v1/guest/lookup`, `POST /api/v1/recommendation-feedback`, `POST /api/v1/course-previews`. 로그인 없이 여는 `POST`도 CSRF 토큰은 필요하다.
 - 로그인에 성공하면 세션 ID를 새로 발급한다(세션 고정 방지). 로그아웃은 `POST /api/v1/auth/logout`만 받는다.
 - **비회원 제한 세션(C13):** `POST /api/v1/guest/lookup`에서 예약번호 + 전화번호가 맞으면 세션 ID를 새로 발급하고, 그 전화번호의 비회원 예약만 다루는 세션을 준다. 이 세션으로 쓸 수 있는 로그인 필요 경로는 `/api/v1/guest/**` · `GET /api/v1/notifications` · `POST /api/v1/notifications/{id}/read` · `POST /api/v1/auth/logout`뿐이고, 그 밖의 로그인 필요 경로는 `403 forbidden_role`이다. 로그인 없이 여는 경로는 그대로 쓸 수 있다(새 예약 신청은 비회원 신청). 서버 코드에서는 `GuestPrincipal(phone)`, 요청자의 예약인지는 `GuestSessionService.reservationIds`로 확인한다.
 - **CSRF:** 앱을 처음 열 때 `GET /api/v1/csrf`를 부르면 `XSRF-TOKEN` 쿠키가 내려온다. 상태 변경 요청(`POST` · `PUT` · `PATCH` · `DELETE`)은 그 값을 `X-XSRF-TOKEN` 헤더로 보낸다. 없거나 틀리면 `403 csrf_invalid`.
