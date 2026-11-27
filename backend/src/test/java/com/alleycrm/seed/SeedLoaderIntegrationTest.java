@@ -270,6 +270,44 @@ class SeedLoaderIntegrationTest {
     }
 
     @Test
+    void 쿠폰_시연_사례를_같은_원천에_맞게_넣는다_NFR_08_5() {
+        SeedLoader.Result result = loader.resetAndLoad(data);
+        DemoCouponSeeder.Result coupon = result.demoCoupons();
+
+        assertThat(count("coupon_policy")).isEqualTo(coupon.events()).isPositive();
+        assertThat(count("coupon")).isEqualTo(coupon.coupons());
+        assertThat(countReal("coupon")).isZero();
+        // 행사의 발급 수 = 그 행사 쿠폰 수
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM coupon_policy p
+                WHERE p.issued_count <> (SELECT COUNT(*) FROM coupon c WHERE c.coupon_policy_id = p.id)
+                """, Integer.class)).isZero();
+        // 출처 노출은 그 가게를 추천한 이 손님의 노출이고, 받기 전에 보였다(FR-CPN-10)
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM coupon c
+                JOIN recommendation_exposure e ON e.id = c.source_exposure_id
+                JOIN visitor v ON v.id = e.visitor_id
+                WHERE e.recommended_store_id <> c.target_store_id OR e.base_store_id <> c.source_base_store_id
+                   OR v.customer_id <> c.customer_id OR e.shown_at >= c.downloaded_at
+                """, Integer.class)).isZero();
+        // 적용 · 사용 완료 · 적용 취소는 그 가게 그 손님 예약에, 신청 시각이 기한 안(FR-CPN-05)
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM coupon c JOIN reservation r ON r.id = c.reservation_id
+                WHERE r.store_id <> c.target_store_id OR r.customer_id <> c.customer_id
+                   OR r.requested_at <= c.downloaded_at OR r.requested_at >= c.expires_at
+                   OR (c.status IN ('applied', 'used') AND r.status <> 'visited')
+                   OR (c.status = 'apply_canceled' AND r.status <> 'canceled')
+                """, Integer.class)).isZero();
+        // 소개 예약에는 쿠폰이 없어 수수료 기록(E17b)의 쿠폰 할인 0과 맞다
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM coupon c JOIN reservation r ON r.id = c.reservation_id WHERE r.sender_store_id IS NOT NULL
+                """, Integer.class)).isZero();
+        // 사례가 모두 있는지는 실제 시드 크기(손님 600명)로 DemoCouponPlannerTest가 본다. 여기(80명)는 값만 본다
+        assertThat(jdbc.queryForList("SELECT DISTINCT status FROM coupon", String.class))
+                .isNotEmpty().isSubsetOf("used", "applied", "apply_canceled", "expired", "downloaded");
+    }
+
+    @Test
     void 공공데이터_기본값을_출처_기준_기간과_함께_넣는다_NFR_10() {
         SeedLoader.Result result = loader.resetAndLoad(data);
 

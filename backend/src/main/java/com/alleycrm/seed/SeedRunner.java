@@ -104,6 +104,9 @@ class SeedRunner implements ApplicationRunner {
         log.info("[seed] 방문자 {}명, 추천 노출 {}건, 정식 코스 제안 {}건, 코스 예약 {}건, 소개 수수료 {}건 {}원, 정산 확정 {}달",
                 course.visitors(), course.exposures(), course.proposals(), course.courseReservations(),
                 course.referralFees(), course.totalFee(), course.confirmedSettlements());
+        DemoCouponSeeder.Result coupon = result.demoCoupons();
+        log.info("[seed] 쿠폰 행사 {}개, 쿠폰 {}장 {}, 중복 차단 노출 {}건", coupon.events(), coupon.coupons(), coupon.byCase(),
+                coupon.blockedRevisits());
     }
 
     private void logPlan(SeedRegionData data) {
