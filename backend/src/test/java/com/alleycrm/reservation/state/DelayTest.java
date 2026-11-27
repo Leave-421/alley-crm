@@ -2,6 +2,7 @@ package com.alleycrm.reservation.state;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -74,6 +75,12 @@ class DelayTest {
                 SELECT payload FROM notification WHERE recipient_type = 'account' AND recipient_id = ? AND type = 'delay_reported'
                 """, String.class, ownerAccount);
         assertThat(payload).contains("2026-11-28T10:20:00Z").contains(String.valueOf(r));
+
+        // 사장님 상세에 예상 도착 시각이 보인다(B9 O-01)
+        mvc.perform(get("/api/v1/owner/reservations/" + r).with(user("owner1")))
+                .andExpect(jsonPath("$.startAt").value("2026-11-28T10:00:00Z"))
+                .andExpect(jsonPath("$.expectedArrivalAt").value("2026-11-28T10:20:00Z"))
+                .andExpect(jsonPath("$.pendingStartAt").doesNotExist());
     }
 
     @Test

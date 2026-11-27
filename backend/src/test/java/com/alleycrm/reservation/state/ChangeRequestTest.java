@@ -2,6 +2,7 @@ package com.alleycrm.reservation.state;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -77,6 +78,16 @@ class ChangeRequestTest {
                 .andExpect(jsonPath("$.pendingStartAt").value("2026-11-29T10:00:00Z"))
                 .andExpect(jsonPath("$.pendingPartySize").value(3));
         assertThat(balance()).isEqualTo(50000); // 신청 때는 돈이 움직이지 않는다
+
+        // 사장님 상세 · 목록에도 변경 대기 값이 보인다(B7 O-02)
+        mvc.perform(get("/api/v1/owner/reservations/" + r).with(user(ownerLogin())))
+                .andExpect(jsonPath("$.startAt").value("2026-11-29T09:00:00Z"))
+                .andExpect(jsonPath("$.pendingStartAt").value("2026-11-29T10:00:00Z"))
+                .andExpect(jsonPath("$.pendingPartySize").value(3))
+                .andExpect(jsonPath("$.expectedArrivalAt").doesNotExist());
+        mvc.perform(get("/api/v1/owner/reservations").param("date", "2026-11-29").with(user(ownerLogin())))
+                .andExpect(jsonPath("$.items[0].pendingStartAt").value("2026-11-29T10:00:00Z"))
+                .andExpect(jsonPath("$.items[0].pendingPartySize").value(3));
     }
 
     @Test
