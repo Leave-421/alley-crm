@@ -912,7 +912,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 | `auto_cancel` | `autoCancelDue()` | D4 |
 | `coupon_expiry` | `CouponExpiryService.expireDue()` | E14 |
 | `fund_budget_release` | `FundBudgetService.releaseDue()` | D20 |
-| (C12) | 비회원 정보 파기 — C가 자기 패키지에 `ScheduledJob` 빈을 하나 더하면 같이 돈다 | C12 |
+| `guest_purge` | 비회원 정보 파기(FR-CUS-07): 방문 기록이 있으면 마지막 방문 후 `guest_retention_months`개월, 없으면 마지막 예약 취소 후 `guest_no_visit_retention_days`일이 지난 비회원(신청 · 확정 예약이 남아 있으면 제외)의 이름 · 전화번호 · 사장님 메모 · 지연 입력 도착 시간을 지우고 `purged_at`을 남긴다. 예약 · 방문 기록과 성별 · 연령대는 남는다. 처리 건수 = 파기한 손님 수 | C12 |
 
 시연 시계(D18)를 바꾸면 그 자리에서 한 번 더 돈다(아래 「시연용 시각 조작」의 `jobs`). 테스트에서는 주기 실행을 끄고 `runAll()`을 직접 부른다.
 

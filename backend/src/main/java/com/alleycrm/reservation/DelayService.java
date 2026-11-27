@@ -59,4 +59,11 @@ public class DelayService {
         events.publishEvent(new DelayReportedEvent(reservationId, ((Number) r.get("store_id")).longValue(), customerId, start, eta));
         return eta;
     }
+
+    /** 비회원 파기(C12, FR-CUS-07): 그 손님들 예약의 지연 입력 도착 시간을 지운다. */
+    @Transactional
+    public void forgetEta(List<Long> customerIds) {
+        jdbc.batchUpdate("UPDATE reservation SET delay_eta = NULL WHERE customer_id = ? AND delay_eta IS NOT NULL",
+                customerIds.stream().map(id -> new Object[] {id}).toList());
+    }
 }
