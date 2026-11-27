@@ -1,10 +1,10 @@
-import { Link } from 'react-router';
 import AppLayout from '@/layouts/AppLayout.jsx';
 import { CUSTOMER_MENU } from '@/layouts/menus.js';
 import PlaceholderPage from '@/pages/PlaceholderPage.jsx';
 import AlleyScreen from '@/pages/customer/alley/AlleyScreen.jsx';
 import AlleyPickPage from '@/pages/customer/alleys/AlleyPickPage.jsx';
 import HomePage from '@/pages/customer/home/HomePage.jsx';
+import MyPage from '@/pages/customer/my/MyPage.jsx';
 import PolicyPage from '@/pages/customer/policy/PolicyPage.jsx';
 import ReservePage from '@/pages/customer/reserve/ReservePage.jsx';
 
@@ -23,16 +23,8 @@ export const customerRoutes = [
       // 다음 코스 예약(G-03)은 G-02 완료 화면의 '다음 코스로 예약하기'가 가리키는 자리표시. 실제 화면은 그 화면 이슈에서 만든다
       { path: 'reservations/:reservationId/next', handle: { title: '다음 코스 예약' }, element: <PlaceholderPage screenId="G-03" title="다음 코스 예약" /> },
       { path: 'reservations', handle: { title: '내 예약' }, element: <PlaceholderPage screenId="G-04" title="내 예약" /> },
-      // 마이(G-10)는 아직 자리표시. 정책 · 개인정보(G-12)로 가는 진입만 둔다
-      {
-        path: 'my',
-        handle: { title: '마이' },
-        element: (
-          <PlaceholderPage screenId="G-10" title="마이">
-            <Link to="/policy">정책 · 개인정보</Link>
-          </PlaceholderPage>
-        ),
-      },
+      // 마이(G-10)는 비회원에게도 '로그인하고 쿠폰 받기'를 보여줘서 가드를 걸지 않는다(회원 부분은 화면이 나눈다)
+      { path: 'my', handle: { title: '마이' }, element: <MyPage /> }, // G-10 A14
       { path: 'policy', handle: { title: '정책 · 개인정보' }, element: <PolicyPage /> }, // G-12 A16
       { path: 'notifications', handle: { title: '알림함' }, element: <PlaceholderPage screenId="G-11" title="알림함" /> },
       // 로그인 화면(G-08)의 '비회원 예약 조회' 진입 주소. 화면은 A13에서 만든다
