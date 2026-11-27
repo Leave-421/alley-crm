@@ -222,6 +222,48 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 - 예약 가능 시간(D5 「슬롯 계산」)과 예약 신청 검사가 바뀐 값을 바로 쓴다(FR-STO-02 #4). 이미 받은 예약은 그대로 둔다.
 - 실패: `invalid` · `unauthorized` · `forbidden_role` · `csrf_invalid`
 
+### 고객 목록 · 고객 카드 · 손님 등급 (C9 · C10)
+
+사장님이 우리 가게 손님을 보고 메모를 남긴다(O-04 · O-05, FR-CUS-03 · 04). 가게는 세션 계정에서만 정한다(`requireApprovedOwnStore`). 상인회 · 손님은 `403 forbidden_role`(상인회에는 고객 카드가 없다, FR-CUS-03 #2).
+
+- **우리 가게 손님** = 우리 가게에 예약(상태 무관)이 한 건이라도 있는 손님. 아니면 `404 not_found`(IDOR).
+- **손님 등급** `grade`(`CONTRACTS.md` 「3」 `customer.grade`): 우리 가게 **방문 처리**(`visited`) 횟수로 센다(취소 · 신청 · 다른 가게 방문은 세지 않음, FR-CUS-04 #3 · #4). 1회 `new` 신규, 2회 `regular` 일반, 3회 이상 `loyal` 단골, 단골인데 마지막 방문 후 60일이 넘게 지남 `at_risk` 이탈 위험. 방문 처리가 없으면 `null`. 저장하지 않고 조회 때 계산한다(서버 시계 기준).
+- **보이지 않는 것**(FR-CUS-05): 전화번호 · 이름 전체 · 다른 가게 방문 · 보낸 가게. 이름은 사장님 예약 목록(D3)과 같은 가린 이름 `maskedName`만.
+- **파기된 비회원**(FR-CUS-07): `purged: true`, `maskedName` · `memo`는 `null`. 방문 이력과 등급은 남는다.
+
+**손님 `CustomerSummary`**
+
+```json
+{ "customerId": "string", "customerType": "guest", "maskedName": "김*코", "grade": "regular", "visitCount": 2,
+  "lastVisitedAt": "2026-11-26T10:00:00Z", "recommendedVisitCount": 1, "purged": false }
+```
+
+- `visitCount` · `lastVisitedAt`: 우리 가게 방문 처리 횟수 · 마지막 방문 처리 시각.
+- `recommendedVisitCount`: 그중 정식 코스 제안으로 온 예약(`fromRecommendation`과 같은 뜻) 수.
+
+#### `GET /api/v1/owner/customers` — 고객 목록 (O-04)
+
+- 쿼리: `grade`(선택, 위 4개 값) + 페이지네이션(공통 규칙). 최근 예약 순.
+- 응답 `200`: 공통 페이지, `items[]` = `CustomerSummary`
+- 실패: `invalid`(grade 값 · page · size) · `unauthorized` · `forbidden_role`
+
+#### `GET /api/v1/owner/customers/{customerId}` — 고객 카드 (O-05)
+
+- 응답 `200`: `{ "customer": CustomerSummary, "memo": "string | null", "visits": [Visit] }`
+  - `Visit` = `{ "reservationId", "reservationNo", "startAt", "visitedAt", "partySize", "visitAmount", "fromRecommendation" }` — 우리 가게 방문 처리된 예약만, 최근 방문부터.
+  - `memo`: 우리 가게 메모(가게마다 따로).
+- 실패: `not_found`(우리 가게 손님이 아님) · `unauthorized` · `forbidden_role`
+
+#### `PUT /api/v1/owner/customers/{customerId}/memo` — 메모 쓰기 · 고치기
+
+- `X-XSRF-TOKEN` 필요. 요청: `{ "memo": "string" }` — 앞뒤 공백을 빼고 500자 이하. `null` · 빈 값이면 메모를 지운다.
+- 응답 `200`: 고객 카드(위와 같은 모양)
+- 실패: `invalid`(500자 초과 · 본문 없음) · `not_found` · `conflict`(파기된 비회원) · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+#### 서버 내부: `CustomerCardService.grades(storeId, customerIds)` (D가 쓸 수 있음)
+
+- 그 가게 기준 손님별 등급 `Map<Long, String>`. 방문 처리가 없는 손님은 빠진다. 사장님 예약 목록(D3)에 등급을 더할 때 쓴다(N+1 없이 한 번에).
+
 ### 비회원 예약 조회 (C13)
 
 비회원은 계정이 없어서 예약번호 + 전화번호로 확인하고, **그 전화번호의 비회원 예약만** 다루는 제한 세션을 받는다(FR-AUTH-03, G-13). 세션 규칙은 `CONTRACTS.md` 「6」 「비회원 제한 세션」.
@@ -710,7 +752,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
   - `referralFeeRate`: 소개 수수료율(설정값, NFR-04). 방문 처리 화면의 수수료 미리보기용. 상세에도 있다.
   - `pendingStartAt` · `pendingPartySize`: 손님이 낸 변경 신청 값(D8, `Reservation`과 같은 뜻). 변경 신청이 없으면 `null`. `status`가 `requested`이고 이 값이 있으면 변경 신청이다(O-02 원래 일시 · 바뀐 일시).
   - `expectedArrivalAt`: 손님이 입력한 지연 예상 도착 시각(D14 `delay_eta`). 입력이 없으면 `null`(O-01 'N분 늦어요', FR-RSV-10).
-  - 손님 등급(FR-CUS-04)은 고객 카드(C)가 만든 뒤 더한다.
+  - 손님 등급(FR-CUS-04)은 아직 없다. 더할 때는 C10 `CustomerCardService.grades(storeId, customerIds)`를 쓴다(1절 「고객 목록 · 고객 카드 · 손님 등급」).
 - 실패: `invalid`(date 없음 · 형식) · `unauthorized` · `forbidden_role`
 
 #### `GET /api/v1/owner/reservations/{id}` — 예약 상세 (D4)
