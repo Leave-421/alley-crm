@@ -6,6 +6,7 @@ import { Link } from 'react-router';
 import PlaceholderPage from '@/pages/PlaceholderPage.jsx';
 import AssociationCouponsPage from '@/pages/association/coupons/AssociationCouponsPage.jsx';
 import FundSettlementPage from '@/pages/association/settlement/FundSettlementPage.jsx';
+import VisitReportsPage from '@/pages/association/reports/VisitReportsPage.jsx';
 import StoreManagementPage from '@/pages/association/stores/StoreManagementPage.jsx';
 
 // 상인회 영역(/association). 담당 B가 children에 화면 경로를 더하고, 자리표시를 실제 화면으로 바꾼다.
@@ -35,6 +36,8 @@ export const associationRoutes = [
           // A-07 공동 기금 적립 내역(A28). A-04 '공동 기금 적립 내역'의 진입 주소. A가 element만 바꾼다
           // A-10 상인회 쿠폰 관리(B27, 번호 임시). 기금이 부담해서 '정산' 탭 안, A-04에서 진입(배치는 B가 정함, 11-25 (5))
           { path: 'settlement/coupons', handle: { title: '상인회 쿠폰' }, element: <AssociationCouponsPage /> },
+          // A-11 신고 처리(B28, 번호 임시). 처리 안 된 신고가 있으면 정산을 확정할 수 없어 '정산' 탭 안, A-04에서 진입(배치는 B가 정함)
+          { path: 'settlement/reports', handle: { title: '신고 처리' }, element: <VisitReportsPage /> },
           { path: 'settlement/fund', handle: { title: '공동 기금 적립 내역' }, element: <PlaceholderPage screenId="A-07" title="공동 기금 적립 내역" /> },
         ],
       },
