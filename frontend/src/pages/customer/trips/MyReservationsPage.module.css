@@ -172,6 +172,59 @@
   line-height: 20px;
 }
 
+/* 변경 · 취소 */
+.actions {
+  margin-top: 12px;
+}
+
+.actionButtons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.actionButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow: inset 0 0 0 1px rgba(63, 36, 42, 0.16);
+  color: var(--color-ink-800);
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.actionButton:disabled {
+  color: var(--color-ink-500);
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.danger {
+  background: var(--color-ink-800);
+  color: var(--color-on-brand);
+}
+
+.confirm {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: #e6dae1;
+}
+
+.confirmText {
+  margin: 0;
+  color: var(--color-ink-800);
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+}
+
 /* 그 가게 다음에 많이 찾은 곳 */
 .next {
   margin-top: 12px;
