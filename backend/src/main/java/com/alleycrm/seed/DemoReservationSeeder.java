@@ -49,9 +49,10 @@ class DemoReservationSeeder {
             Map<Integer, Long> customerIds, Map<String, Long> reservationIds) {
     }
 
-    Result insert(SeedRegionData data, RegionStoreSeeder.Result regionStores) {
+    /** @param period 지난 기록의 기간(시드를 돌린 날 기준, {@link SeedLoader}가 서버 시계로 정한다) */
+    Result insert(SeedRegionData data, RegionStoreSeeder.Result regionStores, DemoPeriod period) {
         DemoReservationPlanner.Plan plan = DemoReservationPlanner.plan(
-                data.stores(), properties.customers(), properties.randomSeed());
+                data.stores(), period, properties.customers(), properties.randomSeed());
         Map<Integer, List<DemoReservationPlanner.Reservation>> byCustomer = plan.reservations().stream()
                 .collect(Collectors.groupingBy(DemoReservationPlanner.Reservation::customerIndex));
         Map<Integer, Long> customerIds = new HashMap<>();

@@ -39,9 +39,6 @@ import org.springframework.stereotype.Component;
 class DemoCourseSeeder {
 
     static final String DEMO = DemoReservationSeeder.DEMO;
-    /** 시연 시점 기준 정산을 확정해 둘 달(마지막 달 11월은 집계 중으로 둔다). */
-    static final YearMonth LAST_CONFIRMED_MONTH = YearMonth.of(2026, 10);
-
     private final JdbcTemplate jdbc;
     private final DemoDataProperties properties;
 
@@ -69,7 +66,7 @@ class DemoCourseSeeder {
         Map<String, Long> proposalIds = insertProposals(plan.proposals(), reservations.reservationIds(), storeIds);
         linkCourses(plan.courseLinks(), reservations.reservationIds(), proposalIds, storeIds);
         Fees fees = insertReferralFees(plan, reservations.reservationIds(), storeIds, regionStores.regionId());
-        int confirmed = confirmSettlements(regionStores.regionId(), fees.months());
+        int confirmed = confirmSettlements(regionStores.regionId(), fees.months(), plan.period().lastConfirmedMonth());
         return new Result(exploration.visitors().size(), exploration.exposures().size(), plan.proposals().size(),
                 plan.courseLinks().size(), fees.count(), fees.total(), confirmed, exploration, visitorIds);
     }
@@ -204,12 +201,15 @@ class DemoCourseSeeder {
         return new Fees(count, total, months);
     }
 
-    /** {@link #LAST_CONFIRMED_MONTH}까지의 달은 정산 확정(다음 달 1일 10:00 KST), 수수료에 정산 ID를 단다. */
-    private int confirmSettlements(long regionId, Map<String, List<Long>> months) {
+    /**
+     * lastConfirmed까지의 달은 정산 확정(다음 달 1일 10:00 KST), 수수료에 정산 ID를 단다. 어제가 속한 달은 집계 중으로 둔다
+     * ({@link DemoPeriod#lastConfirmedMonth}).
+     */
+    private int confirmSettlements(long regionId, Map<String, List<Long>> months, YearMonth lastConfirmed) {
         int confirmed = 0;
         for (Map.Entry<String, List<Long>> month : months.entrySet()) {
             YearMonth ym = YearMonth.parse(month.getKey());
-            if (ym.isAfter(LAST_CONFIRMED_MONTH)) {
+            if (ym.isAfter(lastConfirmed)) {
                 continue;
             }
             Instant confirmedAt = ym.plusMonths(1).atDay(1).atTime(10, 0)

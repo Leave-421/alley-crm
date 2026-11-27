@@ -4,13 +4,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.alleycrm.TestcontainersConfiguration;
+import com.alleycrm.common.time.AppClock;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import javax.sql.DataSource;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -22,6 +29,7 @@ import org.springframework.test.context.ActiveProfiles;
  * 시드 초기화 · 적재를 실제 MySQL 8.4(Testcontainers)에서 확인한다. Docker 필요.
  * 기준: NFR-07 #1 · #3, 06-data STORE, 11-24 (5), 00-backlog 「같이 쓰는 것 규칙」 시드 · 시연 데이터.
  * NFR-07 #2(예약 날짜 9 ~ 11월)는 가상 데이터 1(E16)을 넣은 뒤 확인한다. 가상 손님 수는 테스트를 빠르게 하려고 줄인다.
+ * 가상 데이터 기간은 서버 시계로 정하므로(#315) 시계를 2026-12-01 14:00 KST로 고정한다(지난 기록 9/1 ~ 11/30).
  */
 // 루트 .env에 시연 비밀번호가 있어도 이 테스트는 시연 계정 없이 돈다(계정 수 확인).
 @SpringBootTest(properties = {"seed.close-after-run=false", "seed.demo.customers=80",
@@ -39,7 +47,23 @@ class SeedLoaderIntegrationTest {
     @Autowired
     DataSource dataSource;
 
+    @Autowired
+    AppClock clock;
+
+    /** 시드를 돌린 시각: 2026-12-01 14:00 KST. */
+    static final Instant NOW = Instant.parse("2026-12-01T05:00:00Z");
+
     private final SeedRegionData data = SeedDataLoader.loadRegionStores();
+
+    @BeforeEach
+    void fixClock() {
+        clock.setTo(NOW);
+    }
+
+    @AfterEach
+    void resetClock() {
+        clock.reset();
+    }
 
     @Test
     void NFR_07_1_적재하면_권역_1개와_참여_가게_15곳_업종_혼합() {
@@ -193,13 +217,15 @@ class SeedLoaderIntegrationTest {
 
         assertThat(result.demoReservations().customers()).isEqualTo(80);
         assertThat(count("customer")).isEqualTo(80);
-        assertThat(count("reservation")).isEqualTo(result.demoReservations().reservations()).isPositive();
+        assertThat(count("reservation"))
+                .isEqualTo(result.demoReservations().reservations() + result.demoUpcoming().reservations()).isPositive();
         assertThat(countReal("customer")).isZero();
         assertThat(countReal("reservation")).isZero();
-        // 시각 칸은 UTC. 운영 시간대(KST)로 바꿔 학기 중 9 ~ 11월인지 본다
+        // 시각 칸은 UTC. 운영 시간대(KST)로 바꿔 지난 기록(방문 · 취소)이 학기 중 9 ~ 11월(어제까지)인지 본다
         assertThat(jdbc.queryForObject("""
                 SELECT COUNT(*) FROM reservation
-                WHERE DATE(DATE_ADD(start_at, INTERVAL 9 HOUR)) NOT BETWEEN '2026-09-01' AND '2026-11-30'
+                WHERE status IN ('visited', 'canceled')
+                  AND DATE(DATE_ADD(start_at, INTERVAL 9 HOUR)) NOT BETWEEN '2026-09-01' AND '2026-11-30'
                 """, Integer.class)).isZero();
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM reservation WHERE status = 'visited' AND (visit_amount IS NULL OR visited_at IS NULL)",
@@ -208,10 +234,58 @@ class SeedLoaderIntegrationTest {
                 "SELECT COUNT(*) FROM reservation WHERE status = 'canceled' AND (cancel_reason IS NULL OR canceled_at IS NULL)",
                 Integer.class)).isZero();
         assertThat(jdbc.queryForList("SELECT DISTINCT status FROM reservation", String.class))
-                .containsExactlyInAnyOrder("visited", "canceled");
+                .containsExactlyInAnyOrder("visited", "canceled", "requested", "confirmed");
         assertThat(jdbc.queryForObject("""
                 SELECT COUNT(*) FROM reservation r JOIN customer c ON c.id = r.customer_id
                 WHERE r.status = 'visited' AND (c.last_visit_at IS NULL OR c.last_visit_at < r.visited_at)
+                """, Integer.class)).isZero();
+    }
+
+    @Test
+    void 다가올_예약과_방문_신고는_시드를_돌린_시각_기준이다_315() {
+        SeedLoader.Result result = loader.resetAndLoad(data);
+        DemoUpcomingSeeder.Result upcoming = result.demoUpcoming();
+
+        assertThat(result.period().today()).isEqualTo(LocalDate.of(2026, 12, 1));
+        assertThat(upcoming.reservations()).isPositive();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM reservation WHERE status IN ('requested', 'confirmed')",
+                Integer.class)).isEqualTo(upcoming.reservations());
+        // 다가올 예약은 지금 뒤, 신청 · 확정은 지금 전. 지난 기록은 지금 뒤에 방문 · 취소 · 시작이 없다
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM reservation
+                WHERE status IN ('requested', 'confirmed')
+                  AND (start_at <= ? OR requested_at >= ? OR confirmed_at >= ? OR pending_start_at <= ?)
+                """, Integer.class, utc(NOW), utc(NOW), utc(NOW), utc(NOW))).isZero();
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM reservation
+                WHERE status IN ('visited', 'canceled') AND (start_at >= ? OR visited_at >= ? OR canceled_at >= ?)
+                """, Integer.class, utc(NOW), utc(NOW), utc(NOW))).isZero();
+        // 변경 신청은 상태 신청 · 확정 시각 있음 · 바꿀 시각과 인원이 같이 있다(D8)
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM reservation
+                WHERE pending_start_at IS NOT NULL
+                  AND (status <> 'requested' OR confirmed_at IS NULL OR pending_party_size IS NULL)
+                """, Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM reservation WHERE pending_start_at IS NOT NULL", Integer.class))
+                .isEqualTo(upcoming.changeRequests());
+        // 지연 입력은 확정 예약에만
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM reservation WHERE delay_eta IS NOT NULL AND status <> 'confirmed'",
+                Integer.class)).isZero();
+        // 방문 신고는 방문 처리된 회원 예약에, 방문 처리 뒤 · 지금 전
+        assertThat(count("visit_report")).isEqualTo(upcoming.reports());
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM visit_report v
+                JOIN reservation r ON r.id = v.reservation_id JOIN customer c ON c.id = v.customer_id
+                WHERE r.status <> 'visited' OR r.customer_id <> v.customer_id OR c.type <> 'member'
+                   OR v.created_at <= r.visited_at OR v.created_at >= ?
+                """, Integer.class, utc(NOW))).isZero();
+        // 다가올 예약은 소개 · 쿠폰 · 예약금 거래를 만들지 않는다
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM reservation r
+                WHERE r.status IN ('requested', 'confirmed')
+                  AND (r.sender_store_id IS NOT NULL OR r.course_root_id IS NOT NULL
+                       OR EXISTS (SELECT 1 FROM coupon c WHERE c.reservation_id = r.id)
+                       OR EXISTS (SELECT 1 FROM wallet_tx t WHERE t.reservation_id = r.id))
                 """, Integer.class)).isZero();
     }
 
@@ -328,6 +402,10 @@ class SeedLoaderIntegrationTest {
     /** 시드 · 시연 데이터가 아닌 행(테스트가 직접 넣은 것) 수. */
     private int countReal(String table) {
         return jdbc.queryForObject("SELECT COUNT(*) FROM " + table + " WHERE data_source <> 'demo'", Integer.class);
+    }
+
+    private static LocalDateTime utc(Instant instant) {
+        return LocalDateTime.ofInstant(instant, ZoneOffset.UTC);
     }
 
     private int count(String table) {

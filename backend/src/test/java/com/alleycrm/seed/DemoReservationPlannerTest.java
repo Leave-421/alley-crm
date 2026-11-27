@@ -9,11 +9,13 @@ import com.alleycrm.seed.DemoReservationPlanner.Plan;
 import com.alleycrm.seed.DemoReservationPlanner.Reservation;
 import java.time.DayOfWeek;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -30,14 +32,16 @@ class DemoReservationPlannerTest {
     private static final SeedRegionData DATA = SeedDataLoader.loadRegionStores();
     private static final Map<String, SeedRegionData.Store> STORES = DATA.stores().stream()
             .collect(Collectors.toMap(SeedRegionData.Store::code, Function.identity()));
-    private static final Plan PLAN = DemoReservationPlanner.plan(DATA.stores(), 600, 20261211L);
+    /** 오늘 2026-12-01 → 지난 기록 9/1 ~ 11/30(고정 날짜였던 때와 같은 기간). */
+    static final DemoPeriod PERIOD = DemoPeriod.endingBefore(LocalDate.of(2026, 12, 1));
+    private static final Plan PLAN = DemoReservationPlanner.plan(DATA.stores(), PERIOD, 600, 20261211L);
 
     @Test
     void 같은_seed면_같은_데이터() {
-        Plan again = DemoReservationPlanner.plan(DATA.stores(), 600, 20261211L);
+        Plan again = DemoReservationPlanner.plan(DATA.stores(), PERIOD, 600, 20261211L);
 
         assertThat(again).isEqualTo(PLAN);
-        assertThat(DemoReservationPlanner.plan(DATA.stores(), 600, 1L)).isNotEqualTo(PLAN);
+        assertThat(DemoReservationPlanner.plan(DATA.stores(), PERIOD, 600, 1L)).isNotEqualTo(PLAN);
     }
 
     @Test
@@ -52,7 +56,7 @@ class DemoReservationPlannerTest {
         assertThat(PLAN.customers()).extracting(DemoReservationPlanner.Customer::gender).contains("female", "male");
         long twenties = PLAN.customers().stream().filter(c -> "age_20_or_under".equals(c.ageGroup())).count();
         assertThat(twenties).isGreaterThan(600 / 3); // 대학가
-        assertThatThrownBy(() -> DemoReservationPlanner.plan(DATA.stores(), 0, 1L))
+        assertThatThrownBy(() -> DemoReservationPlanner.plan(DATA.stores(), PERIOD, 0, 1L))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -62,6 +66,30 @@ class DemoReservationPlannerTest {
         assertThat(PLAN.reservations()).allSatisfy(r -> assertThat(localDate(r))
                 .isBetween(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 11, 30)));
         assertThat(PLAN.reservations()).extracting(r -> localDate(r).getMonthValue()).contains(9, 10, 11);
+    }
+
+    @Test
+    void 지난_기록은_어제까지라_오늘_이후_예약이나_지금_뒤_방문이_없다_315() {
+        // 시연 시계를 11-27로 두고 돌린 경우(#315 제보): 지난 기록은 어제(11-26)까지 91일
+        LocalDate today = LocalDate.of(2026, 11, 27);
+        DemoPeriod period = DemoPeriod.endingBefore(today);
+        Instant todayStart = today.atStartOfDay(DemoReservationPlanner.SERVICE_ZONE).toInstant();
+        Plan plan = DemoReservationPlanner.plan(DATA.stores(), period, 600, 20261211L);
+
+        assertThat(period.start()).isEqualTo(LocalDate.of(2026, 8, 28));
+        assertThat(period.end()).isEqualTo(LocalDate.of(2026, 11, 26));
+        assertThat(plan.reservations()).hasSizeGreaterThan(1500).allSatisfy(r -> {
+            assertThat(r.status()).isIn("visited", "canceled");
+            assertThat(localDate(r)).isBetween(period.start(), period.end());
+            assertThat(r.startAt()).isBefore(todayStart);
+            for (Instant at : Arrays.asList(r.requestedAt(), r.confirmedAt(), r.visitedAt(), r.canceledAt())) {
+                if (at != null) {
+                    assertThat(at).isBefore(todayStart);
+                }
+            }
+        });
+        assertThat(plan.proposals()).allSatisfy(p -> assertThat(p.firstShownAt()).isBefore(todayStart));
+        assertThat(plan.period()).isEqualTo(period);
     }
 
     @Test

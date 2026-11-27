@@ -15,7 +15,8 @@ import org.junit.jupiter.api.Test;
 class DemoExplorationPlannerTest {
 
     private static final SeedRegionData DATA = SeedDataLoader.loadRegionStores();
-    private static final DemoReservationPlanner.Plan RESERVATIONS = DemoReservationPlanner.plan(DATA.stores(), 600, 20261211L);
+    private static final DemoReservationPlanner.Plan RESERVATIONS = DemoReservationPlanner.plan(DATA.stores(),
+            DemoReservationPlannerTest.PERIOD, 600, 20261211L);
     private static final DemoExplorationPlanner.Plan PLAN = DemoExplorationPlanner.plan(DATA.stores(), RESERVATIONS, 20261212L);
 
     @Test

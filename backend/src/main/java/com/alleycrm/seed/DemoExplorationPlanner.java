@@ -53,15 +53,17 @@ public final class DemoExplorationPlanner {
     }
 
     private final List<SeedRegionData.Store> stores;
+    private final DemoPeriod period;
     private final Random random;
 
-    private DemoExplorationPlanner(List<SeedRegionData.Store> stores, long seed) {
+    private DemoExplorationPlanner(List<SeedRegionData.Store> stores, DemoPeriod period, long seed) {
         this.stores = stores;
+        this.period = period;
         this.random = new Random(seed);
     }
 
     public static Plan plan(List<SeedRegionData.Store> stores, DemoReservationPlanner.Plan reservations, long seed) {
-        return new DemoExplorationPlanner(stores, seed).build(reservations);
+        return new DemoExplorationPlanner(stores, reservations.period(), seed).build(reservations);
     }
 
     private Plan build(DemoReservationPlanner.Plan base) {
@@ -127,10 +129,9 @@ public final class DemoExplorationPlanner {
         }
     }
 
-    /** 기간 안 10 ~ 22시(운영 시간대)의 임의 시각. */
+    /** 기간(예약 계획과 같은 기간) 안 10 ~ 22시(운영 시간대)의 임의 시각. */
     private Instant randomTime() {
-        long days = ChronoUnit.DAYS.between(DemoReservationPlanner.PERIOD_START, DemoReservationPlanner.PERIOD_END) + 1;
-        LocalDate day = DemoReservationPlanner.PERIOD_START.plusDays(random.nextInt((int) days));
+        LocalDate day = period.start().plusDays(random.nextInt(period.days()));
         LocalTime time = LocalTime.of(10, 0).plusMinutes(between(0, 12 * 60));
         return LocalDateTime.of(day, time).atZone(DemoReservationPlanner.SERVICE_ZONE).toInstant();
     }
