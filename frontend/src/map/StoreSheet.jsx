@@ -1,7 +1,8 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import buttonStyles from '@/components/Button/Button.module.css';
-import { CATEGORY_LABELS, formatClosedDays, formatHours } from './storeCatalog.js';
+import { RECOMMENDATION_BADGE_LABELS, getRecommendations, recordRecommendationExposures } from '@/api/recommendations.js';
+import { ALLEY_LABELS, CATEGORY_LABELS, formatClosedDays, formatHours } from './storeCatalog.js';
 import { buildingMetrics } from './alleyIllustrations.js';
 import BuildingFace from './BuildingFace.jsx';
 import styles from './StoreSheet.module.css';
@@ -15,8 +16,11 @@ const RANKS = [1, 2, 3];
  * 그대로 옮겼다. 값은 목업 좌표계라, 끈 거리는 화면 배율(scale)로 나눠 목업 px로 바꾼다.
  *
  * 목업에 있지만 계약(Store) · 시드에 아직 필드가 없는 것 — 한 줄 태그 · 소개 · 대표 메뉴 · 편의 정보 · 가격대 —
- * 은 지어내지 않고 뺐다(B24에서 필드가 생기면 더한다). 예약 시간(날짜 · 시간)과 '다음 코스' 추천 내용은
- * 각 이슈(예약 · A5)에서 채우고, 여기서는 추천 자리만 둔다.
+ * 은 지어내지 않고 뺐다(B24에서 필드가 생기면 더한다). 목업의 '도보 N분'은 거리를 응답에 넣지 않아(FR-MAP-08) 뺐다.
+ *
+ * '다음 코스' 칩 · '다음에 많이 찾은 곳 3곳' 카드(A5, #22)는 지도 추천(3.1 GET /recommendations)으로 채우고,
+ * 그린 뒤 탐색 노출을 한 번 기록한다(POST /recommendation-exposures). 기록이 부족한 가게는 '지역 인기 3곳(공공데이터 기반 추정)'.
+ * 누르면 같은 골목 가게는 바로 그 가게를 열고, 다른 골목 가게는 그 골목으로 가서 연다(목업).
  */
 const PHOTO_WIDTH = 358; // 시트 폭 390 - 좌우 16
 const PHOTO_HEIGHT = 150; // 목업 사진 높이
@@ -34,7 +38,59 @@ function StorePhoto({ store, building }) {
   );
 }
 
-export default function StoreSheet({ store, alley, alleyLabel, building, scale, mode, onModeChange, onClose }) {
+/**
+ * 기준 가게의 지도 추천 첫 묶음. 받은 묶음을 그린 뒤 탐색 노출을 기록한다 — 묶음마다 새 displayId,
+ * 개발 모드의 이중 effect로 두 번 가도 같은 displayId라 서버가 한 번으로 친다(3.1 R-1).
+ */
+function useStoreRecommendations(storeId) {
+  const [loaded, setLoaded] = useState(null); // { storeId, data, displayId } | { storeId, error }
+
+  useEffect(() => {
+    if (!storeId) return undefined;
+    let active = true;
+    getRecommendations(storeId)
+      .then((data) => active && setLoaded({ storeId, data, displayId: crypto.randomUUID() }))
+      .catch((error) => active && setLoaded({ storeId, error }));
+    return () => {
+      active = false;
+    };
+  }, [storeId]);
+
+  const current = loaded?.storeId === storeId ? loaded : null;
+
+  useEffect(() => {
+    const items = current?.data?.items;
+    if (!items?.length) return;
+    recordRecommendationExposures({ displayId: current.displayId, baseStoreId: current.storeId, page: current.data.page, storeIds: items.map((card) => card.store.id) }).catch(
+      (error) => console.warn('추천 표시 기록 실패', error),
+    );
+  }, [current]);
+
+  return current;
+}
+
+/** 추천 가게로 가는 버튼 · 링크. 같은 골목이면 그 자리에서 열고, 다른 골목이면 그 골목으로 가서 연다 */
+function RecommendationTarget({ card, alley, onOpenStore, className, children }) {
+  if (card.store.alley === alley) {
+    return (
+      <button type="button" className={className} onClick={() => onOpenStore(card.store.id)}>
+        {children}
+      </button>
+    );
+  }
+  return (
+    <Link to={`/alleys/${card.store.alley}?focus=${encodeURIComponent(card.store.id)}`} className={className}>
+      {children}
+    </Link>
+  );
+}
+
+export default function StoreSheet({ store, alley, alleyLabel, building, scale, mode, onModeChange, onClose, onOpenStore }) {
+  const recommendation = useStoreRecommendations(store?.id ?? null);
+  const recItems = recommendation?.data?.items ?? [];
+  const thin = recItems.length > 0 && recItems.every((card) => card.badge === 'local_popular');
+  const publicData = recommendation?.data?.publicData;
+  const rankClass = (card) => (card.store.alley === alley ? styles.rankSame : styles.rankOther);
   const [dragY, setDragY] = useState(null);
   const dragRef = useRef(null);
   const base = mode === 'full' ? 0 : PEEK;
@@ -104,14 +160,27 @@ export default function StoreSheet({ store, alley, alleyLabel, building, scale, 
 
         <div className={styles.nextRow}>
           <span className={styles.nextLabel}>다음 코스</span>
-          <div className={styles.nextChips} aria-hidden="true">
-            {RANKS.map((rank) => (
-              <span key={rank} className={styles.nextChip}>
-                <span className={styles.nextRank}>{rank}</span>
-                <span className={styles.skeleton} style={{ width: 52 }} />
-              </span>
-            ))}
-          </div>
+          {!recommendation && (
+            <div className={styles.nextChips} aria-hidden="true">
+              {RANKS.map((rank) => (
+                <span key={rank} className={styles.nextChip}>
+                  <span className={styles.nextRank}>{rank}</span>
+                  <span className={styles.skeleton} style={{ width: 52 }} />
+                </span>
+              ))}
+            </div>
+          )}
+          {recItems.length > 0 && (
+            <div className={styles.nextChips}>
+              {recItems.map((card) => (
+                <RecommendationTarget key={card.store.id} card={card} alley={alley} onOpenStore={onOpenStore} className={styles.nextChip}>
+                  <span className={`${styles.nextRank} ${rankClass(card)}`}>{card.rank}</span>
+                  {card.store.name}
+                </RecommendationTarget>
+              ))}
+            </div>
+          )}
+          {recommendation && recItems.length === 0 && <span className={styles.cap}>{recommendation.error ? '추천을 불러오지 못했어요' : '추천할 가게가 없어요'}</span>}
         </div>
 
         <div className={styles.ctaRow}>
@@ -148,17 +217,43 @@ export default function StoreSheet({ store, alley, alleyLabel, building, scale, 
               </div>
             </dl>
 
-            <div className={styles.recTitle}>다음에 많이 찾은 곳 3곳</div>
-            <div className={styles.cap}>추천 가게는 준비 중이에요</div>
-            {RANKS.map((rank) => (
-              <div key={rank} className={styles.recCard} aria-hidden="true">
-                <span className={styles.recRank}>{rank}</span>
+            <div className={styles.recTitle}>{thin ? '지역 인기 3곳 (공공데이터 기반 추정)' : '다음에 많이 찾은 곳 3곳'}</div>
+            {thin && <div className={styles.cap}>이 가게는 아직 연계 방문 기록이 부족해서, 공공데이터로 추정한 지역 인기 가게를 보여드려요.</div>}
+            {recItems.length > 0 && <div className={styles.cap}>누르면 그 가게 정면으로 바로 이동해요</div>}
+            {!recommendation &&
+              RANKS.map((rank) => (
+                <div key={rank} className={styles.recCard} aria-hidden="true">
+                  <span className={styles.recRank}>{rank}</span>
+                  <span className={styles.recText}>
+                    <span className={styles.skeleton} style={{ width: 96, height: 14 }} />
+                    <span className={styles.skeleton} style={{ width: 64, height: 10 }} />
+                  </span>
+                </div>
+              ))}
+            {recommendation?.error && <div className={styles.cap}>추천을 불러오지 못했어요.</div>}
+            {recommendation?.data && recItems.length === 0 && <div className={styles.cap}>지금은 추천할 가게가 없어요.</div>}
+            {recItems.map((card) => (
+              <RecommendationTarget key={card.store.id} card={card} alley={alley} onOpenStore={onOpenStore} className={styles.recCard}>
+                <span className={`${styles.recRank} ${rankClass(card)}`}>{card.rank}</span>
                 <span className={styles.recText}>
-                  <span className={styles.skeleton} style={{ width: 96, height: 14 }} />
-                  <span className={styles.skeleton} style={{ width: 64, height: 10 }} />
+                  <span className={styles.recName}>{card.store.name}</span>
+                  <span className={styles.recWhere}>
+                    {CATEGORY_LABELS[card.store.category] ?? card.store.category} · {card.store.alley === alley ? '같은 골목' : `${ALLEY_LABELS[card.store.alley] ?? '다른'} 골목으로 이동`}
+                  </span>
+                  <span className={styles.recBadges}>
+                    <span className={card.badge === 'local_popular' ? `${styles.recBadge} ${styles.recBadgeLocal}` : styles.recBadge}>{RECOMMENDATION_BADGE_LABELS[card.badge] ?? card.badge}</span>
+                    {card.couponBenefit && <span className={`${styles.recBadge} ${styles.recBadgeBenefit}`}>예약 혜택</span>}
+                  </span>
+                  <span className={styles.recReason}>{card.reasonText}</span>
                 </span>
-              </div>
+              </RecommendationTarget>
             ))}
+            {recItems.some((card) => card.badge === 'local_popular') && (
+              <p className={styles.recNotice}>
+                '지역 인기 가게'는 이 가게와 이어진 방문 기록이 부족해 공공데이터로 추정한 가게예요.
+                {publicData && ` 출처: ${publicData.source} · 기준: ${publicData.period}`}
+              </p>
+            )}
           </>
         )}
       </div>

@@ -138,6 +138,7 @@ export default function AlleyScroll({ alley, stores = MOCK_STORES, initialSelect
             mode={sheetMode}
             onModeChange={setSheetMode}
             onClose={closeStore}
+            onOpenStore={openStore}
           />
       </div>
     </div>

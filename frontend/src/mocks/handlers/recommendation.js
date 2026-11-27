@@ -23,14 +23,21 @@ function mockCandidates(baseStoreId) {
   return others.map((_, i) => others[(i + shift) % others.length]);
 }
 
+/** 연계 방문 기록이 부족한 목 기준 가게(골목마다 1곳쯤: 목록 5번째마다) — '지역 인기 3곳' 화면을 볼 수 있게 */
+function isThinMockStore(baseStoreId) {
+  return MOCK_STORES.findIndex((store) => store.id === baseStoreId) % 5 === 4;
+}
+
 /** 한 묶음(최대 3곳) RecommendationCard. page는 pageCount로 나눈 나머지로 맞춘다(리롤 순환) */
 function mockCards(baseStoreId, page) {
   const candidates = mockCandidates(baseStoreId);
   const pageCount = Math.ceil(candidates.length / RECOMMEND_COUNT);
   const current = page % pageCount;
+  const thin = isThinMockStore(baseStoreId);
   const items = candidates.slice(current * RECOMMEND_COUNT, current * RECOMMEND_COUNT + RECOMMEND_COUNT).map((store, i) => {
-    // 첫 묶음 1 · 2위는 방문 데이터 기반, 나머지는 지역 인기(배지 · 안내 문구를 둘 다 볼 수 있게)
-    const reasonType = current === 0 && i < 2 ? 'visit_data' : 'local_popular';
+    // 첫 묶음 1 · 2위는 방문 데이터 기반, 나머지는 지역 인기(배지 · 안내 문구를 둘 다 볼 수 있게).
+    // 연계 방문 기록이 부족한 기준 가게는 전부 지역 인기(FR-CRS-04)
+    const reasonType = !thin && current === 0 && i < 2 ? 'visit_data' : 'local_popular';
     return {
       rank: current * RECOMMEND_COUNT + i + 1,
       store: { id: store.id, name: store.name, category: store.category, alley: store.alley, mapX: store.mapX, mapY: store.mapY },
@@ -68,6 +75,22 @@ export const recommendationHandlers = [
       { baseStoreId, baseTime: new Date().toISOString(), baseTimeSource: 'now', ...mockCards(baseStoreId, page) },
       { headers: { 'Cache-Control': 'no-store' } },
     );
+  }),
+
+  // POST /api/v1/recommendation-exposures (E7) — 누구나, 그린 지도 추천 묶음의 탐색 노출. 같은 (displayId, 가게)는 같은 exposureId
+  http.post('/api/v1/recommendation-exposures', async (info) => {
+    const csrf = rejectInvalidCsrf(info);
+    if (csrf) return csrf;
+    const body = await info.request.json().catch(() => null);
+    const storeIds = body?.storeIds;
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuid.test(body?.displayId ?? '') || !Number.isInteger(body?.page) || body.page < 0 || !Array.isArray(storeIds) || storeIds.length < 1 || storeIds.length > RECOMMEND_COUNT || new Set(storeIds).size !== storeIds.length) {
+      return errorResponse(400, 'invalid', '표시 기록 값을 확인해 주세요.');
+    }
+    if (!MOCK_STORES.some((store) => store.id === body.baseStoreId)) return errorResponse(404, 'not_found', '가게를 찾을 수 없어요.');
+    const candidates = new Set(mockCandidates(body.baseStoreId).map((store) => store.id));
+    if (storeIds.some((id) => !candidates.has(id))) return errorResponse(409, 'conflict', '추천 후보가 아닌 가게가 있어요.');
+    return HttpResponse.json({ items: storeIds.map((storeId) => ({ storeId, exposureId: `ex-${body.displayId.slice(0, 8)}-${storeId}` })) });
   }),
 
   // GET /api/v1/course-proposals?baseReservationId=&page= (E7) — 회원 손님의 자기 예약만. 기준 가게 = 그 예약의 가게
