@@ -50,6 +50,7 @@ D1(#12)에서 정한 enum 값의 **유일한 목록**이다. DB에는 이 문자
 | 쿠폰 상태 `coupon.status` | `downloaded` 다운로드됨 · `applied` 예약에 적용됨 · `used` 사용 완료 · `expired` 기간 만료 · `apply_canceled` 적용 취소 |
 | 쿠폰 발급 주체 `coupon.issuerKind` | `store` 가게 쿠폰(가게 부담) · `association` 상인회 쿠폰(공동 기금 부담) (11-25 (5)) |
 | 상인회 쿠폰 쓸 수 있는 가게 `associationCouponEvent.eligibleStoreScope` | `all` 모든 참여 가게 · `selected` 상인회가 고른 가게 |
+| 상인회 쿠폰 카드 상태 `associationCouponOffer.status` | `available` 받을 수 있음 · `upcoming` 받는 기간 전 · `received` 이미 받음 · `closed` 마감(다 나감 · 중단 · 받는 기간 끝) (E19, CONTRACTS_API 3.9) |
 | 방문 신고 종류 `visitReport.type` | `amount` 금액이 달라요 · `not_processed` 방문했어요(자동 취소된 예약만) |
 | 방문 신고 상태 `visitReport.status` | `received` 접수 → `owner_check_requested` 사장님 확인 요청 → `done` 처리 완료 |
 | 방문 신고 결과 `visitReport.result` | `valid` 맞음 · `invalid` 아님 (`done`일 때만. 허위 신고 페널티 없음) |

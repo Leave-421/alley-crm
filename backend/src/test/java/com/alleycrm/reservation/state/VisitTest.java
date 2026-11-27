@@ -81,6 +81,9 @@ class VisitTest {
     @AfterEach
     void clean() {
         clock.reset();
+        jdbc.update("DELETE FROM referral_fee"); // 소개 예약 방문 처리 때 D15가 만든다
+        jdbc.update("DELETE FROM wallet_tx");
+        jdbc.update("DELETE FROM wallet");
         jdbc.update("DELETE FROM coupon");
         jdbc.update("DELETE FROM coupon_policy");
         jdbc.update("UPDATE reservation SET course_proposal_id = NULL");

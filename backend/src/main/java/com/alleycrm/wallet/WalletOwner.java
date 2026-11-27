@@ -21,8 +21,11 @@ public record WalletOwner(String type, long id) {
         return new WalletOwner(FUND, regionId);
     }
 
-    /** 회원 잔액만 마이너스가 될 수 없다. 가게는 수수료로 마이너스가 될 수 있다(기획 11-25 (4)) */
+    /**
+     * 가게만 마이너스가 될 수 있다(수수료, 기획 11-25 (4)). 회원은 예약금보다 적으면 거절(FR-RSV-08),
+     * 상인회 기금은 충전할 수 없어 마이너스가 될 수 없다(기획 11-25 (5)).
+     */
     public boolean mayGoNegative() {
-        return !CUSTOMER.equals(type);
+        return STORE.equals(type);
     }
 }

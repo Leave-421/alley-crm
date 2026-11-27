@@ -2,6 +2,8 @@ package com.alleycrm.recommend.record;
 
 import com.alleycrm.common.error.ApiException;
 import com.alleycrm.common.error.ErrorCode;
+import com.alleycrm.recommend.domain.DayType;
+import com.alleycrm.recommend.domain.TimeBand;
 import com.alleycrm.recommend.visitor.VisitorService;
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -40,6 +42,20 @@ public class ExplorationRecordService {
             throw new ApiException(ErrorCode.NOT_FOUND);
         }
         records.insertStoreClick(visitorService.currentVisitorId(), storeId, now());
+    }
+
+    /**
+     * 오늘의 코스 노출 · 클릭 한 번(FR-CRS-07 #4, 3.3 {@code POST /course-previews}). 탐색 기록이라 정식 코스 제안 ·
+     * 소개 연결을 만들지 않는다. 손님에게 보이지 않는 가게가 하나라도 있으면 404이고 기록하지 않는다.
+     */
+    @Transactional
+    public void recordCoursePreview(CoursePreviewType type, List<Long> storeIds, DayType dayType, TimeBand timeBand) {
+        for (long storeId : storeIds) {
+            if (!records.isVisibleStore(storeId)) {
+                throw new ApiException(ErrorCode.NOT_FOUND);
+            }
+        }
+        records.insertCoursePreview(visitorService.currentVisitorId(), type, storeIds, dayType, timeBand, now());
     }
 
     /**

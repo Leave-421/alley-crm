@@ -2,7 +2,8 @@ import { http, HttpResponse } from 'msw/http';
 import { errorResponse, rejectAnonymous, rejectInvalidCsrf } from '../responses.js';
 import { getMockAccount } from '../session.js';
 
-// CONTRACTS_API.md 「1」의 가게 가입(C5) · 가게 목록 · 위치(C6) 목. 계정(C2) 목은 account.js.
+// CONTRACTS_API.md 「1」의 가게 가입(C5) · 가게 목록 · 위치(C6) · 사장님 내 가게(C22) 목. 계정(C2) 목은 account.js.
+// 목 사장님 계정의 가게는 storeId '3'(account.js).
 // 목 권역은 '1' 하나(목 상인회 계정의 regionId). 상태는 메모리에만 있어서 새로고침하면 처음으로 돌아간다.
 
 const MOCK_REGION_ID = '1';
@@ -66,6 +67,23 @@ const isMapValue = (value) =>
   value === null ||
   (typeof value === 'number' && Math.abs(value) <= 999.9999 && Math.abs(Math.round(value * 10_000) - value * 10_000) < 1e-6);
 
+/**
+ * 사장님 내 가게(C22)의 검사: 로그인 안 함 401, 사장님이 아니거나 가게가 승인 전 · 거절이면 403 forbidden_role.
+ * 통과하면 { store }, 막히면 { blocked }.
+ */
+function ownApprovedStore() {
+  const blocked = rejectAnonymous();
+  if (blocked) return { blocked };
+  const account = getMockAccount();
+  const store = account.role === 'owner' ? stores.find((item) => item.id === account.storeId) : null;
+  if (!store || !isParticipating(store)) return { blocked: errorResponse(403, 'forbidden_role', '승인된 가게의 사장님만 쓸 수 있어요.') };
+  return { store };
+}
+
+const BUSINESS_STATUSES = ['open', 'paused', 'closed'];
+const WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+const HOURS_TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+
 function decideJoin(nextStatus) {
   return (info) => {
     const blocked = rejectInvalidCsrf(info) ?? rejectNonAssociation();
@@ -80,6 +98,43 @@ function decideJoin(nextStatus) {
 }
 
 export const storeHandlers = [
+  // GET /api/v1/owner/store (C22) — 로그인한 사장님의 승인된 가게
+  http.get('/api/v1/owner/store', () => {
+    const { blocked, store: own } = ownApprovedStore();
+    return blocked ?? HttpResponse.json(toStore(own));
+  }),
+
+  // PUT /api/v1/owner/store/status (C22) — 영업 상태 · 예약 받기, 둘 다 필수
+  http.put('/api/v1/owner/store/status', async (info) => {
+    const csrf = rejectInvalidCsrf(info);
+    if (csrf) return csrf;
+    const { blocked, store: own } = ownApprovedStore();
+    if (blocked) return blocked;
+    const body = await info.request.json().catch(() => null);
+    if (!BUSINESS_STATUSES.includes(body?.businessStatus) || typeof body?.reservationEnabled !== 'boolean') {
+      return errorResponse(400, 'invalid', '영업 상태와 예약 받기를 확인해 주세요.');
+    }
+    const updated = { ...own, businessStatus: body.businessStatus, reservationEnabled: body.reservationEnabled };
+    stores = stores.map((item) => (item.id === own.id ? updated : item));
+    return HttpResponse.json(toStore(updated));
+  }),
+
+  // PUT /api/v1/owner/store/hours (C22) — 영업시간 · 휴무일. 규칙은 StoreJoinInfo와 같고 휴무일은 요일 순(mon → sun)으로 저장
+  http.put('/api/v1/owner/store/hours', async (info) => {
+    const csrf = rejectInvalidCsrf(info);
+    if (csrf) return csrf;
+    const { blocked, store: own } = ownApprovedStore();
+    if (blocked) return blocked;
+    const body = await info.request.json().catch(() => null);
+    const closedDays = body?.closedDays ?? [];
+    const validTimes = HOURS_TIME.test(body?.openTime ?? '') && HOURS_TIME.test(body?.closeTime ?? '') && body.openTime < body.closeTime;
+    const validDays = Array.isArray(closedDays) && closedDays.every((day) => WEEKDAYS.includes(day)) && new Set(closedDays).size === closedDays.length;
+    if (!validTimes || !validDays) return errorResponse(400, 'invalid', '영업시간과 휴무일을 확인해 주세요.');
+    const updated = { ...own, openTime: body.openTime, closeTime: body.closeTime, closedDays: WEEKDAYS.filter((day) => closedDays.includes(day)) };
+    stores = stores.map((item) => (item.id === own.id ? updated : item));
+    return HttpResponse.json(toStore(updated));
+  }),
+
   // GET /api/v1/stores?regionId= (C6) — 누구나. 참여 가게만, ID순
   http.get('/api/v1/stores', ({ request }) => {
     const regionId = new URL(request.url).searchParams.get('regionId');
@@ -133,3 +188,21 @@ export const storeHandlers = [
   http.post('/api/v1/store-joins/:storeId/approve', decideJoin('approved')),
   http.post('/api/v1/store-joins/:storeId/reject', decideJoin('rejected')),
 ];
+
+// 사장님 쪽 가게 가입(storeJoin.js)이 같은 가게 목록을 쓰도록 내보낸다.
+export const mockRegionId = MOCK_REGION_ID;
+export const findMockStore = (id) => stores.find((item) => item.id === id) ?? null;
+export const toMockStoreJoin = (item) => toStoreJoin(item);
+
+/** 새 가게를 더하고 id를 돌려준다. */
+export function addMockStore(fields) {
+  const id = String(Math.max(...stores.map((item) => Number(item.id))) + 1);
+  stores = [...stores, store(id, fields.name, fields.category, fields.alley, { ...fields })];
+  return id;
+}
+
+/** 가게 칸을 바꾸고 바뀐 가게를 돌려준다. */
+export function updateMockStore(id, fields) {
+  stores = stores.map((item) => (item.id === id ? { ...item, ...fields } : item));
+  return findMockStore(id);
+}

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router';
 import { getClock } from '@/api/demoClock.js';
 import { getOwnerReservations } from '@/api/ownerReservations.js';
 import Button from '@/components/Button/Button.jsx';
@@ -46,18 +46,18 @@ export default function OwnerReservationsPage() {
   const [reloadCount, setReloadCount] = useState(0);
   // 응답은 어느 요청(날짜 + 다시 불러오기 횟수)의 결과인지와 같이 둔다. 지금 요청의 결과가 아니면 불러오는 중이다.
   const requestKey = dateKey ? `${dateKey}#${reloadCount}` : null;
-  const [result, setResult] = useState({ key: null, status: 'ready', items: [], error: null });
-  const state = result.key === requestKey ? result : { status: 'loading', items: [], error: null };
+  const [result, setResult] = useState({ key: null, status: 'ready', items: [], referralFeeRate: null, error: null });
+  const state = result.key === requestKey ? result : { status: 'loading', items: [], referralFeeRate: null, error: null };
 
   useEffect(() => {
     if (!requestKey) return undefined;
     let active = true; // 날짜를 빨리 넘기면 늦게 온 앞 날짜 응답을 버린다
     getOwnerReservations(requestKey.split('#')[0])
       .then((response) => {
-        if (active) setResult({ key: requestKey, status: 'ready', items: response.items, error: null });
+        if (active) setResult({ key: requestKey, status: 'ready', items: response.items, referralFeeRate: response.referralFeeRate ?? null, error: null });
       })
       .catch((error) => {
-        if (active) setResult({ key: requestKey, status: 'error', items: [], error });
+        if (active) setResult({ key: requestKey, status: 'error', items: [], referralFeeRate: null, error });
       });
     return () => {
       active = false;
@@ -71,17 +71,31 @@ export default function OwnerReservationsPage() {
     setSearchParams(nextKey === todayKey ? {} : { date: nextKey });
   }
 
+  // 마지막으로 옮기라고 한 날짜. setSearchParams는 함수로 넘겨도 그린 때의 주소를 기준으로 해서,
+  // 화면이 다시 그려지기 전에 여러 번 누르면 한 칸만 움직인다(#241). 화면 날짜가 바뀌면(뒤로 가기 포함) 맞춰 둔다.
+  const requestedDateRef = useRef(dateKey);
+  useEffect(() => {
+    requestedDateRef.current = dateKey;
+  }, [dateKey]);
+
+  /** 날짜를 days만큼 옮긴다. 빠르게 여러 번 눌러도 누른 만큼 움직인다. */
+  function moveBy(days) {
+    const nextKey = addDays(requestedDateRef.current ?? dateKey, days);
+    requestedDateRef.current = nextKey;
+    moveTo(nextKey);
+  }
+
   /**
    * 승인 · 거절(B7) · 방문 처리(B8) 결과를 목록에 반영한다. 응답 Reservation에는 손님 이름 · 회원 여부가 없어
-   * 상태 · 방문 칸만 바꾼다. 쿠폰 사용 확인처럼 예약이 바뀌지 않으면 reservation 없이 안내만 한다.
+   * 상태 · 방문 · 쿠폰 · 소개 확정 칸만 바꾼다(거절이면 쿠폰은 적용 취소라 null). 쿠폰 사용 확인처럼 예약이 바뀌지 않으면 reservation 없이 안내만 한다.
    */
   function handleDecided(reservation, message) {
     setNotice(message);
     if (!reservation) return;
-    const { id, status, cancelReason, visitAmount = null, visitedAt = null } = reservation;
+    const { id, status, cancelReason, visitAmount = null, visitedAt = null, coupon = null, referralConfirmed = false, referralFee = null } = reservation;
     setResult((previous) => ({
       ...previous,
-      items: previous.items.map((item) => (item.id === id ? { ...item, status, cancelReason, visitAmount, visitedAt } : item)),
+      items: previous.items.map((item) => (item.id === id ? { ...item, status, cancelReason, visitAmount, visitedAt, coupon, referralConfirmed, referralFee } : item)),
     }));
   }
 
@@ -110,14 +124,14 @@ export default function OwnerReservationsPage() {
     <main className={styles.page}>
       <header className={styles.dayHead}>
         <div className={styles.dayNav}>
-          <button type="button" className={styles.navButton} onClick={() => moveTo(addDays(dateKey, -1))} aria-label="이전 날">
+          <button type="button" className={styles.navButton} onClick={() => moveBy(-1)} aria-label="이전 날">
             ‹
           </button>
           <h1 className={styles.dayTitle}>
             {isToday && <span className={styles.todayChip}>오늘</span>}
             {formatDayLabel(dateKey)}
           </h1>
-          <button type="button" className={styles.navButton} onClick={() => moveTo(addDays(dateKey, 1))} aria-label="다음 날">
+          <button type="button" className={styles.navButton} onClick={() => moveBy(1)} aria-label="다음 날">
             ›
           </button>
         </div>
@@ -135,6 +149,12 @@ export default function OwnerReservationsPage() {
       )}
 
       <p className={styles.rules}>{AUTO_RULES}</p>
+
+      {/* O-01 → O-03 '예약 운영 설정'(B10) · O-12 '가게 정보'(B24)(07-screens O-01 이동) */}
+      <nav className={styles.links} aria-label="예약 관리 바로가기">
+        <Link to="/owner/settings">예약 운영 설정 ›</Link>
+        <Link to="/owner/store">가게 정보 ›</Link>
+      </nav>
 
       {notice && (
         <p className={styles.notice} role="status">
@@ -173,7 +193,7 @@ export default function OwnerReservationsPage() {
           <ol className={styles.list} aria-label={`${formatDayLabel(dateKey)} 예약`}>
             {items.map((item) => (
               <li key={item.id}>
-                <ReservationCard reservation={item} onDecided={handleDecided} onOutdated={handleOutdated} />
+                <ReservationCard reservation={item} referralFeeRate={state.referralFeeRate} onDecided={handleDecided} onOutdated={handleOutdated} />
               </li>
             ))}
           </ol>

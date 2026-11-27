@@ -4,6 +4,7 @@ import AppLayout from '@/layouts/AppLayout.jsx';
 import { ASSOCIATION_MENU } from '@/layouts/menus.js';
 import { Link } from 'react-router';
 import PlaceholderPage from '@/pages/PlaceholderPage.jsx';
+import FundSettlementPage from '@/pages/association/settlement/FundSettlementPage.jsx';
 import StoreManagementPage from '@/pages/association/stores/StoreManagementPage.jsx';
 
 // 상인회 영역(/association). 담당 B가 children에 화면 경로를 더하고, 자리표시를 실제 화면으로 바꾼다.
@@ -29,7 +30,9 @@ export const associationRoutes = [
           },
           { path: 'stores/manage', handle: { title: '가게 관리' }, element: <StoreManagementPage /> }, // A-05 B19
           { path: 'flow', element: <PlaceholderPage screenId="A-03" title="방문 흐름" /> },
-          { path: 'settlement', element: <PlaceholderPage screenId="A-04" title="공동 기금 · 정산" /> },
+          { path: 'settlement', handle: { title: '공동 기금 · 정산' }, element: <FundSettlementPage /> }, // A-04 B18
+          // A-07 공동 기금 적립 내역(A28). A-04 '공동 기금 적립 내역'의 진입 주소. A가 element만 바꾼다
+          { path: 'settlement/fund', handle: { title: '공동 기금 적립 내역' }, element: <PlaceholderPage screenId="A-07" title="공동 기금 적립 내역" /> },
         ],
       },
     ],

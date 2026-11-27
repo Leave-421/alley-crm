@@ -2,6 +2,7 @@ package com.alleycrm.notification;
 
 import com.alleycrm.common.error.ApiException;
 import com.alleycrm.common.error.ErrorCode;
+import com.alleycrm.customer.CustomerService;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -30,11 +31,13 @@ public class NotificationService {
     private final JdbcTemplate jdbc;
     private final Clock clock;
     private final ObjectMapper json;
+    private final CustomerService customers;
 
-    NotificationService(JdbcTemplate jdbc, Clock clock, ObjectMapper json) {
+    NotificationService(JdbcTemplate jdbc, Clock clock, ObjectMapper json, CustomerService customers) {
         this.jdbc = jdbc;
         this.clock = clock;
         this.json = json;
+        this.customers = customers;
     }
 
     /** 회원 · 사장님 계정에게 */
@@ -47,6 +50,23 @@ public class NotificationService {
     @Transactional
     public void notifyGuestReservation(long reservationId, String type, Map<String, Object> payload) {
         insert(NotificationType.RECIPIENT_GUEST_RESERVATION, reservationId, type, payload);
+    }
+
+    /** 예약한 손님에게: 회원이면 그 계정, 비회원이면 그 예약(FR-NTF-02) */
+    @Transactional
+    public void notifyReservationCustomer(long reservationId, long customerId, String type, Map<String, Object> payload) {
+        customers.memberAccountId(customerId).ifPresentOrElse(
+                accountId -> notifyAccount(accountId, type, payload),
+                () -> notifyGuestReservation(reservationId, type, payload));
+    }
+
+    /** 그 예약에 대해 이 종류의 알림을 이미 만들었는지(payload.reservationId 기준) */
+    @Transactional(readOnly = true)
+    boolean existsForReservation(String type, long reservationId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+                SELECT EXISTS (SELECT 1 FROM notification
+                               WHERE type = ? AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.reservationId')) = ?)
+                """, Boolean.class, type, String.valueOf(reservationId)));
     }
 
     /** 계정의 알림, 최근 것부터 */

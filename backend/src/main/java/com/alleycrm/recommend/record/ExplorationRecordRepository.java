@@ -1,9 +1,12 @@
 package com.alleycrm.recommend.record;
 
+import com.alleycrm.recommend.domain.DayType;
+import com.alleycrm.recommend.domain.TimeBand;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -26,6 +29,16 @@ class ExplorationRecordRepository {
         Integer count = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM store WHERE id = ? AND join_status = 'approved'", Integer.class, storeId);
         return count != null && count > 0;
+    }
+
+    /** 코스의 가게는 순서대로 JSON 숫자 배열로 둔다(06-data COURSE_PREVIEW_EVENT). */
+    void insertCoursePreview(long visitorId, CoursePreviewType type, List<Long> storeIds, DayType dayType,
+            TimeBand timeBand, LocalDateTime createdAt) {
+        String json = storeIds.stream().map(String::valueOf).collect(Collectors.joining(",", "[", "]"));
+        jdbc.update("""
+                INSERT INTO course_preview_event (visitor_id, type, store_ids, day_type, time_band, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, visitorId, type.code(), json, dayType.code(), timeBand.code(), createdAt);
     }
 
     void insertStoreClick(long visitorId, long storeId, LocalDateTime clickedAt) {

@@ -1,6 +1,7 @@
 package com.alleycrm.customer;
 
 import java.util.List;
+import java.util.Optional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,5 +49,11 @@ public class CustomerService {
     public List<Long> guestIdsByPhone(String phone) {
         return customers.findByTypeAndPhoneAndPurgedAtIsNull(Customer.TYPE_GUEST, phone).stream()
                 .map(Customer::getId).toList();
+    }
+
+    /** 회원 손님이면 그 계정 ID, 비회원이면 비어 있다(알림 받는 쪽을 정할 때, C14) */
+    @Transactional(readOnly = true)
+    public Optional<Long> memberAccountId(long customerId) {
+        return customers.findById(customerId).map(Customer::getAccountId);
     }
 }

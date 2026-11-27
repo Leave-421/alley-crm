@@ -33,7 +33,12 @@ public class Coupon {
     @Column(name = "coupon_policy_id", updatable = false)
     private Long couponPolicyId;
 
-    @Column(name = "target_store_id", nullable = false, updatable = false)
+    /** 상인회 쿠폰(E19)만: 받은 상인회 행사. 가게 쿠폰은 null. */
+    @Column(name = "association_event_id", updatable = false)
+    private Long associationEventId;
+
+    /** 가게 쿠폰만. 상인회 쿠폰은 null(쓸 수 있는 가게는 행사가 정한다, CONTRACTS_API 3.8). */
+    @Column(name = "target_store_id", updatable = false)
     private Long targetStoreId;
 
     @Column(name = "source_base_store_id", updatable = false)
@@ -92,6 +97,25 @@ public class Coupon {
         coupon.expiresAt = now.plus(Duration.ofHours(24L * event.getValidDays()));
         coupon.status = CouponStatus.DOWNLOADED;
         return coupon;
+    }
+
+    /**
+     * 상인회 쿠폰 받기(FR-CPN-13, CONTRACTS_API 3.9). 가게 · 가게 행사 칸은 비우고, 만료 시각은 행사의 쓸 수 있는 기간 끝이다.
+     * 발급 수는 부르는 쪽이 먼저 조건부 UPDATE로 올린다.
+     */
+    public static Coupon claimAssociation(long customerId, AssociationCouponEvent event, Instant now) {
+        Coupon coupon = new Coupon();
+        coupon.customerId = customerId;
+        coupon.issuerKind = CouponIssuer.ASSOCIATION;
+        coupon.associationEventId = event.getId();
+        coupon.downloadedAt = now;
+        coupon.expiresAt = event.getValidEndAt();
+        coupon.status = CouponStatus.DOWNLOADED;
+        return coupon;
+    }
+
+    public Long getAssociationEventId() {
+        return associationEventId;
     }
 
     public Long getId() {

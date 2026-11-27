@@ -28,13 +28,15 @@ public class ReservationStateService {
     private final JdbcTemplate jdbc;
     private final Clock clock;
     private final ApplicationEventPublisher events;
+    private final com.alleycrm.setting.SettingService settings;
 
     public ReservationStateService(ReservationRepository reservations, JdbcTemplate jdbc, Clock clock,
-            ApplicationEventPublisher events) {
+            ApplicationEventPublisher events, com.alleycrm.setting.SettingService settings) {
         this.reservations = reservations;
         this.jdbc = jdbc;
         this.clock = clock;
         this.events = events;
+        this.settings = settings;
     }
 
     /** 사장님 승인: 신청 → 확정(FR-RSV-03 #1). 다른 가게 예약은 없는 것처럼 404 */
@@ -49,6 +51,59 @@ public class ReservationStateService {
         r.confirm(now());
         publish(r, ReservationStatus.REQUESTED, false);
         return r;
+    }
+
+    /**
+     * 손님 취소(D6, FR-RSV-06): 신청 · 확정 예약만. 다른 손님 예약은 없는 것처럼 404(#5).
+     * <ul>
+     *   <li>예약 시각 24시간 전까지: 100% 환불(#1 · #4, 가게 마감과 상관없이 보장)</li>
+     *   <li>그 뒤 가게 취소 마감(예약 시각 − cancel_deadline_hours) 전: 가게 비율, 없으면 권역 설정값(#2). 1원 미만 버림</li>
+     *   <li>마감이 지남: 거절(#3, conflict)</li>
+     * </ul>
+     * 환불 · 쿠폰 적용 취소 · 알림은 상태 변경 이벤트를 받는 쪽이 한다.
+     */
+    @Transactional
+    public Reservation cancelByCustomer(long customerId, long reservationId) {
+        Reservation r = reservations.findForUpdate(reservationId)
+                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND));
+        if (r.getCustomerId() != customerId) {
+            throw new ApiException(ErrorCode.NOT_FOUND);
+        }
+        if (!ReservationStatus.REQUESTED.equals(r.getStatus()) && !ReservationStatus.CONFIRMED.equals(r.getStatus())) {
+            throw new ApiException(ErrorCode.CONFLICT);
+        }
+        Instant now = now();
+        String from = r.getStatus();
+        Integer refund = customerCancelRefund(r.getStoreId(), r.getStartAt(), r.getDepositAmount(), now);
+        if (refund == null) {
+            throw new ApiException(ErrorCode.CONFLICT); // 가게 취소 마감이 지남(#3)
+        }
+        r.cancelByCustomer(refund, now);
+        reservations.saveAndFlush(r); // 리스너가 DB에서 refund_amount를 읽는다
+        publish(r, from, false);
+        return r;
+    }
+
+    /**
+     * 지금 손님이 취소하면 돌려받을 예약금(D6 규칙). 마감이 지나 취소할 수 없으면 null.
+     * 내 예약 목록(D13)이 '취소할 때 환불 금액' 안내에 같이 쓴다. 상태는 보지 않는다(부르는 쪽이 신청 · 확정만).
+     */
+    public Integer customerCancelRefund(long storeId, Instant startAt, int depositAmount, Instant now) {
+        if (!now.isAfter(startAt.minus(java.time.Duration.ofHours(24)))) {
+            return depositAmount;
+        }
+        java.util.Map<String, Object> s = jdbc.queryForMap(
+                "SELECT region_id, cancel_deadline_hours, late_cancel_refund_rate FROM store WHERE id = ?", storeId);
+        Instant deadline = startAt.minus(java.time.Duration.ofHours(((Number) s.get("cancel_deadline_hours")).longValue()));
+        if (!now.isBefore(deadline)) {
+            return null;
+        }
+        java.math.BigDecimal rate = s.get("late_cancel_refund_rate") != null
+                ? (java.math.BigDecimal) s.get("late_cancel_refund_rate")
+                : settings.getDecimal(((Number) s.get("region_id")).longValue(),
+                        com.alleycrm.setting.SettingKey.LATE_CANCEL_REFUND_RATE);
+        return rate.multiply(java.math.BigDecimal.valueOf(depositAmount))
+                .setScale(0, java.math.RoundingMode.DOWN).intValueExact();
     }
 
     /** 사장님 거절: 신청 → 취소(가게 거절)(FR-RSV-03 #2). 환불 · 쿠폰은 이벤트를 받는 쪽이 한다 */

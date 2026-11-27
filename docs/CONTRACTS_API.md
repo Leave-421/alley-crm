@@ -243,7 +243,16 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 | `type` | 받는 쪽 | `payload` | 만드는 곳 |
 | --- | --- | --- | --- |
 | `reservation_requested` | 그 가게 사장님 | `{ "reservationId" }` | 예약 신청 커밋 뒤(`ReservationRequestedEvent`) |
-| 나머지 종류 | — | 만드는 기능(D · E 이벤트)이 생길 때 C14에서 이 표에 더한다 | — |
+| `reservation_confirmed` | 예약한 손님 | `{ "reservationId" }` | 승인 커밋 뒤(`ReservationStatusChangedEvent` → `confirmed`) |
+| `reservation_rejected` | 예약한 손님 | `{ "reservationId", "nextCourseReservationIds": ["string"] }` | 거절 · 자동 거절 커밋 뒤(`canceled` + `store_rejected`). `nextCourseReservationIds`는 이 예약을 기준 가게 예약으로 둔 다음 코스 예약 중 그대로 남은(신청 · 확정) 것, 없으면 `[]`(FR-NTF-03 #2) |
+| `reservation_canceled` | 예약한 손님 | `{ "reservationId" }` | 자동 취소 커밋 뒤(`canceled` + `auto_canceled`). 손님이 스스로 취소한 것(`customer_canceled`)은 알림을 만들지 않는다 |
+| `reminder` | 예약한 손님 | `{ "reservationId" }` | 자동 작업 `reservation_reminder`: 방문 일시가 30분 안으로 들어온 확정 예약마다 한 번. 화면은 이 알림에서 늦을 것 같아요(G-07)로 보낸다(FR-NTF-03 #3) |
+| `store_join_result` | 그 가게 사장님 | `{ "storeId", "joinStatus" }` | 가입 승인 · 거절 커밋 뒤(`StoreJoinDecidedEvent`) |
+| `association_coupon_opened` | 회원 계정 전부 | `{ "associationCouponEventId" }` | 3.9 「행사 알림」 |
+| `coupon_status` | 회원 | `{ "couponId", "status" }` (`used` · `expired`) | **미연결.** E14가 사용 완료 · 만료 때 이벤트를 내보내면 C14가 리스너를 단다. 비회원은 쿠폰이 없어 만들지 않는다(FR-NTF-03 #4 · #5) |
+| `change_requested` · `change_approved` · `change_rejected` · `delay_reported` · `next_store_recommended` · `visit_amount_recorded` · `visit_report_check_requested` | — | — | **미연결.** 그 기능(예약 변경 · 지연 입력 D, 다음 가게 추천 E, 방문 금액 D21, 신고 C23)을 만드는 PR이 이벤트를 내보내고 이 표에 줄을 더한다 |
+
+"예약한 손님"은 회원이면 그 계정(`account`), 비회원이면 그 예약(`guest_reservation`)이다. 기능 쪽은 `notifyReservationCustomer(reservationId, customerId, type, payload)`로 같은 규칙을 쓴다.
 
 #### `GET /api/v1/notifications` — 내 알림 목록
 
@@ -262,7 +271,7 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 #### 서버 내부: `NotificationService` (D · E가 씀)
 
 - 알림은 `NotificationService`로만 만든다. `notification` 테이블에 직접 넣지 않는다.
-- `notifyAccount(accountId, type, payload)` · `notifyGuestReservation(reservationId, type, payload)`. `payload`는 `Map<String, Object>`.
+- `notifyAccount(accountId, type, payload)` · `notifyGuestReservation(reservationId, type, payload)` · `notifyReservationCustomer(reservationId, customerId, type, payload)`(예약한 손님에게, 회원 · 비회원을 알아서 고른다). `payload`는 `Map<String, Object>`.
 - **트랜잭션 커밋 뒤에 만든다.** 기능 쪽은 이벤트를 내보내고, C14가 `@TransactionalEventListener`(커밋 뒤)로 받아 알림을 만든다. 롤백된 일에는 알림이 남지 않는다.
 - 생성 시각은 서버 시계(D18)를 따른다.
 
@@ -275,7 +284,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 
 `app.demo-tools.enabled=true`(환경 변수 `DEMO_TOOLS_ENABLED=true`)일 때만 있다. 기본은 꺼져 있고, 꺼져 있으면 `404 not_found`. 실제 운영에서는 켜지 않는다. 서버의 모든 시간 규칙(자동 거절 · 자동 취소 · 쿠폰 만료 · 리마인드 · 파기)이 이 시계를 따른다.
 
-응답 `ClockResponse`: `{ "now": "2026-11-28T09:00:00Z", "offsetSeconds": 86400 }` — 지금 서버 시각과 실제 시각과의 차이(초)
+응답 `ClockResponse`: `{ "now": "2026-11-28T09:00:00Z", "offsetSeconds": 86400, "jobs": { "auto_reject": 1, "auto_cancel": 0 } }` — 지금 서버 시각, 실제 시각과의 차이(초), 시각을 바꾼 뒤 바로 돈 자동 작업(D7)의 처리 건수(조회 · 되돌리기는 빈 객체, 실패한 작업은 -1)
 
 #### `GET /api/v1/demo/clock` — 지금 서버 시각
 
@@ -315,7 +324,8 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
   "courseRootId": null,
   "fromRecommendation": false,
   "visitAmount": null,
-  "visitedAt": null
+  "visitedAt": null,
+  "refundAmount": null
 }
 ```
 
@@ -325,6 +335,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 - `coupon`: 적용된 쿠폰이 없으면 `null`(비회원은 항상 `null`). 혜택 칸의 뜻은 3.2 CouponEvent와 같다(정률 할인은 `discountAmount: null`). 실제 할인액은 방문 처리 때 결제 금액으로 정한다(E14, FR-CPN-07).
 - `courseRootId`: '다음 코스로 예약하기'로 만든 예약만 기준 가게 예약 id(D12). 아니면 `null`.
 - `fromRecommendation`: 사장님 화면의 '추천으로 왔어요' 표시용. **보낸 가게 id · 이름은 어떤 응답에도 넣지 않는다**(FR-CUS-05).
+- `refundAmount`: 손님 취소(D6) 때 돌려준 예약금(원). 손님 취소가 아니면 `null`.
 - `visitAmount` · `visitedAt`: 방문 처리(D11) 때 사장님이 넣은 결제 금액(쿠폰 할인 전, 원)과 처리 시각. 방문 전이면 `null`.
 - 응답에 손님 이름 · 전화번호는 넣지 않는다. 사장님용 목록(D4)은 가린 이름만 따로 정한다.
 
@@ -359,7 +370,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
   - `not_found`: 없는 가게 · 쿠폰 · 기준 예약(남의 것 포함)
   - `slot_unavailable`: 예약을 받을 수 없는 시각 — 지난 시각, 예약 가능 기간 밖, 영업시간 밖 · 휴무일, 슬롯이 다 참, 가게가 휴업 · 중단 · 예약 받기 멈춤
   - `insufficient_balance`: 회원 잔액이 예약금보다 적음(화면은 충전 안내, FR-RSV-08)
-  - `conflict`: 다음 코스 예약이 기준 예약과 겹치거나 같은 날 기준 예약보다 이름(D12), 쓸 수 없는 쿠폰
+  - `conflict`: 다음 코스의 기준 예약이 취소 · 거절됨, 같은 날 기준 예약 시각과 같거나 이름, 기준 예약과 같은 가게, 정식 제안이 그 기준 예약 · 그 가게 것이 아님(D12, 기획 11-26 (2)), 쓸 수 없는 쿠폰
   - `forbidden_role` · `csrf_invalid`
 
 ### 예약 신청 처리 단계 (서버 내부, D2 뼈대)
@@ -371,7 +382,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 | 10 | 입력 검증 | D2 | 필수 값 · 인원 · 공유 동의 |
 | 20 | 손님 식별 | C4 | 회원 → 계정의 손님, 비회원 → 전화번호로 손님 찾기 · 만들기, 익명 방문자 연결 |
 | 30 | 예약 가능 확인 | D2 · D5 | 가게 상태 · 영업시간 · 휴무일 · 기간 · 슬롯 · 최대 인원 |
-| 40 | 코스 연결 | D12 | 기준 예약 · 제안 확인, 시간 규칙, 보낸 가게 |
+| 40 | 코스 연결 | D12 | 기준 예약(같은 손님 · 취소 아님) · 시간(같은 날은 기준 시각보다 늦게, 겹침 판정 없음) · 정식 제안 확인. 마감(기준 예약일 당일, 신청 시각 기준) 전이면 제안 id · 보낸 가게를 남겨 소개 후보, 지났으면 코스로만 연결 |
 | 60 | 쿠폰 확인 | E13 | 쿠폰 확인 · 잠금(3.5) |
 | 70 | 예약금 금액 | D10 | 인원당 예약금 × 인원을 정한다(예약에 저장) |
 | 80 | 저장 | D2 | 예약번호 발급 · 저장 |
@@ -396,6 +407,56 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 | 승인 전 · 거절 · 탈퇴 가게 | 손님에게 없는 가게로 보고 `404 not_found` | FR-STO-01 |
 | 단계 30의 D5 검사 | 한 팀 최대 인원 초과 → `invalid`. 영업시간 밖 · 휴무일 · 슬롯 단위에 안 맞는 시각 → `slot_unavailable` (아래 「슬롯 계산」) | D5 (#71) |
 
+### 손님 예약 취소 (D6)
+
+#### `POST /api/v1/reservations/{id}/cancel` — 회원 손님 취소 (G-04, FR-RSV-06)
+
+- 역할: 회원 손님(내 예약). `X-XSRF-TOKEN` 필요. 본문 없음. 다른 손님 예약은 `404 not_found`(#5).
+- `requested` · `confirmed` → `canceled`, `cancelReason: "customer_canceled"`, `refundAmount` 기록. 응답 `200`: `Reservation`.
+
+| 취소 시각 | 환불 |
+| --- | --- |
+| 예약 시각 24시간 전까지 | 예약금 100%(#1). 가게 취소 마감과 상관없이 보장(#4) |
+| 그 뒤, 가게 취소 마감(예약 시각 − `cancelDeadlineHours`) 전 | 예약금 × 가게 비율(`lateCancelRefundRate`, 없으면 권역 설정값 0.5), 1원 미만 버림(#2) |
+| 마감이 지남 | 거절 `409 conflict`(#3) |
+
+- 환불은 상태 변경 이벤트를 받은 예약금 환불(D10)이 같은 트랜잭션에서 한다. 회원은 잔액으로, 비회원은 전화번호 기록으로. 쿠폰 적용 취소(E) · 알림(C)도 같은 이벤트로.
+- 실패: `not_found` · `conflict`(신청 · 확정이 아님, 마감 지남) · `unauthorized` · `forbidden_role` · `csrf_invalid`
+- **비회원 취소:** 비회원 예약 조회 세션(C13)이 생기면 같은 서비스 `ReservationStateService.cancelByCustomer(customerId, reservationId)`를 부른다(규칙 · 응답 같음).
+
+### 내 예약 · 코스 묶음 (D13)
+
+#### `GET /api/v1/reservations/mine` — 내 예약 (G-04, FR-RSV-12)
+
+- 역할: 회원 손님(내 예약만). 비회원은 비회원 예약 조회(C13).
+- 응답 `200`: 묶음 목록. 묶음은 가장 이른 예약 시각 순, 묶음 안은 시간순.
+
+```json
+{
+  "items": [
+    {
+      "courseRootId": "10",
+      "reservations": [
+        { "id": "10", "reservationNo": "K7Q2M9XA", "storeId": "1", "storeName": "골목 카페", "startAt": "2026-11-28T09:00:00Z",
+          "partySize": 2, "status": "canceled", "cancelReason": "store_rejected", "requestedAt": "2026-11-25T00:00:00Z",
+          "depositAmount": 10000, "refundAmount": null, "visitAmount": null, "visitedAt": null, "courseRootId": null,
+          "coupon": null, "cancelable": false, "refundIfCanceled": null },
+        { "id": "11", "storeName": "골목 주점", "startAt": "2026-11-28T11:00:00Z", "status": "requested", "courseRootId": "10",
+          "cancelable": true, "refundIfCanceled": 10000 }
+      ]
+    },
+    { "courseRootId": null, "reservations": [ { "id": "12" } ] }
+  ]
+}
+```
+
+  - **묶음:** '다음 코스로 예약하기'로 만든 예약(`courseRootId` 있음)은 기준 예약과 한 묶음(묶음의 `courseRootId` = 기준 예약 id). 따로 한 일반 예약은 혼자 한 묶음(`courseRootId: null`)(#3).
+  - 기준 예약이 취소 · 거절돼도 묶음은 그대로이고 그 예약의 `status`가 `canceled`로 보인다. 다음 코스 예약은 자동 취소하지 않는다(#1 · #2). 거절 때 '다음 코스는 그대로' 알림은 C14가 `reservation_rejected`에서 보낸다.
+  - `cancelable` · `refundIfCanceled`: 지금 취소할 수 있는지와 그때 돌려받는 예약금(D6 규칙: 24시간 전 100%, 마감 전 가게 비율, 마감 뒤 취소 불가 → `false` · `null`). 화면의 '취소할 때 환불 금액' 안내(G-04).
+  - `refundAmount`: 이미 손님 취소한 예약의 실제 환불액.
+  - 보낸 가게 · 수수료는 넣지 않는다(FR-CUS-05, 11-25 (5)).
+- 실패: `unauthorized` · `forbidden_role`(회원이 아님)
+
 ### 예약 운영 설정 · 슬롯 (D5)
 
 #### 슬롯 계산 (서버 내부 `SlotRules`, 신청 검사 · 예약 가능 시간이 같이 씀)
@@ -406,6 +467,8 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 - 모든 날짜 · 요일은 운영 시간대(Asia/Seoul).
 
 #### `GET /api/v1/stores/{storeId}/available-slots?date=2026-11-28` — 예약 가능 시간 (G-02)
+
+- 선택 `after`(UTC 시각): 다음 코스 시간 제안(D12, FR-RSV-11 #2). 기준 예약 시각을 넣으면 **같은 날**은 그보다 늦은 슬롯만 돌려준다. 다른 날은 영향 없음.
 
 - 역할: 누구나(로그인 불필요).
 - 응답 `200`:
@@ -475,7 +538,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
       "id": "string", "reservationNo": "K7Q2M9XA", "startAt": "2026-11-28T09:00:00Z", "partySize": 2,
       "status": "requested", "cancelReason": null, "requestedAt": "2026-11-27T07:40:00Z", "requestNote": null,
       "depositAmount": 10000, "customerType": "guest", "maskedName": "김*코", "fromRecommendation": true,
-      "visitAmount": null, "visitedAt": null,
+      "visitAmount": null, "visitedAt": null, "referralConfirmed": false, "referralFee": null,
       "coupon": { "couponId": "string", "benefitType": "fixed_discount", "discountAmount": 5000, "discountPercent": null, "maxDiscountAmount": null, "serviceName": null }
     }
   ]
@@ -487,6 +550,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
   - `fromRecommendation`: 정식 코스 제안으로 온 예약이면 `true`.
   - `visitAmount` · `visitedAt`: 방문 처리(D11) 뒤에만 값. 방문 전이면 `null`.
   - `coupon`: 적용 · 사용된 쿠폰(`Reservation.coupon`과 같은 모양, E14 `appliedCouponFor`). 없으면 `null`. 여기의 `discountAmount`는 **쿠폰 행사의 할인 금액**이고 실제로 깎은 금액이 아니다(방문 처리 응답의 `couponDiscountAmount`). O-01 '쿠폰 사용 확인' 버튼 표시에 쓴다.
+  - `referralConfirmed` · `referralFee`: 이 예약이 소개로 확정됐는지(방문 처리 때 D15가 수수료를 만들면 `true`)와 확정된 수수료(원). 소개가 아니거나 방문 전이면 `false` · `null`. 보낸 가게는 넣지 않는다.
   - `referralFeeRate`: 소개 수수료율(설정값, NFR-04). 방문 처리 화면의 수수료 미리보기용. 상세에도 있다.
   - 손님 등급(FR-CUS-04)은 고객 카드(C)가 만든 뒤 더한다.
 - 실패: `invalid`(date 없음 · 형식) · `unauthorized` · `forbidden_role`
@@ -520,6 +584,20 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 
 방문 처리된 예약은 바꾸지 않는다(FR-RSV-02 #2). 사장님 처리와 겹쳐도 행을 잠그고 상태를 다시 확인해 한 번만 바뀐다.
 
+#### 자동 작업 스케줄 (서버 내부, D7, NFR-06)
+
+`ScheduledJob`(이름 · `run()` → 처리 건수) 빈을 `ScheduledJobRunner`가 **1분마다** 모두 돈다(`app.scheduler.enabled` · `interval`, 환경 변수 `SCHEDULER_ENABLED`, 기본 켜짐). 한 작업이 실패해도 나머지는 돈다. 각 작업은 서버 시계(D18)로 대상을 찾고, 여러 번 돌아도 결과가 같다.
+
+| 이름 | 하는 일 | 담당 |
+| --- | --- | --- |
+| `auto_reject` | `autoRejectDue()` | D3 |
+| `auto_cancel` | `autoCancelDue()` | D4 |
+| `coupon_expiry` | `CouponExpiryService.expireDue()` | E14 |
+| `fund_budget_release` | `FundBudgetService.releaseDue()` | D20 |
+| (C12) | 비회원 정보 파기 — C가 자기 패키지에 `ScheduledJob` 빈을 하나 더하면 같이 돈다 | C12 |
+
+시연 시계(D18)를 바꾸면 그 자리에서 한 번 더 돈다(아래 「시연용 시각 조작」의 `jobs`). 테스트에서는 주기 실행을 끄고 `runAll()`을 직접 부른다.
+
 #### 상태 변경 이벤트 `ReservationStatusChangedEvent` (서버 내부)
 
 상태를 바꾸는 곳은 `ReservationStateService` 하나다. 바꿀 때마다 `ReservationStatusChangedEvent(reservationId, storeId, customerId, fromStatus, toStatus, cancelReason, byScheduler)`를 상태를 바꾼 트랜잭션 안에서 내보낸다.
@@ -528,14 +606,14 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 | --- | --- | --- |
 | 예약금 환불 (D10 · D6) | `@EventListener` (같은 트랜잭션, 실패하면 상태 변경도 취소) | `store_rejected` → 100% 환불, `auto_canceled` → 환불 없음(05-policy 「예약 상태」). 손님 취소는 D6 |
 | 쿠폰 적용 취소 (E) | `@EventListener` | 방문 전 취소면 적용 쿠폰 → `apply_canceled`(30일 제한 유지) |
-| 알림 (C14 · C15) | `@TransactionalEventListener` (커밋 뒤) | 승인 · 거절 알림 |
+| 알림 (C14 · C15) | `@TransactionalEventListener` (커밋 뒤) | 확정 · 거절 · 자동 취소 알림(1절 「알림」 표) |
 
 #### `POST /api/v1/owner/reservations/{id}/visit` — 방문 처리 (D11)
 
 - 역할: 사장님(내 가게 예약). `X-XSRF-TOKEN` 필요.
 - 요청: `{ "visitAmount": 30000 }` — 손님이 낸 결제 금액(**쿠폰 할인 전**, 원). 쿠폰 할인 · 수수료는 서버가 계산한다(FR-RSV-09).
 - `confirmed` → `visited`. `visitAmount` · `visitedAt`을 남긴다.
-- 응답 `200`: `Reservation`(`coupon` 채움) + **`couponDiscountAmount`**: 이 방문 금액에 실제로 깎은 쿠폰 할인액(원, E14 `discountFor`). 쿠폰이 없으면 `null`. 예: 정액 5,000원 쿠폰, 방문 금액 4,000원 → 4,000(FR-CPN-07). 소개 여부 · 수수료는 E15 · D15 뒤에 더한다.
+- 응답 `200`: `Reservation`(`coupon` 채움) + **`couponDiscountAmount`**: 이 방문 금액에 실제로 깎은 쿠폰 할인액(원, E14 `discountFor`). 쿠폰이 없으면 `null`. 예: 정액 5,000원 쿠폰, 방문 금액 4,000원 → 4,000(FR-CPN-07). + **`referralConfirmed`**(소개로 확정됐는지) · **`referralFee`**(확정된 수수료, 원, 소개가 아니면 `null`). 방문 처리와 같은 트랜잭션에서 D15가 만든 값이다(O-01 처리 결과, B8).
 - 쿠폰은 바꾸지 않는다. 적용된 쿠폰은 '예약에 적용됨' 그대로이고, 사용 완료는 사장님이 따로 확인한다(FR-RSV-09 #3, FR-CPN-08).
 - 실패:
   - `invalid` — `visitAmount` 없음 · 음수 · 10,000,000 초과(FR-RSV-09 #2)
@@ -549,13 +627,28 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 
 | 받는 쪽 | 받는 방법 | 할 일 |
 | --- | --- | --- |
-| 소개 판정 (E15) | `@EventListener` (같은 트랜잭션) | `courseProposalId`가 있으면 소개 확정(예약 건당 1번), 수락률 분자 |
+| 소개 판정 (E15) | 받지 않음 | 판정은 신청 때 D12(단계 40: 마감 전이면 제안 id · 보낸 가게를 남겨 소개 후보), 확정은 방문 처리 때 D15(예약 건당 한 번 `referral_fee`). 따로 저장하지 않는다. 끝까지 확인은 E15 `ReferralJudgementTest` |
 | 소개 수수료 (D15) | `@EventListener` | 소개 확정이면 (방문 금액 − 쿠폰 할인) × 수수료율 → 가게 → 기금(FR-STL-02) |
 | 쿠폰 할인 계산 (E14) | `@EventListener` | 적용 쿠폰의 실제 할인액 기록(사용 완료로 바꾸지 않음) |
 | 방문 금액 알림 (D21 · C14) | `@TransactionalEventListener` (커밋 뒤) | 회원에게 방문 금액 알림(FR-STL-07) |
 | 고객 카드 · 방문 횟수 (C) | `@EventListener` 또는 커밋 뒤 | 마지막 방문 · 방문 횟수 |
 
 `senderStoreId`는 서버 안에서만 쓴다. 응답 · 알림에 내보내지 않는다(FR-CUS-05).
+
+#### 소개 수수료 (서버 내부, D15)
+
+`ReferralFeeListener`가 `VisitProcessedEvent`를 `@EventListener`로 받아 방문 처리와 같은 트랜잭션에서 만든다(실패하면 방문 처리도 취소).
+
+| 항목 | 규칙 |
+| --- | --- |
+| 대상 | `courseProposalId` · `senderStoreId`가 있는 예약(소개 후보, D12)만. 예약 건당 한 번(`uk_referral_fee_reservation`, FR-STL-01 #8) |
+| 계산 금액 | 방문 금액 − 실제 쿠폰 할인(E14 `discountFor`). 서비스 제공 쿠폰은 할인 0(FR-STL-02 #3) |
+| 수수료 | 계산 금액 × 수수료율(설정값 `referral_fee_rate`, 그 가게 권역). **1원 미만 버림.** 수수료율은 생길 때 값을 `fee_rate`에 남긴다(NFR-04 #1) |
+| 돈 | 받은 가게 지갑 → 권역 공동 기금(`referral_fee_charged` · `fund_deposited`, 예약 id 남김). 가게 잔액이 모자라도 빼서 마이너스가 될 수 있다(기획 11-25 (4)) |
+| 쿠폰 비용 | `coupon_cost`에 따로 기록. 가게 쿠폰만(상인회 쿠폰은 기금이 내므로 0, 11-25 (5)) |
+| 정산 달 | 방문 처리된 달(운영 시간대 Asia/Seoul) `YYYY-MM` |
+
+수수료 내역 조회 API는 D16에서 이 절에 더한다.
 
 #### 정책에 따라 정한 것 (D3 · D4)
 
@@ -567,9 +660,89 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 | 방문 금액 범위 (D11) | 0 ~ 10,000,000원. 0원 방문도 기록할 수 있다(쿠폰으로 전액 할인 등) | 입력 실수 방지. 기획에 상한 없음 |
 | 방문 처리 시각 제한 (D11) | 두지 않는다. 확정 예약이면 예약 시각 전 · 후 언제든(자동 취소되기 전까지) | FR-RSV-09 "손님이 왔을 때" |
 
+### 사장님 소개 수수료 내역 · 소개 실적 (D16)
+
+내 가게는 로그인 계정으로 정한다. **보낸 가게 id · 이름은 넣지 않는다**(FR-CUS-05). 수수료 행은 D15가 방문 처리 때 만든다.
+
+#### `GET /api/v1/owner/referral-fees?month=2026-11` — 월별 수수료 내역 (O-08 · O-15, FR-STL-03)
+
+- 역할: 사장님. `month`(필수, `YYYY-MM`)는 정산 달 = 방문 처리된 달.
+- 응답 `200`:
+
+```json
+{
+  "month": "2026-11",
+  "settlementStatus": null,
+  "referralFeeRate": 0.04,
+  "count": 1,
+  "totalFee": 1000,
+  "totalCouponCost": 5000,
+  "items": [
+    { "reservationId": "string", "reservationNo": "K7Q2M9XA", "maskedName": "김*코", "visitedAt": "2026-11-10T10:00:00Z",
+      "visitAmount": 30000, "couponDiscount": 5000, "feeBase": 25000, "feeRate": 0.04, "feeAmount": 1000, "couponCost": 5000 }
+  ]
+}
+```
+
+  - `settlementStatus`: 그 달 월 정산(D17) 상태 `aggregated` · `confirmed`, 아직 없으면 `null`(화면의 '잠정').
+  - `referralFeeRate`: 지금 설정값. 건별 `feeRate`는 그 수수료가 생길 때 값이다(NFR-04).
+  - `couponCost`: 내 가게가 낸 쿠폰 비용(수수료와 따로, FR-STL-02).
+- 실패: `invalid`(month 형식) · `unauthorized` · `forbidden_role`
+
+#### `GET /api/v1/owner/referral-stats?month=2026-11` — 소개 실적 (O-08, FR-STL-04)
+
+- 역할: 사장님. `month`는 선택(없으면 전체 기간).
+- 응답 `200`: `{ "month": "2026-11 | null", "sentCount": 3, "receivedCount": 1 }`
+  - `sentCount`: 내 가게 예약에서 만든 코스 제안으로 확정된 소개 수. 내 예약이 취소 · 미방문이어도 센다. 보낸 가게는 돈을 받지 않는다.
+  - `receivedCount`: 내 가게가 받은(수수료를 낸) 확정 소개 수.
+- 실패: `invalid` · `unauthorized` · `forbidden_role`
+
+### 상인회 월 정산 (D17)
+
+권역은 로그인한 상인회 계정으로 정한다. 가게 단위 묶음 숫자만, 손님 정보는 없다(FR-ANL-05). 정산 달 = 방문 처리된 달(D15). 방문 전에 취소된 예약은 수수료가 없어 자동으로 빠진다(FR-STL-05 #2). 공동 기금 잔액 · 내역은 `GET /api/v1/wallets/me`(D9, 상인회 = 기금).
+
+#### `GET /api/v1/association/settlements/{month}` — 월 정산 (A-04)
+
+- 역할: 상인회. `month` = `YYYY-MM`.
+- 응답 `200`:
+
+```json
+{
+  "month": "2026-11",
+  "status": "aggregated",
+  "confirmedAt": null,
+  "canConfirm": true,
+  "unprocessedReportCount": 0,
+  "count": 2,
+  "totalFee": 2200,
+  "stores": [ { "storeId": "3", "storeName": "B", "count": 2, "totalFee": 2200, "avgVisitAmount": 27500, "couponCost": 0 } ]
+}
+```
+
+  - `status`: 확정 전이면 `aggregated`(수수료 기록에서 그때 집계), 확정 뒤 `confirmed`.
+  - `avgVisitAmount`: 가게별 소개 건 평균 방문 금액(**쿠폰 할인 후**, 원 단위 반올림). 낮은지 판단하는 표시는 없다(판단은 상인회 몫, 11-24 (5)).
+  - `unprocessedReportCount`: 그 달(예약 시작 달) 예약에 걸린, 처리 완료되지 않은 금액 · 미처리 신고 수(11-25 (5)).
+  - `canConfirm`: 확정 전 · 그 달이 끝남 · 처리 안 된 신고 0일 때 `true`.
+- 실패: `invalid`(month) · `unauthorized` · `forbidden_role`
+
+#### `POST /api/v1/association/settlements/{month}/confirm` — 확정 (FR-STL-05 #4)
+
+- 역할: 상인회. `X-XSRF-TOKEN` 필요. 본문 없음.
+- 상태 `confirmed`, 확정 시각을 남기고 그 달 수수료에 정산 id를 단다. **잔액 · 수수료는 바꾸지 않는다**(확인 기록, 11-24).
+- 응답 `200`: 위 GET과 같은 모양.
+- 실패: `conflict` — 이미 확정, 그 달이 아직 끝나지 않음, 처리되지 않은 신고가 있음(#5) · `invalid` · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+#### 정책에 따라 정한 것 (D17)
+
+| 항목 | 정한 것 | 근거 |
+| --- | --- | --- |
+| 확정 시점 | 그 달이 끝난 뒤(운영 시간대)부터 | FR-STL-05 예 '12월 1일 정산' |
+| 신고의 '그 달' | 신고된 예약의 시작 시각 달 | 05-policy 「방문 금액 확인 · 신고」 '원래 방문(예약) 달' |
+| 평균 방문 금액 | 쿠폰 할인 후 금액(`fee_base`) 평균, 원 단위 반올림 | 07-screens A-04 '쿠폰 할인 후' |
+
 ### 가상 잔액 · 거래 내역 (D9)
 
-실제 결제는 없다(NFR-02). 잔액이 바뀔 때마다 거래 내역이 한 줄 남는다(FR-STL-06). 회원 잔액은 마이너스가 되지 않고, 가게 잔액은 소개 수수료로 마이너스가 될 수 있다(기획 11-25 (4)).
+실제 결제는 없다(NFR-02). 잔액이 바뀔 때마다 거래 내역이 한 줄 남는다(FR-STL-06). **가게 잔액만** 소개 수수료로 마이너스가 될 수 있다(기획 11-25 (4)). 회원 잔액과 상인회 공동 기금은 마이너스가 되지 않는다(기금: 11-25 (5)).
 
 #### `GET /api/v1/wallets/me` — 내 가상 잔액
 
@@ -610,9 +783,20 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 | --- | --- |
 | `store_rejected`(가게 거절 · 자동 거절) | 낸 예약금 100%(FR-RSV-03 #2 · #3) |
 | `auto_canceled` | 없음(FR-RSV-02 #1) |
-| `customer_canceled` | D6이 가게 비율로 |
+| `customer_canceled` | 취소 때 정한 `refundAmount`만큼(D6) |
 
 회원은 잔액으로, 비회원은 전화번호 기록으로 돌려준다. 이 예약의 '납부 − 환불' 합만큼만 돌려줘서 두 번 불려도 한 번만 환불된다.
+
+#### 상인회 쿠폰 기금 예산 (서버 내부, D20 → E18 · E20 · D7이 씀)
+
+`FundBudgetService`. 기금은 마이너스가 될 수 없다(11-25 (5)).
+
+| 메서드 | 부르는 곳 | 하는 일 |
+| --- | --- | --- |
+| `reserve(eventId)` | E18 행사 만들기(같은 트랜잭션) | 예산 = 수량 × 한 장 최대 할인액(정액은 `discount_amount`, 정률은 `max_discount_amount`)을 기금에서 뺀다(`fund_budget_reserved`, `association_event_id`). `reserved_budget`에 남긴다. 기금이 모자라면 `ApiException(insufficient_balance)` → 행사 생성도 되돌아감. 같은 행사에 두 번 잡지 않는다 |
+| `releaseDue()` | D7 스케줄 | `valid_end_at`이 지난 행사(중단한 행사 포함)마다 한 번: 돌려줄 예산 = 잡은 예산 − 쓴 예산을 기금에 넣는다(`fund_budget_released`), `budget_released_at` 기록 |
+
+쓴 예산 = 그 행사 쿠폰 중 `applied` · `used`인 것의 `discount_applied` 합. 아직 방문 전이라 할인액이 없으면 한 장 최대 할인액으로 잡아 둔다(정해서 적음).
 
 #### 정책에 따라 정한 것 (D10)
 
@@ -751,7 +935,7 @@ E1 ~ E17. 추천 API(E7은 계산보다 계약을 먼저), 노출 · 코스 제�
   }
   ```
 
-  - `applyDeadline`: 소개 예약 신청 마감. 기준 예약일 다음 날 00:00(Asia/Seoul) 직전, UTC로 준다(05-policy 「소개 판정」). 표시용이고 판정은 D12 · E15가 신청 시각으로 한다. 마감이 지나도 조회 · 표시 기록은 그대로 된다(아래 「정책에 따라 정한 것」).
+  - `applyDeadline`: 소개 예약 신청 마감. 기준 예약일 다음 날 00:00(Asia/Seoul) 직전, UTC로 준다(05-policy 「소개 판정」). 표시용이고 판정은 D12가 신청 시각으로 한다. 마감이 지나도 조회 · 표시 기록은 그대로 된다(아래 「정책에 따라 정한 것」).
 - 실패: `invalid` · `unauthorized` · `forbidden_role` · `not_found`
 
 ### `POST /api/v1/course-proposals` — 정식 코스 제안 표시 기록
@@ -780,7 +964,7 @@ E1 ~ E17. 추천 API(E7은 계산보다 계약을 먼저), 노출 · 코스 제�
 | 탐색 노출 `RECOMMENDATION_EXPOSURE` | 지도 추천 카드를 그린 뒤 `POST` | E3 · E7 | 탐색 기록, 쿠폰 출처(FR-CPN-10), FR-ANL-08 | 소개 · 수락률 |
 | 정식 코스 제안 `COURSE_PROPOSAL` | 정식 코스 제안 카드를 그린 뒤 `POST`, 조합당 1건 | E3 · E7 | **수락률 분모** | — |
 | 코스 예약 (소개 후보) | `courseProposalId`를 달고 마감 전에 신청 | D12 | 소개 판정 입력 | — |
-| 소개 확정 | 소개 후보 예약이 방문 처리됨, 예약 건당 1번 | E15 (D11 이벤트) | **수락률 분자**(확정된 제안 수, 제안당 1번), 수수료(D15), 소개 실적 | — |
+| 소개 확정 | 소개 후보 예약(`course_proposal_id` · `sender_store_id`가 있는 예약)이 방문 처리됨, 예약 건당 1번 | D15 (`referral_fee` 한 행, D11 이벤트) | **수락률 분자**(소개 확정된 예약의 서로 다른 `course_proposal_id` 수, 제안당 1번), 수수료(D15), 소개 실적(D16) | — |
 | 가게 간 이동 | 같은 손님 · 같은 날 연달아 방문 처리 | 계산값 (C20 · E6) | 추천 실제 기록 점수, 방문 흐름 | 소개 |
 
 - 클릭 · 지도 추천 · 리롤 · 새로고침은 정식 제안을 만들지 않으므로 수락률과 소개에 영향이 없다.
@@ -816,11 +1000,11 @@ E1 ~ E17. 추천 API(E7은 계산보다 계약을 먼저), 노출 · 코스 제�
 
 | # | 내용 | 정해지지 않은 동안 | 결정 주체 |
 | --- | --- | --- | --- |
-| R-3 | 기준 예약이 취소 · 거절된 뒤 **새** 다음 코스 예약(과 새 정식 제안)을 허용하는지. FR-RSV-11 #1 '기준 가게 예약이 없음'에 취소된 예약이 드는지 | 이 경우 두 엔드포인트의 응답을 정하지 않는다. 목에서 다루지 않는다 | 팀 (D12 해석안) |
+| R-3 | (닫힘, 기획 11-26 (2)) 취소 · 거절된 기준 예약으로는 새 다음 코스를 만들 수 없다(`conflict`). 이미 만든 다음 코스는 그대로 | — | — |
 | R-18 | G-01 추천 카드에 '다음 코스로 예약하기'를 두는지 (07-screens G-01 · FR-RSV-11 ↔ 확정 목업, 02-workflow 「맞지 않는 곳」) | G-01 카드는 탐색 노출만 기록한다고 적고, 정식 제안을 겸하는지는 정하지 않는다 | 팀 (A 화면) |
 | R-9 | 가게 좌표계. 06-data · 마이그레이션은 `map_x/map_y`를 "골목 안 표시 좌표"로, 05-policy 거리 항은 다른 골목 가게 사이 거리도 씀 | `mapX` · `mapY`는 숫자로만 내려준다 | A1 · D1 · E |
 | R-10 | 이 절의 비로그인 경로(`GET /api/v1/recommendations`, `POST /api/v1/recommendation-exposures`)를 보안 설정에 더하기 | **반영됨**(#222) | C (#24) |
-| R-13 | 코스 예약 요청의 필드 이름(`courseProposalId`)과 제안 검사 실패 코드. 검사 조건(제안 소유 · 추천 가게 일치 · 마감)은 정책상 확정 | — | D12 (#31) |
+| R-13 | (닫힘, D12) 필드 이름은 `courseProposalId`. 제안 검사 실패(그 기준 예약 · 그 가게 제안이 아님)는 `conflict`. 마감 뒤 신청은 거절하지 않고 코스로만 연결(소개 아님) | — | — |
 
 ### 3.2 쿠폰 행사 설정 (E11 #23 · 계약 #133)
 
@@ -1316,7 +1500,7 @@ DB가 막지 않는 것(유형별 필수 칸, 확정 뒤 변경 금지, 중단�
 | # | 내용 | 정해지지 않은 동안 | 결정 주체 |
 | --- | --- | --- | --- |
 | S-1 | 사장님 예약 응답(D3 · D4 · D11 · O-13)의 `coupon` 칸 채우기 — E가 `CouponApplyService.appliedCouponFor(reservationId)`(3.5 모양)를 제공하고 D가 응답에 넣는다. 지금은 `null` | 사장님 화면은 사용 확인 API의 `conflict`로 판단 | D (#14 · #19) |
-| S-2 | 휴업 · 운영 중단 이벤트(`StoreBusinessStatusChangedEvent`, C22 PR #190)를 받는 E14 리스너 · 탈퇴 처리 때 `cancelUnusedForStore` 부르기 | 이벤트가 머지되면 E가 리스너를 붙인다. 탈퇴는 그 기능이 생길 때 C가 부른다 | E (#45) · C (C22 #116) |
+| S-2 | (휴업 · 운영 중단은 닫힘 — E14 리스너 #230) 탈퇴 처리 때 `cancelUnusedForStore` 부르기 | 탈퇴는 그 기능이 생길 때 C가 부른다 | C (C7) |
 | S-3 | 만료 작업 실행 주기 | 메서드만 둔다 | D (D7 #103) |
 
 ### 3.7 오늘의 코스 (E10 #52 · 계약 #210)
@@ -1400,3 +1584,259 @@ DB가 막지 않는 것(유형별 필수 칸, 확정 뒤 변경 금지, 중단�
 | # | 내용 | 정해지지 않은 동안 | 결정 주체 |
 | --- | --- | --- | --- |
 | T-1 | `GET /api/v1/today-courses`를 로그인 없이 여는 보안 설정 · `CONTRACTS.md` 「6」 목록에 더하기(3.1 R-10 · 3.3 V-2와 함께) | **반영됨**(#222) | C (#24) |
+
+### 3.8 상인회 쿠폰 행사 (E18 #161 · 계약 #243)
+
+> 상태: **계약.** 구현은 #161에서 한다. 프론트 목(A-10 상인회 쿠폰 관리)은 이 절을 따른다. 회원 알림 · 선착순 받기는 E19(#162), 예약 적용 · 기금 부담 기록은 E20(#172)이 이 절의 행사를 쓴다.
+> 기준: 기획 저장소 `05-policy.md` 「상인회 쿠폰」, `03-requirements.md` FR-CPN-12 ~ 14, `07-screens.md` A-10, 결정 기록 11-25 (5). 표는 `association_coupon_event` · `association_coupon_event_store`(D24 #159), 기금 예산은 2절 「상인회 쿠폰 기금 예산」(`FundBudgetService`, D20 #160).
+
+**상인회 쿠폰 행사**는 상인회가 만들고 할인은 **공동 기금**이 부담한다. 가게 쿠폰 행사(3.2)처럼 저장하는 순간 확정되고 **고칠 수 없으며 중단만 할 수 있다.** 만들 때 '수량 × 한 장 최대 할인액'을 기금에서 미리 잡고, 기금이 모자라면 만들 수 없다(기금은 마이너스가 되지 않는다). 권역은 **로그인한 상인회 계정의 권역**으로 정하고 권역 ID를 받지 않는다. 가게 쿠폰과 달리 권역에 진행 중인 행사가 여러 개일 수 있다.
+
+**AssociationCouponEvent** (응답):
+
+```json
+{
+  "id": "5",
+  "title": "12월 골목 주말 할인",
+  "benefitType": "percent_discount",
+  "discountAmount": null,
+  "discountPercent": 10,
+  "maxDiscountAmount": 5000,
+  "eligibleStoreScope": "selected",
+  "storeIds": ["3", "7"],
+  "totalQuantity": 10,
+  "issuedCount": 6,
+  "remainingQuantity": 4,
+  "issueStartAt": "2026-12-01T00:00:00Z",
+  "issueEndAt": "2026-12-07T15:00:00Z",
+  "validStartAt": "2026-12-01T00:00:00Z",
+  "validEndAt": "2026-12-14T15:00:00Z",
+  "reservedBudget": 50000,
+  "usedBudget": 15000,
+  "remainingBudget": 35000,
+  "budgetReleasedAt": null,
+  "confirmedAt": "2026-11-30T03:00:00Z",
+  "stoppedAt": null,
+  "issuable": true
+}
+```
+
+| 필드 | 뜻 |
+| --- | --- |
+| `title` | 행사 이름(1 ~ 50자). 회원 알림함(E19)에 보인다 |
+| `benefitType` | `fixed_discount` 정액 할인 · `percent_discount` 정률 할인(`CONTRACTS.md` 「3」). **`service`(서비스 제공)는 없다** |
+| `discountAmount` | 정액 할인 금액(원). `fixed_discount`일 때만 |
+| `discountPercent` · `maxDiscountAmount` | 정률 할인율(퍼센트 정수 1 ~ 50)과 한 장 최대 할인액(원). `percent_discount`일 때만. **최대 할인액은 필수**(가게 쿠폰과 다름) |
+| `eligibleStoreScope` · `storeIds` | 쓸 수 있는 가게. `all`(그 권역의 참여 가게 전부, `storeIds: []`) · `selected`(상인회가 고른 가게, `storeIds`에 ID 순) |
+| `totalQuantity` · `issuedCount` · `remainingQuantity` | 총수량 · 지금까지 받은 수 · 남은 수. 받은 수는 E19 선착순 받기만 늘린다 |
+| `issueStartAt` · `issueEndAt` | 받을 수 있는 기간 `[시작, 끝)` |
+| `validStartAt` · `validEndAt` | 쓸 수 있는 기간(유효기간) `[시작, 끝)`. 기한은 예약 신청 시각으로 판단한다(E20). 받은 쿠폰의 만료 시각은 `validEndAt`이다 |
+| `reservedBudget` | 만들 때 기금에서 잡은 예산 = 수량 × 한 장 최대 할인액(정액은 `discountAmount`, 정률은 `maxDiscountAmount`) |
+| `usedBudget` · `remainingBudget` | 쓴 예산과 남은 예산(= 잡은 예산 − 쓴 예산). 쓴 예산은 2절 `releaseDue`와 같은 계산: 이 행사 쿠폰 중 예약에 적용 · 사용된 것의 실제 할인액, 아직 방문 전이면 한 장 최대 할인액 |
+| `budgetReleasedAt` | 쓰지 않은 예산을 기금으로 돌려준 시각(유효기간이 끝난 뒤 D20 `releaseDue`). 그 전에는 `null`. **중단해도 이 시각 전에는 돌아오지 않는다** |
+| `confirmedAt` · `stoppedAt` | 확정(저장) 시각 · 중단 시각(`null`이면 진행 중) |
+| `issuable` | 지금 받을 수 있는지: 중단 안 됨 · 받을 수 있는 기간 안 · 남은 수 ≥ 1. 회원 화면의 '받기' · '마감'(E19)도 같은 규칙 |
+
+### `GET /api/v1/association/coupon-events` — 상인회 쿠폰 행사 목록 (A-10)
+
+- 역할: 상인회. 손님 · 사장님은 `403 forbidden_role`.
+- 응답 `200`: `{ "items": [AssociationCouponEvent] }` — 그 권역 행사 전부, 최근에 만든 순(ID 내림차순). 행사가 많지 않아 페이지를 두지 않는다(`GET /api/v1/stores`와 같은 예외).
+- 화면의 '현재 기금 잔액'은 `GET /api/v1/wallets/me`(상인회 = 기금, D9), '잡힐 예산'은 프론트가 수량 × 한 장 최대 할인액으로 미리 보여준다. 가게를 고를 때 보는 가게별 통계는 FR-ANL-05(C) API다.
+- 실패: `unauthorized` · `forbidden_role`
+
+### `POST /api/v1/association/coupon-events` — 상인회 쿠폰 행사 만들기(확정)
+
+- 역할: 상인회. `X-XSRF-TOKEN` 필요. 저장하는 순간 확정되고 이후 어떤 값도 바꿀 수 없다.
+- 요청:
+
+  ```json
+  {
+    "title": "12월 골목 주말 할인",
+    "benefitType": "percent_discount", "discountAmount": null, "discountPercent": 10, "maxDiscountAmount": 5000,
+    "eligibleStoreScope": "selected", "storeIds": ["3", "7"],
+    "totalQuantity": 10,
+    "issueStartAt": "2026-12-01T00:00:00Z", "issueEndAt": "2026-12-07T15:00:00Z",
+    "validStartAt": "2026-12-01T00:00:00Z", "validEndAt": "2026-12-14T15:00:00Z"
+  }
+  ```
+
+- 검사(어긋나면 `400 invalid`):
+  - `title` 1 ~ 50자, `benefitType` · `totalQuantity` · `eligibleStoreScope` · 네 시각 필수.
+  - `benefitType`은 `fixed_discount` · `percent_discount`만(`service`는 `invalid`).
+  - `fixed_discount`: `discountAmount` 1 이상 필수.
+  - `percent_discount`: `discountPercent` 정수 1 ~ 50, **`maxDiscountAmount` 1 이상 필수**(FR-CPN-12 #3).
+  - 고른 유형에 쓰지 않는 칸은 무시하고 저장하지 않는다(응답에서 `null`).
+  - `totalQuantity` 1 이상.
+  - `eligibleStoreScope`가 `selected`면 `storeIds` 1개 이상 · 중복 없음 · 모두 **그 권역의 승인된 가게**. `all`이면 `storeIds`는 무시한다.
+  - 시각: `issueStartAt < issueEndAt`, `validStartAt < validEndAt`, `issueEndAt ≤ validEndAt`(쓸 수 없는 때에 받지 않게), `issueEndAt`이 지금보다 뒤.
+- 기금 예산: 행사를 저장하고 **같은 트랜잭션에서** `FundBudgetService.reserve(eventId)`(D20)로 예산을 기금에서 뺀다(거래 `fund_budget_reserved`, `associationEventId` 남김). 기금이 모자라면 `409 insufficient_balance`이고 **행사도 만들어지지 않는다**(FR-CPN-12 #2).
+- 응답 `201`: 만든 AssociationCouponEvent(`reservedBudget` 채움, `usedBudget` 0).
+- 회원 알림(FR-CPN-13)은 E19가 이 행사로 보낸다.
+- 실패: `invalid` · `insufficient_balance` · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+### `POST /api/v1/association/coupon-events/{eventId}/stop` — 상인회 쿠폰 행사 중단
+
+- 역할: 상인회. `X-XSRF-TOKEN` 필요. 요청 본문 없음.
+- 중단하면 **새로 받기만 멈춘다.** 이미 받은 쿠폰은 유효기간까지 쓸 수 있다(FR-CPN-12 #4). **예산은 이때 돌려주지 않고** 유효기간이 끝날 때 D20 `releaseDue`가 돌려준다(FR-CPN-12 #5).
+- 중단은 `stopped_at IS NULL`일 때만 바꾸는 조건부 UPDATE로 한다. E19의 발급 수 늘리기와 동시에 들어와도 먼저 커밋한 쪽만 반영된다.
+- 응답 `200`: 중단된 AssociationCouponEvent(`stoppedAt` 채움, `issuable: false`).
+- 실패:
+  - `404 not_found` — 없는 행사 · 다른 권역 행사(존재 숨김)
+  - `409 conflict` — 이미 중단한 행사
+  - `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+### 고치는 API는 없다 (3.8)
+
+- 확정한 행사를 고치거나 다시 켜는 엔드포인트를 두지 않는다(FR-CPN-12 #4). `PUT` · `PATCH`는 공통 규칙대로 `404 not_found`.
+
+#### 다른 이슈가 쓰는 규칙 (서버 내부, 3.8)
+
+| 규칙 | 정의 | 쓰는 곳 |
+| --- | --- | --- |
+| 받을 수 있음 | `stopped_at IS NULL` AND `issue_start_at ≤ 지금 < issue_end_at` AND `issued_count < total_quantity` | E19 |
+| 발급 수 늘리기 | `UPDATE association_coupon_event SET issued_count = issued_count + 1 WHERE id = ? AND stopped_at IS NULL AND issued_count < total_quantity AND issue_start_at <= ? AND ? < issue_end_at` — 바뀐 행이 0이면 마감 · 중단 · 기간 밖 | E19 (NFR-09) |
+| 받은 쿠폰 | `coupon.issuer_kind = 'association'`, `association_event_id` 채움, `coupon_policy_id` · `target_store_id`는 `NULL`, `expires_at = valid_end_at`. 한 회원 한 장(`uk_coupon_association_member`) | E19 |
+| 쓸 수 있는 가게 | `all`: 쓸 때 그 권역의 승인된 가게. `selected`: `association_coupon_event_store`의 가게 | E20 |
+| 쓸 수 있는 기간 | 예약 신청 시각이 `[valid_start_at, valid_end_at)` 안 | E20 |
+| 할인액 | 3.2 「할인액」과 같은 계산(정률은 `max_discount_amount`까지) | E20 · E14 · D15 |
+
+### 응답 필드와 테이블 칸 (3.8)
+
+| 필드 | 칸 | 비고 |
+| --- | --- | --- |
+| `discountPercent` | `discount_rate` | 정수 퍼센트(DB CHECK 1 ~ 50) |
+| `storeIds` | `association_coupon_event_store.store_id` | `selected`일 때만 행이 있다 |
+| `reservedBudget` · `budgetReleasedAt` | `reserved_budget` · `budget_released_at` | D20이 채운다 |
+| `usedBudget` · `remainingBudget` · `issuable` · `remainingQuantity` | — | 계산값(저장하지 않음) |
+
+#### 정책에 따라 정한 것 (3.8)
+
+| 항목 | 정한 것 | 근거 |
+| --- | --- | --- |
+| 확정 시점 | 저장 = 확정. 임시 저장 없음 | FR-CPN-12 "확정 뒤에는 값을 바꾸지 않고" · 3.2와 같음 |
+| 서비스 제공 혜택 | 없음(`invalid`) | 05-policy 「상인회 쿠폰」 혜택 = 정액 · 정률 |
+| 중단과 예산 | 중단 때 돌려주지 않음, 유효기간 끝에 D20 | FR-CPN-12 #5 |
+| 권역의 진행 중 행사 수 | 제한 없음 | 05-policy에 가게 쿠폰 같은 '하나만' 규칙 없음 |
+
+#### 구현 기준 (정책에 명시 없음 — 관련 담당 확인 요청)
+
+| 항목 | 이 계약의 기준 | 정책 근거 | 확인할 담당 |
+| --- | --- | --- | --- |
+| 받는 기간 끝 ≤ 쓰는 기간 끝 | `issueEndAt ≤ validEndAt`이 아니면 `invalid` | 받고 나서 못 쓰는 쿠폰을 막음 | B (A-10) |
+| 받는 기간 끝 | 지금보다 뒤여야 함(이미 끝난 행사를 만들지 않음) | — | B |
+| 고른 가게 | 그 권역의 승인된 가게만. 아니면 `invalid` | FR-CPN-12 "참여 가게" | — |
+| 목록 | 페이지 없이 전부 | A-10 행사별 발급 수 · 남은 예산 | B |
+
+### 3.9 상인회 쿠폰 받기 (E19 #162 · 계약 #251)
+
+> 상태: **계약.** 구현은 #162에서 한다. 프론트 목(G-11 알림함의 상인회 쿠폰 행사 카드)은 이 절을 따른다. 행사는 3.8, 예약 적용은 E20(#172).
+> 기준: 기획 저장소 `05-policy.md` 「상인회 쿠폰」, `03-requirements.md` FR-CPN-13 · FR-NTF-03, `07-screens.md` G-11, 결정 기록 11-25 (5). 알림 만들기 규칙은 1절 「알림 (C14)」.
+
+상인회 쿠폰 행사는 **회원 알림함**에 알림으로 뜨고, 회원은 알림에서 **선착순으로** 받는다. 같은 행사에서 한 사람당 1장이다. 수량이 다 나가면 알림은 그대로 두고 카드를 '마감'으로 보여준다. **비회원은 받을 수 없다**(FR-CPN-13).
+
+#### 행사 알림 (서버 내부, E19 → C14)
+
+- E18 행사 만들기(3.8 `POST`)가 같은 트랜잭션에서 `AssociationCouponOpenedEvent(eventId, regionId)`를 내보낸다(`com.alleycrm.coupon`).
+- C14가 `@TransactionalEventListener`(커밋 뒤)로 받아 **회원 계정(`account.role = customer`) 전부**에게 `notifyAccount(accountId, "association_coupon_opened", { "associationCouponEventId": "5" })`로 알림을 만든다(1절 「알림」 규칙: 기능은 이벤트, 알림은 C14). 기금이 모자라 행사 생성이 되돌아가면 알림도 없다.
+- 비회원 예약(`guest_reservation`)에게는 만들지 않는다(FR-CPN-13 #3).
+- 알림은 마감 · 중단 뒤에도 지우지 않는다. 카드 상태는 아래 `GET`으로 그때 정한다.
+
+| `type` | 받는 쪽 | `payload` | 만드는 곳 |
+| --- | --- | --- | --- |
+| `association_coupon_opened` | 회원 계정 전부 | `{ "associationCouponEventId" }` | 상인회 쿠폰 행사 만들기 커밋 뒤(`AssociationCouponOpenedEvent`, C14 리스너) |
+
+**AssociationCouponOffer** (회원이 보는 행사 카드):
+
+```json
+{
+  "id": "5",
+  "title": "12월 골목 주말 할인",
+  "benefitType": "percent_discount",
+  "discountAmount": null,
+  "discountPercent": 10,
+  "maxDiscountAmount": 5000,
+  "eligibleStoreScope": "selected",
+  "stores": [ { "id": "3", "name": "구름 디저트" }, { "id": "7", "name": "달빛 포차" } ],
+  "issueStartAt": "2026-12-01T00:00:00Z",
+  "issueEndAt": "2026-12-07T15:00:00Z",
+  "validStartAt": "2026-12-01T00:00:00Z",
+  "validEndAt": "2026-12-14T15:00:00Z",
+  "status": "available",
+  "myCouponId": null
+}
+```
+
+| 필드 | 뜻 |
+| --- | --- |
+| 혜택 · 기간 칸 | 3.8 AssociationCouponEvent와 같다 |
+| `stores` | 쓸 수 있는 가게. `selected`면 고른 가게(ID 순, 이름 포함), `all`이면 `[]` — 화면은 '모든 참여 가게'로 보여준다 |
+| `status` | 이 회원에게 보이는 카드 상태(`CONTRACTS.md` 「3」 `associationCouponOffer.status`). 아래 순서로 처음 맞는 것: `received` 이미 받음 → `closed` 마감(다 나감 · 중단 · 받는 기간 끝) → `upcoming` 받는 기간 전 → `available` 받을 수 있음 |
+| `myCouponId` | 받았으면 그 쿠폰 ID, 아니면 `null` |
+
+- 발급 수 · 남은 수 · 예산은 회원에게 보여주지 않는다.
+
+### `GET /api/v1/association-coupon-events/{eventId}` — 상인회 쿠폰 행사 카드 (G-11)
+
+- 역할: 회원 손님. 비로그인 `401 unauthorized`, 사장님 · 상인회 · 비회원 제한 세션 `403 forbidden_role`.
+- 응답 `200`: AssociationCouponOffer.
+- 실패: `not_found`(없는 행사, 숫자가 아닌 ID) · `unauthorized` · `forbidden_role`
+
+### `POST /api/v1/association-coupon-events/{eventId}/claim` — 상인회 쿠폰 받기 (선착순)
+
+- 역할: 회원 손님(위와 같음). `X-XSRF-TOKEN` 필요. 요청 본문 없음.
+- 검사 순서:
+  1. 없는 행사면 `404 not_found`.
+  2. 이미 이 행사 쿠폰을 받았으면 `409 conflict`(한 사람당 1장, FR-CPN-13 #2).
+  3. 받을 수 없으면 `409 conflict`: 다 나감(FR-CPN-13 #1) · 중단 · 받는 기간 전 · 받는 기간 끝(#4). 화면은 위 `GET`의 `status`로 '마감'을 보여준다(에러 응답에 이유를 담지 않는다).
+- 응답 `201` (Coupon, 3.4와 같은 모양에 상인회 칸):
+
+  ```json
+  {
+    "couponId": "801",
+    "issuerKind": "association",
+    "associationCouponEventId": "5",
+    "eventId": null,
+    "storeId": null,
+    "status": "downloaded",
+    "benefitType": "percent_discount",
+    "discountAmount": null,
+    "discountPercent": 10,
+    "maxDiscountAmount": 5000,
+    "serviceName": null,
+    "conditions": null,
+    "downloadedAt": "2026-12-01T09:00:00Z",
+    "expiresAt": "2026-12-14T15:00:00Z"
+  }
+  ```
+
+  - `issuerKind`는 `coupon.issuerKind`(`CONTRACTS.md` 「3」). 가게 쿠폰 칸(`eventId` · `storeId`)은 `null`, 쓸 수 있는 가게는 행사 카드의 `stores`.
+  - `expiresAt` = 행사의 `validEndAt`(3.8 「받은 쿠폰」).
+- 실패: `unauthorized` · `forbidden_role` · `not_found` · `conflict` · `csrf_invalid`
+
+#### 원자 처리 (서버 내부, NFR-09)
+
+- 한 트랜잭션에서 **발급 수 조건부 UPDATE를 먼저** 한다(3.8 「발급 수 늘리기」). 바뀐 행이 0이면 `409`. 이 UPDATE가 행사 행을 잠가, 같은 행사의 받기가 커밋까지 한 줄로 선다.
+- 그다음 쿠폰을 넣는다. 같은 회원이 동시에 두 번 눌러도 `uk_coupon_association_member`가 한 장만 남기고, 그 위반은 `409 conflict`로 바꾸며 발급 수 증가도 함께 되돌린다.
+- 동시에 많이 눌러도 받은 수는 총수량을 넘지 않는다(E9와 같은 방식으로 검증).
+
+#### 정책에 따라 정한 것 (3.9)
+
+| 항목 | 정한 것 | 근거 |
+| --- | --- | --- |
+| 알림 받는 사람 | 회원 계정 전부(권역 선택이 v1 제외라 한 권역) | FR-CPN-13 "회원 알림함", v1 제외: 권역 선택 |
+| 알림 만드는 곳 | 기능은 이벤트, 알림은 C14 리스너 | 1절 「알림」 서버 내부 규칙 |
+| 마감 표시 | 알림은 남기고 카드 `status`로 | FR-CPN-13 #1 |
+
+#### 구현 기준 (정책에 명시 없음 — 관련 담당 확인 요청)
+
+| 항목 | 이 계약의 기준 | 정책 근거 | 확인할 담당 |
+| --- | --- | --- | --- |
+| 알림 시점 | 행사를 만들 때 한 번(받는 기간이 나중에 시작해도). 그 전에는 카드가 `upcoming` | FR-CPN-13 | A (G-11) |
+| 받기 실패 이유 | 모두 `409 conflict`, 이유는 `GET`의 `status`로 | 새 에러 코드를 만들지 않음 | A |
+| 남은 수 표시 | 회원에게 보여주지 않음 | 05-policy에 없음 | A |
+
+#### 미확정 (3.9)
+
+| # | 내용 | 정해지지 않은 동안 | 결정 주체 |
+| --- | --- | --- | --- |
+| U-2 | 회원 쿠폰함 · 예약 화면의 쿠폰 목록에 상인회 쿠폰을 넣는 것(3.5 A-1) | E20에서 정한다 | E (#172) |
