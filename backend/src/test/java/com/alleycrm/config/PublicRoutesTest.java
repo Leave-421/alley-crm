@@ -18,7 +18,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.RequestBuilder;
 
 /**
- * 비로그인 손님 경로(#222, CONTRACTS_API R-10 · V-2 · K-1 · T-1, CONTRACTS.md 「6」).
+ * 비로그인 손님 경로(#222 · #298, CONTRACTS_API R-10 · V-2 · K-1 · T-1 · N-2, CONTRACTS.md 「6」).
  * 보안 설정이 로그인 없이 통과시키는지만 본다. 각 API의 동작은 그 담당 테스트가 확인한다.
  * 없는 ID로 불러 401(로그인 필요) · 403(막힘)이 아닌 API 자체의 응답(200 · 400 · 404)이 오는지 확인한다.
  */
@@ -45,11 +45,17 @@ class PublicRoutesTest {
                 .contentType(MediaType.APPLICATION_JSON).content("{}"));
         assertReachesApi(post("/api/v1/store-clicks").with(TestCsrf.csrf(mvc))
                 .contentType(MediaType.APPLICATION_JSON).content("{\"storeId\":\"" + NO_SUCH_ID + "\"}"));
+        // #298: 추천 거절 · 리롤 기록(3.11 N-2), 오늘의 코스 노출 · 클릭(3.3 V-2)
+        assertReachesApi(post("/api/v1/recommendation-feedback").with(TestCsrf.csrf(mvc))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"type\":\"reject\",\"exposureIds\":[\"" + NO_SUCH_ID + "\"]}"));
+        assertReachesApi(post("/api/v1/course-previews").with(TestCsrf.csrf(mvc))
+                .contentType(MediaType.APPLICATION_JSON).content("{}"));
     }
 
     @Test
     void 비로그인_POST_경로도_CSRF_토큰이_없으면_403() throws Exception {
-        for (String path : new String[] {"/api/v1/recommendation-exposures", "/api/v1/store-clicks"}) {
+        for (String path : new String[] {"/api/v1/recommendation-exposures", "/api/v1/store-clicks",
+                "/api/v1/recommendation-feedback", "/api/v1/course-previews"}) {
             mvc.perform(post(path).contentType(MediaType.APPLICATION_JSON).content("{}"))
                     .andExpect(status().isForbidden())
                     .andExpect(jsonPath("$.error.code").value("csrf_invalid"));
