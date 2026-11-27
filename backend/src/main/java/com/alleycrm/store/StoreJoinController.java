@@ -69,6 +69,16 @@ class StoreJoinController {
         return StoreJoinResponse.of(joins.decide(me, storeId, false));
     }
 
+    @PostMapping("/api/v1/owner/store/withdrawal")
+    StoreJoinResponse requestWithdrawal(@AuthenticationPrincipal AccountPrincipal me) {
+        return StoreJoinResponse.of(joins.requestWithdrawal(me));
+    }
+
+    @PostMapping("/api/v1/store-joins/{storeId}/withdraw")
+    StoreJoinResponse withdraw(@AuthenticationPrincipal AccountPrincipal me, @PathVariable long storeId) {
+        return StoreJoinResponse.of(joins.withdraw(me, storeId));
+    }
+
     /** 신청 본문은 계정 칸과 가게 칸이 한 객체라 가게 칸 검증을 여기서 따로 돌린다 */
     private StoreJoinInfo validInfo(StoreJoinInfo info) {
         if (!validator.validate(info).isEmpty()) {

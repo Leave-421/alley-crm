@@ -105,6 +105,12 @@ public class Store {
         joinStatus = status;
     }
 
+    /** 상인회가 탈퇴를 처리한다. 운영 중단과 같이 이 시각 전 쿠폰 다운로드를 30일 제한에서 뺀다(05-policy 「발급 제한」) */
+    void withdraw(Instant now) {
+        joinStatus = StoreJoinStatus.WITHDRAWN;
+        businessStatusChangedAt = now;
+    }
+
     void moveTo(String address, String alley, BigDecimal mapX, BigDecimal mapY) {
         this.address = address;
         this.alley = alley;

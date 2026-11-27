@@ -37,9 +37,9 @@ class RecommendationRepository {
         this.named = new NamedParameterJdbcTemplate(jdbc);
     }
 
-    /** 손님에게 보이는 가게(승인된 가게)만. 없거나 승인 전 · 거절 · 탈퇴면 빈 값. */
+    /** 손님에게 보이는 가게(승인 · 탈퇴 신청 중)만. 없거나 승인 전 · 거절 · 탈퇴면 빈 값. */
     Optional<StoreInfo> findVisibleStore(long storeId) {
-        return jdbc.query("SELECT id, name, category, alley, map_x, map_y FROM store WHERE id = ? AND join_status = 'approved'",
+        return jdbc.query("SELECT id, name, category, alley, map_x, map_y FROM store WHERE id = ? AND join_status IN ('approved', 'withdraw_requested')",
                 (rs, n) -> storeInfo(rs), storeId).stream().findFirst();
     }
 

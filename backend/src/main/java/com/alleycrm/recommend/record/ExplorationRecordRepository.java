@@ -24,10 +24,10 @@ class ExplorationRecordRepository {
         this.jdbc = jdbc;
     }
 
-    /** 손님에게 보이는 가게인지(승인된 가게). 예약 신청(D2)과 같은 기준. */
+    /** 손님에게 보이는 가게인지(승인 · 탈퇴 신청 중). 예약 신청(D2)과 같은 기준. */
     boolean isVisibleStore(long storeId) {
         Integer count = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM store WHERE id = ? AND join_status = 'approved'", Integer.class, storeId);
+                "SELECT COUNT(*) FROM store WHERE id = ? AND join_status IN ('approved', 'withdraw_requested')", Integer.class, storeId);
         return count != null && count > 0;
     }
 
