@@ -250,7 +250,8 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 | `store_join_result` | 그 가게 사장님 | `{ "storeId", "joinStatus" }` | 가입 승인 · 거절 커밋 뒤(`StoreJoinDecidedEvent`) |
 | `association_coupon_opened` | 회원 계정 전부 | `{ "associationCouponEventId" }` | 3.9 「행사 알림」 |
 | `coupon_status` | 회원 | `{ "couponId", "status" }` (`used` · `expired`) | **미연결.** E14가 사용 완료 · 만료 때 이벤트를 내보내면 C14가 리스너를 단다. 비회원은 쿠폰이 없어 만들지 않는다(FR-NTF-03 #4 · #5) |
-| `change_requested` · `change_approved` · `change_rejected` · `delay_reported` · `next_store_recommended` · `visit_amount_recorded` · `visit_report_check_requested` | — | — | **미연결.** 그 기능(예약 변경 · 지연 입력 D, 다음 가게 추천 E, 방문 금액 D21, 신고 C23)을 만드는 PR이 이벤트를 내보내고 이 표에 줄을 더한다 |
+| `visit_report_check_requested` | 그 가게 사장님 | `{ "visitReportId", "reservationId" }` | 상인회 신고 확인 요청 커밋 뒤(`VisitReportOwnerCheckRequestedEvent`, 「방문 신고 (C23)」) |
+| `change_requested` · `change_approved` · `change_rejected` · `delay_reported` · `next_store_recommended` · `visit_amount_recorded` | — | — | **미연결.** 그 기능(예약 변경 · 지연 입력 D, 다음 가게 추천 E, 방문 금액 D21)을 만드는 PR이 이벤트를 내보내고 이 표에 줄을 더한다 |
 
 "예약한 손님"은 회원이면 그 계정(`account`), 비회원이면 그 예약(`guest_reservation`)이다. 기능 쪽은 `notifyReservationCustomer(reservationId, customerId, type, payload)`로 같은 규칙을 쓴다.
 
@@ -274,6 +275,85 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 - `notifyAccount(accountId, type, payload)` · `notifyGuestReservation(reservationId, type, payload)` · `notifyReservationCustomer(reservationId, customerId, type, payload)`(예약한 손님에게, 회원 · 비회원을 알아서 고른다). `payload`는 `Map<String, Object>`.
 - **트랜잭션 커밋 뒤에 만든다.** 기능 쪽은 이벤트를 내보내고, C14가 `@TransactionalEventListener`(커밋 뒤)로 받아 알림을 만든다. 롤백된 일에는 알림이 남지 않는다.
 - 생성 시각은 서버 시계(D18)를 따른다.
+
+### 방문 신고 (C23)
+
+회원의 '금액이 달라요'(금액 신고)와 '방문했어요'(미처리 신고)를 받아, 상인회가 사장님에게 확인을 요청하고 결과를 기록한다(FR-STL-08, 05-policy 「방문 금액 확인 · 신고」). 표는 `visit_report`, 값은 `CONTRACTS.md` 「3」 `visitReport.*`. 결과가 '맞음'인 뒤의 금액 정정 · 늦은 방문 처리는 D22 · D23이 한다.
+
+- 상태: `received` 접수 → (상인회) `owner_check_requested` 사장님 확인 요청 → (상인회) `done` 처리 완료 + `result`(`valid` 맞음 · `invalid` 아님). 되돌리지 않는다. 허위 신고 페널티는 없다.
+- **그 달**: 신고된 예약의 시작 시각이 속한 달(운영 시간대 Asia/Seoul). 월 정산(D17)과 같은 기준이다. 그 달 정산이 확정되면 신고를 받지 않고, 처리 완료되지 않은 신고가 있으면 그 달을 확정할 수 없다(`unprocessedReportCount`).
+- **상인회 · 사장님 응답에는 손님 이름 · 연락처 · 손님 ID를 넣지 않는다**(FR-STL-08 #5, NFR-03의 신고 건 예외).
+
+**신고 건 `VisitReport`** (상인회 · 사장님)
+
+```json
+{
+  "id": "string", "type": "amount", "status": "owner_check_requested", "result": null,
+  "storeId": "string", "storeName": "string", "reservationId": "string", "reservationNo": "string",
+  "startAt": "2026-11-20T10:00:00Z", "month": "2026-11", "visitAmount": 30000, "claimedAmount": 25000,
+  "ownerReply": "string | null", "ownerRepliedAt": null, "createdAt": "2026-12-02T01:00:00Z", "handledAt": null
+}
+```
+
+- `startAt`: 예약(방문) 일시. `month`: 정산에 들어가는 달 `YYYY-MM`.
+- `visitAmount`: 사장님이 넣은 방문 금액(쿠폰 할인 전). 방문 처리되지 않은 예약(미처리 신고)이면 `null`.
+- `claimedAmount`: 손님이 신고한 금액. 금액 신고에서만, 선택. 미처리 신고는 `null`.
+
+**내 신고 `MyVisitReport`** (회원) — `{ "id", "reservationId", "type", "claimedAmount", "status", "result", "createdAt", "handledAt" }`. 사장님 답변은 넣지 않는다.
+
+#### `POST /api/v1/reservations/{reservationId}/visit-reports` — 신고하기 (회원)
+
+- 역할: 회원(손님 계정), 자기 예약만(남의 예약 · 없는 예약은 `404`). 비회원 제한 세션 · 사장님 · 상인회는 `403 forbidden_role`. `X-XSRF-TOKEN` 필요.
+- 요청: `{ "type": "amount", "claimedAmount": 25000 }` — `type`은 `amount` · `not_processed`. `claimedAmount`는 0 ~ 10,000,000, 금액 신고에서만 쓰고 생략 가능(미처리 신고에서는 무시).
+- 받는 예약: 금액 신고는 `visited`, 미처리 신고는 `canceled` + `auto_canceled`만(FR-STL-08 #3).
+- 같은 예약 · 같은 종류 신고는 1건이다(처리 완료 뒤에도 다시 낼 수 없다).
+- 응답 `201`: `MyVisitReport`(`status: "received"`)
+- 실패: `invalid` · `not_found` · `conflict`(받을 수 없는 예약 상태 · 그 달 정산 확정됨 · 이미 신고함) · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+#### `GET /api/v1/visit-reports/mine` — 내 신고 (회원)
+
+- 역할: 회원. 내 예약(G-04)에 신고 여부 · 결과를 보일 때 `reservationId`로 맞춘다.
+- 응답 `200`: `{ "items": [MyVisitReport] }` — 최근 것부터, 페이지 없음.
+- 실패: `unauthorized` · `forbidden_role`
+
+#### `GET /api/v1/association/visit-reports` — 신고 목록 (상인회, A-11)
+
+- 역할: 상인회. 자기 권역 가게 예약의 신고만.
+- 쿼리: `status`(선택, 없으면 전부) + 페이지네이션(공통 규칙). 오래된 신고부터(처리할 순서).
+- 응답 `200`: 공통 페이지, `items[]` = `VisitReport`
+- 실패: `invalid`(status 값 · page · size) · `unauthorized` · `forbidden_role`
+
+#### `POST /api/v1/association/visit-reports/{reportId}/owner-check` — 사장님에게 확인 요청 (상인회)
+
+- 역할: 상인회. 다른 권역 신고는 `404`. `X-XSRF-TOKEN` 필요. 요청 본문 없음.
+- `received`만 `owner_check_requested`로 바꾼다. 커밋 뒤 그 가게 사장님에게 `visit_report_check_requested` 알림(`{ "visitReportId", "reservationId" }`).
+- 응답 `200`: `VisitReport`
+- 실패: `not_found` · `conflict`(접수 상태가 아님) · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+#### `POST /api/v1/association/visit-reports/{reportId}/result` — 결과 기록 (상인회)
+
+- 역할: 상인회. 다른 권역 신고는 `404`. `X-XSRF-TOKEN` 필요.
+- 요청: `{ "result": "valid" }` — `valid` 맞음 · `invalid` 아님.
+- `owner_check_requested`만 `done`으로 바꾸고 `result` · `handledAt`을 남긴다. 사장님 답변이 없어도 기록할 수 있다. 금액 · 예약은 바꾸지 않는다(FR-STL-08 #4).
+- 응답 `200`: `VisitReport`
+- 실패: `invalid` · `not_found` · `conflict`(확인 요청 상태가 아님 · 이미 처리됨) · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+#### `GET /api/v1/owner/visit-reports` — 내 가게 신고 (사장님, O-10 · O-13)
+
+- 역할: 사장님(`requireApprovedOwnStore`). 확인 요청을 받은 신고(`owner_check_requested` · `done`)만. 접수만 된 신고는 보이지 않는다.
+- 페이지네이션(공통 규칙), 최근 것부터. 응답 `200`: 공통 페이지, `items[]` = `VisitReport`
+- 실패: `invalid` · `unauthorized` · `forbidden_role`
+
+#### `POST /api/v1/owner/visit-reports/{reportId}/reply` — 사장님 답변
+
+- 역할: 사장님, 내 가게 신고만(다른 가게는 `404`). `X-XSRF-TOKEN` 필요.
+- 요청: `{ "reply": "string" }` — 앞뒤 공백을 빼고 1 ~ 200자. `owner_check_requested`인 동안만, 다시 보내면 고쳐 쓴다. 상인회가 `ownerReply`로 본다.
+- 응답 `200`: `VisitReport`
+- 실패: `invalid` · `not_found` · `conflict`(확인 요청 상태가 아님) · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+#### 서버 내부: `VisitReportService.hasValidReport(reservationId, type)` (D22 · D23이 씀)
+
+- 그 예약에 상인회가 '맞음'(`valid`)으로 기록한 그 종류 신고가 있으면 `true`. 금액 정정(D22)은 `"amount"`, 늦은 방문 처리(D23)는 `"not_processed"`로 확인하고, 없으면 거절한다(FR-STL-09 #4). 상수는 `VisitReport.TYPE_AMOUNT` · `VisitReport.TYPE_NOT_PROCESSED`.
 
 ## 2. 예약 · 잔액 · 수수료 · 정산 · 서버 시계 (담당 D)
 
