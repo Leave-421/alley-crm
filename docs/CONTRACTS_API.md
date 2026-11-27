@@ -434,6 +434,18 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
   - 보낸 가게 · 수수료는 넣지 않는다(FR-CUS-05, 11-25 (5)).
 - 실패: `unauthorized` · `forbidden_role`(회원이 아님)
 
+### 지연 입력 (D14)
+
+#### `POST /api/v1/reservations/{id}/delay` — 늦을 것 같아요 (G-07, FR-RSV-10 #2)
+
+- 역할: 회원 손님(내 예약). `X-XSRF-TOKEN` 필요. 비회원은 비회원 예약 조회 세션(C13)에서 같은 `DelayService.reportDelay`를 부른다.
+- 요청: `{ "delayMinutes": 20 }` — 1 ~ 120분(화면은 10 · 20 · 30분 선택).
+- 확정 예약만, 예약 시각 2시간 뒤까지. 예상 도착 = 예약 시각 + `delayMinutes`, 예약에 `delay_eta`로 남긴다. **예약 시각은 바뀌지 않는다.** 다시 입력하면 새 값으로 바뀐다.
+- 응답 `200`: `{ "reservationId": "string", "expectedArrivalAt": "2026-11-28T10:20:00Z" }`
+- 커밋 뒤 그 가게 사장님 계정에 `delay_reported` 알림(`payload: { "reservationId", "startAt", "expectedArrivalAt" }`, 손님 정보 없음).
+- 실패: `invalid`(범위) · `not_found`(남의 예약) · `conflict`(확정이 아님 · 너무 늦음) · `unauthorized` · `forbidden_role` · `csrf_invalid`
+- 리마인드(FR-RSV-10 #1, 예약 30분 전 `reminder` 알림)는 C14 `ReservationReminderJob`이 한다(자동 작업 `reservation_reminder`).
+
 ### 예약 운영 설정 · 슬롯 (D5)
 
 #### 슬롯 계산 (서버 내부 `SlotRules`, 신청 검사 · 예약 가능 시간이 같이 씀)
