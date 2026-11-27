@@ -462,6 +462,38 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 
 - 그 예약에 상인회가 '맞음'(`valid`)으로 기록한 그 종류 신고가 있으면 `true`. 금액 정정(D22)은 `"amount"`, 늦은 방문 처리(D23)는 `"not_processed"`로 확인하고, 없으면 거절한다(FR-STL-09 #4). 상수는 `VisitReport.TYPE_AMOUNT` · `VisitReport.TYPE_NOT_PROCESSED`.
 
+### 분석 공통: 5명 미만 숨김 (C20)
+
+- 상인회 화면(FR-ANL-03 · 05)과 사장님 손님 흐름(FR-ANL-02)의 묶음 숫자는 **고유 인원이 1 ~ 4명이면 숨긴다**. 응답 모양은 `{ "count": 12, "belowMinimum": false }`이고, 숨기면 `{ "count": null, "belowMinimum": true }`다. 화면은 `belowMinimum`이면 '5명 미만'으로 보여준다.
+- 0명(기록 없음)은 아무도 드러내지 않으므로 `count: 0`으로 준다.
+- 기준 5명은 정해진 값이다(`MinimumGroup.MIN_PEOPLE`). 사장님 세그먼트(FR-ANL-01)에는 쓰지 않는다.
+- 집계는 네이티브 SQL로 다른 도메인 표를 읽기만 한다. 응답에 손님 · 방문자 단위 값(ID 등)을 넣지 않는다.
+
+### 상인회 방문 흐름 (C20)
+
+#### `GET /api/v1/association/visit-flows` — 방문 흐름 (A-03)
+
+- 역할: 상인회(자기 권역). 사장님 · 손님은 `403 forbidden_role`.
+- 응답 `200`:
+
+  ```json
+  {
+    "links": [
+      { "fromStoreId": "3", "toStoreId": "7",
+        "moves": { "count": 12, "belowMinimum": false },
+        "exposures": { "count": null, "belowMinimum": true } }
+    ],
+    "top": [ /* links와 같은 모양, 최대 3개 */ ]
+  }
+  ```
+
+  - `links`: 참여 가게(승인 · 탈퇴 신청 중) 사이의 **방향 있는** 연결 중 이동이나 노출 기록이 있는 것만, 가게 ID 순. 기록이 없는 나머지 선은 화면이 가게 목록(`GET /api/v1/stores`)으로 그린다. 탈퇴한 가게가 낀 연결은 넣지 않는다(기록은 지우지 않음).
+  - `moves`(확인된 연계 방문 수, 선 굵기): 같은 손님이 **같은 날**(예약 시작 시각, Asia/Seoul) 두 가게를 **연달아 방문 처리**한 횟수. 날짜 · 순서 기준은 추천 실제 기록 점수(E6)와 같다. 한쪽이라도 취소 · 미방문이면 세지 않는다(FR-ANL-03 #2). 같은 가게를 연달아 간 것은 이동이 아니다. 고유 손님 수로 숨김을 정한다.
+  - `exposures`(추천 노출 수): `fromStoreId`를 기준 가게로 `toStoreId`를 추천 카드에 보여준 횟수(3.1 노출 기록). 고유 방문자 수로 숨김을 정한다. 확인된 이동과 따로 보여준다(FR-ANL-03 #4).
+  - `top`(인기 연결 TOP 3): 숨기지 않은 연결 중 `moves`가 많은 순(같으면 가게 ID 순), 최대 3개(FR-ANL-03 #3).
+- 기간은 전체다. 업종별 이동 비율 · 시간대별 예약(FR-ANL-08, 여유)은 이 API에 없다.
+- 실패: `unauthorized` · `forbidden_role`
+
 ## 2. 예약 · 잔액 · 수수료 · 정산 · 서버 시계 (담당 D)
 
 D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약 · 방문 처리, 가상 잔액 · 예약금, 수수료 · 정산, 시연용 시각 조작.
