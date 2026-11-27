@@ -1,8 +1,9 @@
 import { http, HttpResponse } from 'msw/http';
 import { errorResponse, rejectInvalidCsrf } from '../responses.js';
 import { getMockAccount } from '../session.js';
+import { MOCK_STORES } from '@/map/storeCatalog.js';
 
-// CONTRACTS_API.md 「3.2 쿠폰 행사 설정」(담당 E, E11 #23)의 목.
+// CONTRACTS_API.md 「3.2 쿠폰 행사 설정」(담당 E, E11 #23) · 「3.4 쿠폰 상세 · 다운로드」(E12)의 목.
 // 로그인한 사장님의 가게 하나를 흉내 낸다. 역할 검사(401 · 403)는 로그인 계약(C2) 목이 생기면 더한다.
 // 상태는 메모리에만 있어서 새로고침하면 처음(행사 없음)으로 돌아간다.
 
@@ -69,7 +70,89 @@ function validate(body) {
   return saved;
 }
 
+// 3.4 쿠폰 상세 · 다운로드 목: 쿠폰 행사를 하는 손님 쪽 목 가게(추천 카드 '예약 혜택' 배지도 이 목록으로 정한다)
+const DAY_MS = 86_400_000;
+const REDOWNLOAD_WAIT_MS = 30 * DAY_MS;
+const OFFER_EVENTS = Object.freeze({
+  S02: { benefitType: 'fixed_discount', discountAmount: 1000, conditions: '5,000원 이상 예약 시' },
+  S04: { benefitType: 'percent_discount', discountPercent: 10, maxDiscountAmount: 3000, conditions: null },
+  S07: { benefitType: 'fixed_discount', discountAmount: 2000, conditions: '2인 이상 방문 시' },
+  S10: { benefitType: 'service', serviceName: '포장 리본', conditions: null },
+  S12: { benefitType: 'fixed_discount', discountAmount: 3000, conditions: '2인 이상 방문 시' },
+  S14: { benefitType: 'service', serviceName: '감자튀김', conditions: '4인 이상 방문 시' },
+});
+
+/** 진행 중인 쿠폰 행사가 있는 목 가게인지(추천 카드 couponBenefit) */
+export function hasMockCouponOffer(storeId) {
+  return Object.hasOwn(OFFER_EVENTS, storeId);
+}
+
+function offerEvent(storeId) {
+  const event = OFFER_EVENTS[storeId];
+  if (!event) return null;
+  return { eventId: `ev-${storeId}`, discountAmount: null, discountPercent: null, maxDiscountAmount: null, serviceName: null, validDays: 7, ...event };
+}
+
+const downloadedCoupons = []; // { accountId, couponId, eventId, storeId, status, downloadedAt, expiresAt, ...혜택 }
+
+function couponStatusFor(account, storeId) {
+  const event = offerEvent(storeId);
+  if (!event) return { event: null, downloadStatus: 'unavailable', nextDownloadableAt: null, myCoupons: [] };
+  if (!account) return { event, downloadStatus: 'login_required', nextDownloadableAt: null, myCoupons: [] };
+  const mine = downloadedCoupons.filter((coupon) => coupon.accountId === account.id && coupon.storeId === storeId);
+  const myCoupons = mine.filter((coupon) => coupon.status === 'downloaded' || coupon.status === 'applied').map(({ couponId, eventId, status, expiresAt }) => ({ couponId, eventId, status, expiresAt }));
+  const sameEvent = mine.filter((coupon) => coupon.eventId === event.eventId);
+  if (sameEvent.some((coupon) => coupon.status === 'applied')) return { event, downloadStatus: 'applied_unused', nextDownloadableAt: null, myCoupons };
+  const latest = Math.max(...sameEvent.map((coupon) => Date.parse(coupon.downloadedAt)), -Infinity);
+  if (latest + REDOWNLOAD_WAIT_MS > Date.now()) {
+    return { event, downloadStatus: 'waiting', nextDownloadableAt: new Date(latest + REDOWNLOAD_WAIT_MS).toISOString(), myCoupons };
+  }
+  return { event, downloadStatus: 'available', nextDownloadableAt: null, myCoupons };
+}
+
 export const couponHandlers = [
+  // GET /api/v1/coupon-offers/{storeId} (3.4) — 누구나(사장님 · 상인회 403), 기록하지 않음
+  http.get('/api/v1/coupon-offers/:storeId', ({ params }) => {
+    const account = getMockAccount();
+    if (account && account.role !== 'customer' && account.role !== 'guest') return errorResponse(403, 'forbidden_role', '손님만 볼 수 있어요.');
+    if (!MOCK_STORES.some((store) => store.id === params.storeId)) return errorResponse(404, 'not_found', '가게를 찾을 수 없어요.');
+    const member = account?.role === 'customer' ? account : null;
+    return HttpResponse.json({ storeId: params.storeId, ...couponStatusFor(member, params.storeId) });
+  }),
+
+  // POST /api/v1/coupons (3.4) — 회원만. 노출 ID에서 대상 가게를 정한다(목 노출 ID: ex-{displayId 앞 8자}-{가게ID})
+  http.post('/api/v1/coupons', async (info) => {
+    const csrf = rejectInvalidCsrf(info);
+    if (csrf) return csrf;
+    const account = getMockAccount();
+    if (!account || account.role === 'guest') return errorResponse(401, 'unauthorized', '로그인이 필요해요.');
+    if (account.role !== 'customer') return errorResponse(403, 'forbidden_role', '회원 손님만 받을 수 있어요.');
+    const body = await info.request.json().catch(() => null);
+    if (typeof body?.exposureId !== 'string' || !body.exposureId) return errorResponse(400, 'invalid', '추천 정보를 확인해 주세요.');
+    const storeId = /^ex-[0-9a-f]{8}-(S\d+)$/i.exec(body.exposureId)?.[1];
+    if (!storeId || !MOCK_STORES.some((store) => store.id === storeId)) return errorResponse(404, 'not_found', '추천 기록을 찾을 수 없어요.');
+    const { event, downloadStatus } = couponStatusFor(account, storeId);
+    if (downloadStatus !== 'available') return errorResponse(409, 'conflict', '지금은 이 쿠폰을 받을 수 없어요.');
+    const now = Date.now();
+    const coupon = {
+      couponId: `cp-${storeId}-${downloadedCoupons.length + 1}`,
+      eventId: event.eventId,
+      storeId,
+      status: 'downloaded',
+      benefitType: event.benefitType,
+      discountAmount: event.discountAmount,
+      discountPercent: event.discountPercent,
+      maxDiscountAmount: event.maxDiscountAmount,
+      serviceName: event.serviceName,
+      conditions: event.conditions,
+      downloadedAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + event.validDays * DAY_MS).toISOString(),
+    };
+    downloadedCoupons.push({ ...coupon, accountId: account.id });
+    return HttpResponse.json(coupon, { status: 201 });
+  }),
+
+
   http.get('/api/v1/coupon-events/benefit-types', () => HttpResponse.json({ items: BENEFIT_TYPES })),
 
   http.get('/api/v1/coupon-events/mine', () => {

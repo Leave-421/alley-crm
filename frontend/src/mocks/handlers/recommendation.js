@@ -2,6 +2,7 @@ import { http, HttpResponse } from 'msw/http';
 import { errorResponse, rejectAnonymous, rejectInvalidCsrf } from '../responses.js';
 import { getMockAccount } from '../session.js';
 import { findMockCustomerReservation } from './reservation.js';
+import { hasMockCouponOffer } from './coupon.js';
 import { MOCK_STORES } from '@/map/storeCatalog.js';
 
 // CONTRACTS_API.md 「3. 추천 · 쿠폰 · 소개 판정 · 시드 (담당 E)」의 목.
@@ -44,7 +45,8 @@ function mockCards(baseStoreId, page) {
       badge: reasonType,
       reasonType,
       reasonText: REASONS[reasonType],
-      couponBenefit: i === 0,
+      couponBenefit: hasMockCouponOffer(store.id), // 쿠폰 상세 목(coupon.js)과 같은 가게
+
     };
   });
   const publicData = items.some((item) => item.badge === 'local_popular') ? PUBLIC_DATA : null;

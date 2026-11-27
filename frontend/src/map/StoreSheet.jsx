@@ -57,16 +57,31 @@ function useStoreRecommendations(storeId) {
   }, [storeId]);
 
   const current = loaded?.storeId === storeId ? loaded : null;
+  const [recorded, setRecorded] = useState(null); // { displayId, exposureIds: { [storeId]: exposureId } }
 
   useEffect(() => {
     const items = current?.data?.items;
-    if (!items?.length) return;
-    recordRecommendationExposures({ displayId: current.displayId, baseStoreId: current.storeId, page: current.data.page, storeIds: items.map((card) => card.store.id) }).catch(
-      (error) => console.warn('추천 표시 기록 실패', error),
-    );
+    if (!items?.length) return undefined;
+    let active = true;
+    const { displayId } = current;
+    recordRecommendationExposures({ displayId, baseStoreId: current.storeId, page: current.data.page, storeIds: items.map((card) => card.store.id) })
+      .then((result) => active && setRecorded({ displayId, exposureIds: Object.fromEntries(result.items.map((item) => [item.storeId, item.exposureId])) }))
+      .catch((error) => console.warn('추천 표시 기록 실패', error));
+    return () => {
+      active = false;
+    };
   }, [current]);
 
-  return current;
+  // 쿠폰 다운로드는 그 카드를 그렸을 때 받은 노출 ID로만 한다(3.4, FR-CPN-10)
+  const exposureIds = current && recorded?.displayId === current.displayId ? recorded.exposureIds : {};
+  return current ? { ...current, exposureIds } : null;
+}
+
+/** '예약 혜택' 카드 밑의 쿠폰 상세 진입(FR-CPN-02). 가게를 누를 때마다 팝업을 띄우지 않고, 손님이 이 줄을 눌렀을 때만 연다 */
+function couponLink(card, alley, baseStoreId, exposureId) {
+  const query = new URLSearchParams({ store: card.store.id, base: baseStoreId });
+  if (exposureId) query.set('exposure', exposureId);
+  return `/alleys/${alley}/coupon?${query}`;
 }
 
 /** 추천 가게로 가는 버튼 · 링크. 같은 골목이면 그 자리에서 열고, 다른 골목이면 그 골목으로 가서 연다 */
@@ -233,7 +248,8 @@ export default function StoreSheet({ store, alley, alleyLabel, building, scale, 
             {recommendation?.error && <div className={styles.cap}>추천을 불러오지 못했어요.</div>}
             {recommendation?.data && recItems.length === 0 && <div className={styles.cap}>지금은 추천할 가게가 없어요.</div>}
             {recItems.map((card) => (
-              <RecommendationTarget key={card.store.id} card={card} alley={alley} onOpenStore={onOpenStore} className={styles.recCard}>
+              <div key={card.store.id} className={styles.recItem}>
+              <RecommendationTarget card={card} alley={alley} onOpenStore={onOpenStore} className={card.couponBenefit ? `${styles.recCard} ${styles.recCardWithCoupon}` : styles.recCard}>
                 <span className={`${styles.recRank} ${rankClass(card)}`}>{card.rank}</span>
                 <span className={styles.recText}>
                   <span className={styles.recName}>{card.store.name}</span>
@@ -247,6 +263,13 @@ export default function StoreSheet({ store, alley, alleyLabel, building, scale, 
                   <span className={styles.recReason}>{card.reasonText}</span>
                 </span>
               </RecommendationTarget>
+              {card.couponBenefit && (
+                <Link to={couponLink(card, alley, store.id, recommendation.exposureIds[card.store.id])} className={styles.recCoupon}>
+                  <span>{card.store.name} 예약 혜택 · 쿠폰 보기</span>
+                  <span aria-hidden="true">›</span>
+                </Link>
+              )}
+              </div>
             ))}
             {recItems.some((card) => card.badge === 'local_popular') && (
               <p className={styles.recNotice}>

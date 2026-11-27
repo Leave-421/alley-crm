@@ -1,6 +1,7 @@
 import AppLayout from '@/layouts/AppLayout.jsx';
 import { CUSTOMER_MENU } from '@/layouts/menus.js';
 import AlleyScreen from '@/pages/customer/alley/AlleyScreen.jsx';
+import CouponOfferPage from '@/pages/customer/coupon/CouponOfferPage.jsx';
 import GuestReservationPage from '@/pages/customer/guest/GuestReservationPage.jsx';
 import AlleyPickPage from '@/pages/customer/alleys/AlleyPickPage.jsx';
 import HomePage from '@/pages/customer/home/HomePage.jsx';
@@ -24,6 +25,8 @@ export const customerRoutes = [
       { index: true, element: <HomePage /> }, // G-14 A24
       { path: 'alleys', handle: { title: '골목 고르기' }, element: <AlleyPickPage /> }, // G-15 A25
       { path: 'alleys/:alley/reserve', handle: { title: '예약하기' }, element: <ReservePage /> }, // G-02 A8 (가게 시트 '예약하기' → ?store=가게ID)
+      // 추천 예약 혜택(G-01 쿠폰 상세, A6): 가게 시트 '예약 혜택' 카드 → ?store=대상가게&base=기준가게&exposure=추천노출ID
+      { path: 'alleys/:alley/coupon', handle: { title: '추천 예약 혜택' }, element: <CouponOfferPage /> },
       // 다음 코스 예약(G-03): G-02 완료 화면의 '다음 코스로 예약하기' → ?store=추천가게ID&proposal=정식제안ID
       { path: 'reservations/:reservationId/next', handle: { title: '다음 코스 예약' }, element: <NextCoursePage /> }, // G-03 A10
       { path: 'reservations', handle: { title: '내 예약' }, element: <MyReservationsPage /> }, // G-04 A11

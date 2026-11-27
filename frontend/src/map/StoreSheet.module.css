@@ -243,6 +243,35 @@
   cursor: pointer;
 }
 
+.recItem {
+  margin-top: 10px;
+}
+
+.recItem > .recCard {
+  margin-top: 0;
+}
+
+.recCardWithCoupon {
+  border-bottom-width: 0;
+  border-radius: 20px 20px 0 0;
+}
+
+/* '예약 혜택' 카드 밑에 붙는 쿠폰 상세 진입 줄 */
+.recCoupon {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1.5px solid #e3d3dc;
+  border-radius: 0 0 20px 20px;
+  background: #fbe2e5;
+  color: #7a3a58;
+  font-size: 12.5px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
 .recRank {
   width: 30px;
   height: 30px;
