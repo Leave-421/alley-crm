@@ -431,6 +431,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
   - 기준 예약이 취소 · 거절돼도 묶음은 그대로이고 그 예약의 `status`가 `canceled`로 보인다. 다음 코스 예약은 자동 취소하지 않는다(#1 · #2). 거절 때 '다음 코스는 그대로' 알림은 C14가 `reservation_rejected`에서 보낸다.
   - `cancelable` · `refundIfCanceled`: 지금 취소할 수 있는지와 그때 돌려받는 예약금(D6 규칙: 24시간 전 100%, 마감 전 가게 비율, 마감 뒤 취소 불가 → `false` · `null`). 화면의 '취소할 때 환불 금액' 안내(G-04).
   - `refundAmount`: 이미 손님 취소한 예약의 실제 환불액.
+  - `visitAmount` · `couponDiscount` · `amountAfterDiscount`: 방문 처리된 예약의 결제 금액(할인 전) · 실제 쿠폰 할인 · 할인 후 금액. 방문 금액 알림(D21)과 같은 값이고, 다르면 '금액이 달라요'(C23)로 신고한다. 방문 전이면 `null`(FR-STL-07 #1).
   - 보낸 가게 · 수수료는 넣지 않는다(FR-CUS-05, 11-25 (5)).
 - 실패: `unauthorized` · `forbidden_role`(회원이 아님)
 
@@ -607,10 +608,16 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 | 소개 판정 (E15) | 받지 않음 | 판정은 신청 때 D12(단계 40: 마감 전이면 제안 id · 보낸 가게를 남겨 소개 후보), 확정은 방문 처리 때 D15(예약 건당 한 번 `referral_fee`). 따로 저장하지 않는다. 끝까지 확인은 E15 `ReferralJudgementTest` |
 | 소개 수수료 (D15) | `@EventListener` | 소개 확정이면 (방문 금액 − 쿠폰 할인) × 수수료율 → 가게 → 기금(FR-STL-02) |
 | 쿠폰 할인 계산 (E14) | `@EventListener` | 적용 쿠폰의 실제 할인액 기록(사용 완료로 바꾸지 않음) |
-| 방문 금액 알림 (D21 · C14) | `@TransactionalEventListener` (커밋 뒤) | 회원에게 방문 금액 알림(FR-STL-07) |
+| 방문 금액 알림 (D21) | `@TransactionalEventListener` (커밋 뒤) | **회원에게만** `visit_amount_recorded` 알림(아래). 비회원은 없음(FR-STL-07 #2) |
 | 고객 카드 · 방문 횟수 (C) | `@EventListener` 또는 커밋 뒤 | 마지막 방문 · 방문 횟수 |
 
 `senderStoreId`는 서버 안에서만 쓴다. 응답 · 알림에 내보내지 않는다(FR-CUS-05).
+
+#### 방문 금액 알림 `visit_amount_recorded` (서버 내부, D21, FR-STL-07, 기획 11-25 (5))
+
+`VisitAmountNoticeListener`가 '방문 처리됨'을 커밋 뒤에 받아 **회원** 계정 알림함에 남긴다(비회원은 없음). 알림 목록 · 읽음은 C14 API 그대로.
+
+`payload`: `{ "reservationId", "storeId", "storeName", "visitedAt", "visitAmount", "couponDiscount", "amountAfterDiscount" }` — 결제 금액(할인 전) · 실제 쿠폰 할인(E14 `discountFor`, 없으면 0) · 할인 후 금액(원). **수수료 · 보낸 가게는 넣지 않는다.** 화면은 이 알림에서 내 예약(G-04)으로 보내고, 금액이 다르면 '금액이 달라요' 신고(C23)로 이어진다.
 
 #### 소개 수수료 (서버 내부, D15)
 

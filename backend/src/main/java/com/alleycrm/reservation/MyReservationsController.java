@@ -28,10 +28,13 @@ class MyReservationsController {
 
     private final JdbcTemplate jdbc;
     private final CouponApplyService couponApply;
+    private final com.alleycrm.coupon.service.CouponVisitService couponVisit;
     private final ReservationStateService states;
     private final Clock clock;
 
-    MyReservationsController(JdbcTemplate jdbc, CouponApplyService couponApply, ReservationStateService states, Clock clock) {
+    MyReservationsController(JdbcTemplate jdbc, CouponApplyService couponApply, ReservationStateService states, Clock clock,
+            com.alleycrm.coupon.service.CouponVisitService couponVisit) {
+        this.couponVisit = couponVisit;
         this.jdbc = jdbc;
         this.couponApply = couponApply;
         this.states = states;
@@ -58,6 +61,10 @@ class MyReservationsController {
             boolean cancelable = ReservationStatus.REQUESTED.equals(status) || ReservationStatus.CONFIRMED.equals(status);
             Integer refundIfCanceled = cancelable ? states.customerCancelRefund(storeId, start, deposit, now) : null;
             Object root = rs.getObject("course_root_id");
+            Integer visitAmount = (Integer) rs.getObject("visit_amount");
+            // 방문 처리된 예약: 방문 금액 알림(D21)과 같은 값(FR-STL-07 #1)
+            Integer couponDiscount = visitAmount == null ? null : couponVisit.discountFor(id, visitAmount)
+                    .map(com.alleycrm.coupon.dto.VisitCouponDiscount::discountAmount).orElse(0);
             return new MyReservation(
                     String.valueOf(id),
                     rs.getString("reservation_no"),
@@ -70,7 +77,9 @@ class MyReservationsController {
                     instant(rs.getObject("requested_at", LocalDateTime.class)),
                     deposit,
                     (Integer) rs.getObject("refund_amount"),
-                    (Integer) rs.getObject("visit_amount"),
+                    visitAmount,
+                    couponDiscount,
+                    visitAmount == null ? null : Math.max(0, visitAmount - couponDiscount),
                     instant(rs.getObject("visited_at", LocalDateTime.class)),
                     root == null ? null : String.valueOf(((Number) root).longValue()),
                     couponApply.appliedCouponFor(id),
@@ -117,6 +126,8 @@ class MyReservationsController {
             int depositAmount,
             Integer refundAmount,
             Integer visitAmount,
+            Integer couponDiscount,
+            Integer amountAfterDiscount,
             Instant visitedAt,
             String courseRootId,
             AppliedCoupon coupon,
