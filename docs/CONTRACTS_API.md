@@ -271,7 +271,7 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 | `reminder` | 예약한 손님 | `{ "reservationId" }` | 자동 작업 `reservation_reminder`: 방문 일시가 30분 안으로 들어온 확정 예약마다 한 번. 화면은 이 알림에서 늦을 것 같아요(G-07)로 보낸다(FR-NTF-03 #3) |
 | `store_join_result` | 그 가게 사장님 | `{ "storeId", "joinStatus" }` | 가입 승인 · 거절 커밋 뒤(`StoreJoinDecidedEvent`) |
 | `association_coupon_opened` | 회원 계정 전부 | `{ "associationCouponEventId" }` | 3.9 「행사 알림」 |
-| `coupon_status` | 회원 | `{ "couponId", "status" }` (`used` · `expired`) | **미연결.** E14가 사용 완료 · 만료 때 이벤트를 내보내면 C14가 리스너를 단다. 비회원은 쿠폰이 없어 만들지 않는다(FR-NTF-03 #4 · #5) |
+| `coupon_status` | 회원 | `{ "couponId", "status" }` (`used` · `expired`) | 사용 확인 · 만료 작업 커밋 뒤(`CouponStatusChangedEvent`, 3.6 「쿠폰 상태 알림」). C14 리스너는 3.6 S-4. 비회원은 쿠폰이 없어 만들지 않는다(FR-NTF-03 #4 · #5) |
 | `visit_report_check_requested` | 그 가게 사장님 | `{ "visitReportId", "reservationId" }` | 상인회 신고 확인 요청 커밋 뒤(`VisitReportOwnerCheckRequestedEvent`, 「방문 신고 (C23)」) |
 | `delay_reported` | 그 가게 사장님 | `{ "reservationId", "startAt", "expectedArrivalAt" }` | 지연 입력 커밋 뒤(D14, 2절 「늦을 것 같아요」) |
 | `visit_amount_recorded` | 회원만 | 2절 「방문 금액 알림」 | 방문 처리 커밋 뒤(D21) |
@@ -1676,6 +1676,13 @@ DB가 막지 않는 것(유형별 필수 칸, 확정 뒤 변경 금지, 중단�
 - **휴업 · 운영 중단**: C22(#116)가 영업 상태를 바꾼 트랜잭션 안에서 내보내는 `StoreBusinessStatusChangedEvent(storeId, businessStatus)`를 E14가 `@EventListener`로 받아, `businessStatus`가 `paused` · `closed`면 위 메서드를 부른다(FR-STO-02 #1). 예약 받기 '잠시 멈춤'(이벤트 없음)이나 쿠폰 행사 중단(FR-CPN-11)에는 바뀌지 않는다.
 - **탈퇴**: 상인회 탈퇴 처리(C7 `POST /api/v1/store-joins/{storeId}/withdraw`)가 같은 트랜잭션에서 위 메서드를 부르고, `business_status_changed_at`도 남긴다.
 
+### 쿠폰 상태 알림 (서버 내부, E14 → C14)
+
+- 쿠폰이 **사용 완료**(사장님 사용 확인, `POST /api/v1/owner/reservations/{id}/coupon-use`)나 **기간 만료**(만료 작업 `CouponExpiryService.expireDue`)가 되면, 상태를 바꾼 트랜잭션 안에서 `CouponStatusChangedEvent(couponId, customerId, status)`(`com.alleycrm.coupon`, `status` = `used` · `expired`)를 내보낸다. 가게 쿠폰 · 상인회 쿠폰 모두.
+- 만료 작업은 대상(`downloaded` · `expires_at` ≤ 지금)을 잠그고 읽어 하나씩 바꾸고, **바뀐 쿠폰마다** 이벤트를 낸다. 읽은 뒤 예약에 적용된 쿠폰에는 내지 않는다.
+- C14가 `@TransactionalEventListener`(커밋 뒤)로 받아 그 손님의 회원 계정에 `notifyAccount(accountId, "coupon_status", { "couponId", "status" })`를 만든다(1절 표). 쿠폰은 회원만 받으므로 비회원 알림은 없다.
+- 적용 취소 · 늦은 방문 되돌리기는 알리지 않는다(FR-NTF-03은 사용 · 만료만).
+
 ### 늦은 방문 처리 → 되돌리기 (서버 내부, 11-25 (5))
 
 - `ReservationStatusChangedEvent`의 `fromStatus = canceled` · `toStatus = visited`(D23 늦은 방문 처리)를 `@EventListener`로 받아, 그 예약의 `apply_canceled` 쿠폰을 `applied`로 되돌린다. 사용 확인은 사장님이 따로 한다. 3.5 미확정 A-2를 이것으로 닫는다.
@@ -1694,6 +1701,7 @@ DB가 막지 않는 것(유형별 필수 칸, 확정 뒤 변경 금지, 중단�
 | --- | --- | --- | --- |
 | S-1 | 사장님 예약 응답(D3 · D4 · D11 · O-13)의 `coupon` 칸 채우기 — E가 `CouponApplyService.appliedCouponFor(reservationId)`(3.5 모양)를 제공하고 D가 응답에 넣는다. 지금은 `null` | 사장님 화면은 사용 확인 API의 `conflict`로 판단 | D (#14 · #19) |
 | S-3 | 만료 작업 실행 주기 | 메서드만 둔다 | D (D7 #103) |
+| S-4 | C14 리스너: `CouponStatusChangedEvent` → 회원에게 `coupon_status` 알림 | E14는 이벤트만 내보낸다 | C (C14) |
 
 ### 3.7 오늘의 코스 (E10 #52 · 계약 #210)
 

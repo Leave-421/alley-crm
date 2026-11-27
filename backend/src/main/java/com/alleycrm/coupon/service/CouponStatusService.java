@@ -2,6 +2,7 @@ package com.alleycrm.coupon.service;
 
 import com.alleycrm.common.error.ApiException;
 import com.alleycrm.common.error.ErrorCode;
+import com.alleycrm.coupon.CouponStatusChangedEvent;
 import com.alleycrm.coupon.domain.Coupon;
 import com.alleycrm.coupon.domain.CouponStatus;
 import com.alleycrm.coupon.dto.CouponUseResponse;
@@ -11,6 +12,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,11 +26,14 @@ public class CouponStatusService {
 
     private final CouponRepository coupons;
     private final ReservationStatusReader reservations;
+    private final ApplicationEventPublisher events;
     private final Clock clock;
 
-    public CouponStatusService(CouponRepository coupons, ReservationStatusReader reservations, Clock clock) {
+    public CouponStatusService(CouponRepository coupons, ReservationStatusReader reservations,
+            ApplicationEventPublisher events, Clock clock) {
         this.coupons = coupons;
         this.reservations = reservations;
+        this.events = events;
         this.clock = clock;
     }
 
@@ -46,7 +51,10 @@ public class CouponStatusService {
         Coupon coupon = coupons.findWithLockByReservationIdAndStatusIn(reservationId, List.of(CouponStatus.APPLIED))
                 .orElseThrow(() -> new ApiException(ErrorCode.CONFLICT, "사용 확인할 쿠폰이 없습니다."));
         coupon.markUsed(now());
-        return CouponUseResponse.from(coupons.saveAndFlush(coupon));
+        Coupon saved = coupons.saveAndFlush(coupon);
+        // 회원에게 사용 완료 알림(C14, 3.6 「쿠폰 상태 알림」)
+        events.publishEvent(new CouponStatusChangedEvent(saved.getId(), saved.getCustomerId(), CouponStatus.USED.code()));
+        return CouponUseResponse.from(saved);
     }
 
     /**

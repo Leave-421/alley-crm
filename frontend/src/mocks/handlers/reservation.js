@@ -47,6 +47,27 @@ function mockReservationNo() {
   return Array.from({ length: 8 }, () => RESERVATION_NO_CHARS[Math.floor(Math.random() * RESERVATION_NO_CHARS.length)]).join('');
 }
 
+const serviceDay = (ms) => new Date(ms + KST_OFFSET_MS).toISOString().slice(0, 10);
+
+// 이 탭에서 신청한 손님 예약(다음 코스의 기준 예약 검사 · 정식 코스 제안 목이 쓴다). 새로고침하면 비워진다
+const customerReservations = new Map();
+
+/** 목 손님 예약 하나(정식 코스 제안 목 recommendation.js가 기준 예약을 찾을 때 쓴다) */
+export function findMockCustomerReservation(id) {
+  return customerReservations.get(id) ?? null;
+}
+
+/** 다음 코스(D12) 검사: 기준 예약이 없으면 not_found, 같은 가게 · 같은 날 기준 시각과 같거나 이르면 conflict. 통과하면 null */
+function rejectBadCourse(body) {
+  if (!body.courseRootId) return null;
+  const root = customerReservations.get(body.courseRootId);
+  if (!root) return errorResponse(404, 'not_found', '기준 예약을 찾을 수 없어요.');
+  if (root.storeId === body.storeId) return errorResponse(409, 'conflict', '기준 예약과 같은 가게예요.');
+  const sameDay = serviceDay(Date.parse(root.startAt)) === serviceDay(Date.parse(body.startAt));
+  if (sameDay && Date.parse(body.startAt) <= Date.parse(root.startAt)) return errorResponse(409, 'conflict', '같은 날은 기준 예약보다 늦은 시간만 예약할 수 있어요.');
+  return null;
+}
+
 /** 사장님 API의 역할 검사: 로그인 안 함 401, 사장님이 아니면 403 forbidden_role. 통과하면 null. */
 function rejectNonOwner() {
   return rejectAnonymous() ?? (getMockAccount().role === 'owner' ? null : errorResponse(403, 'forbidden_role', '사장님만 볼 수 있어요.'));
@@ -271,12 +292,18 @@ export const reservationHandlers = [
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date))) {
       return errorResponse(400, 'invalid', '날짜를 확인해 주세요.');
     }
+    // after(다음 코스의 기준 예약 시각): 같은 날은 그보다 늦은 슬롯만 돌려준다. 다른 날은 영향 없음(D12)
+    const after = new URL(request.url).searchParams.get('after');
+    const afterMs = after ? Date.parse(after) : NaN;
+    const slots = mockSlots(store, date, Date.now() + offsetMs).filter(
+      (slot) => Number.isNaN(afterMs) || serviceDay(afterMs) !== date || Date.parse(slot.startAt) > afterMs,
+    );
     return HttpResponse.json({
       date,
       acceptingReservations: true,
       maxPartySize: MOCK_MAX_PARTY_SIZE,
       depositPerPerson: MOCK_DEPOSIT_PER_PERSON,
-      slots: mockSlots(store, date, Date.now() + offsetMs),
+      slots,
     });
   }),
 
@@ -295,29 +322,31 @@ export const reservationHandlers = [
     if (!MOCK_STORES.some((item) => item.id === body.storeId)) return errorResponse(404, 'not_found', '가게를 찾을 수 없어요.');
     const nowIso = new Date(Date.now() + offsetMs).toISOString();
     if (Date.parse(body.startAt) <= Date.now() + offsetMs) return errorResponse(409, 'slot_unavailable', '예약할 수 없는 시간이에요.');
-    return HttpResponse.json(
-      {
-        id: String(Date.now()),
-        reservationNo: mockReservationNo(),
-        storeId: body.storeId,
-        startAt: body.startAt,
-        partySize: body.partySize,
-        status: 'requested',
-        cancelReason: null,
-        requestedAt: nowIso,
-        requestNote: body.requestNote ?? null,
-        depositAmount: MOCK_DEPOSIT_PER_PERSON * body.partySize,
-        coupon: null,
-        courseRootId: null,
-        fromRecommendation: false,
-        visitAmount: null,
-        visitedAt: null,
-        refundAmount: null,
-        pendingStartAt: null,
-        pendingPartySize: null,
-      },
-      { status: 201 },
-    );
+    const badCourse = rejectBadCourse(body);
+    if (badCourse) return badCourse;
+    const reservation = {
+      id: String(Date.now()),
+      reservationNo: mockReservationNo(),
+      storeId: body.storeId,
+      startAt: body.startAt,
+      partySize: body.partySize,
+      status: 'requested',
+      cancelReason: null,
+      requestedAt: nowIso,
+      requestNote: body.requestNote ?? null,
+      depositAmount: MOCK_DEPOSIT_PER_PERSON * body.partySize,
+      // 쿠폰은 회원만(비회원이 보내면 무시). 목 쿠폰은 coupon.js의 사용 가능 쿠폰과 같은 3,000원 할인
+      coupon: account && body.couponId ? { couponId: body.couponId, benefitType: 'fixed_discount', discountAmount: 3000, discountPercent: null, maxDiscountAmount: null, serviceName: null } : null,
+      courseRootId: body.courseRootId ?? null,
+      fromRecommendation: false,
+      visitAmount: null,
+      visitedAt: null,
+      refundAmount: null,
+      pendingStartAt: null,
+      pendingPartySize: null,
+    };
+    customerReservations.set(reservation.id, { ...reservation, accountId: account?.id ?? null });
+    return HttpResponse.json(reservation, { status: 201 });
   }),
 
   http.get('/api/v1/demo/clock', () => rejectAnonymous() ?? clockResponse()),

@@ -20,15 +20,17 @@ export const GUEST_LIMITS = Object.freeze({ nameMaxLength: 20, phonePattern: /^\
  * 그 가게 그 날짜(운영 시간대 기준 YYYY-MM-DD)의 예약 가능 시간. 로그인 불필요.
  * @returns {Promise<{ date: string, acceptingReservations: boolean, maxPartySize: number | null, depositPerPerson: number, slots: { startAt: string, available: boolean }[] }>}
  */
-export function getAvailableSlots(storeId, date) {
-  return api.get(`/api/v1/stores/${encodeURIComponent(storeId)}/available-slots`, { query: { date } });
+export function getAvailableSlots(storeId, date, after = null) {
+  // after: 다음 코스(D12)의 기준 예약 시각. 같은 날은 그보다 늦은 슬롯만 온다
+  return api.get(`/api/v1/stores/${encodeURIComponent(storeId)}/available-slots`, { query: after ? { date, after } : { date } });
 }
 
 /**
  * 예약 신청. 로그인한 회원이면 회원 예약, 아니면 비회원 예약(guest 필수). 응답은 Reservation(status 'requested').
+ * 다음 코스(D12)면 courseRootId(기준 예약) · courseProposalId(정식 제안, 없으면 null)를 넣는다.
  * 실패 code: invalid · not_found · slot_unavailable · insufficient_balance · conflict · forbidden_role.
  */
-export function createReservation({ storeId, startAt, partySize, requestNote = null, guest = null, couponId = null }) {
+export function createReservation({ storeId, startAt, partySize, requestNote = null, guest = null, couponId = null, courseRootId = null, courseProposalId = null }) {
   return api.post('/api/v1/reservations', {
     storeId,
     startAt,
@@ -37,7 +39,7 @@ export function createReservation({ storeId, startAt, partySize, requestNote = n
     shareConsent: true,
     guest,
     couponId,
-    courseRootId: null,
-    courseProposalId: null,
+    courseRootId,
+    courseProposalId,
   });
 }
