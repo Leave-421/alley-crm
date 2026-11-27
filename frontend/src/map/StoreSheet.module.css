@@ -251,9 +251,42 @@
   margin-top: 0;
 }
 
-.recCardWithCoupon {
+/* 카드 밑에 '다음 코스로 예약하기' · 쿠폰 줄이 붙는다 */
+.recCardTop {
   border-bottom-width: 0;
   border-radius: 20px 20px 0 0;
+}
+
+.recNext {
+  padding: 0 12px 12px;
+  border: 1.5px solid #e3d3dc;
+  border-top: 0;
+  border-bottom-width: 0;
+  background: #fff;
+}
+
+.recNextButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 40px;
+  border: 0;
+  border-radius: 14px;
+  background: #523344;
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.recNextButton:disabled {
+  background: #f4eef1;
+  color: #a8949f;
+  cursor: not-allowed;
 }
 
 /* '예약 혜택' 카드 밑에 붙는 쿠폰 상세 진입 줄 */
@@ -264,12 +297,27 @@
   min-height: 40px;
   padding: 0 14px;
   border: 1.5px solid #e3d3dc;
-  border-radius: 0 0 20px 20px;
   background: #fbe2e5;
   color: #7a3a58;
   font-size: 12.5px;
   font-weight: 800;
   text-decoration: none;
+}
+
+.recFooterLast {
+  border-bottom-width: 1.5px;
+  border-radius: 0 0 20px 20px;
+}
+
+.lockNote {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: #f4eef1;
+  color: #574050;
+  font-size: 12.5px;
+  line-height: 19px;
+  font-weight: 600;
 }
 
 .recRank {

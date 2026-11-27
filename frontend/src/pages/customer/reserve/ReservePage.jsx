@@ -48,7 +48,9 @@ export default function ReservePage() {
   const { alley } = useParams();
   const [searchParams] = useSearchParams();
   const store = MOCK_STORES.find((item) => item.id === searchParams.get('store'));
-  return <ReserveFlow store={store} alley={alley} />;
+  // 가게 시트에서 날짜 · 시간을 골라 왔으면(`&at=UTC시각`, G-01) 그 날짜 · 시간을 고른 채로 연다
+  const at = searchParams.get('at');
+  return <ReserveFlow store={store} alley={alley} initialStartAt={at && !Number.isNaN(Date.parse(at)) ? at : null} />;
 }
 
 /**
@@ -56,14 +58,16 @@ export default function ReservePage() {
  * course: 다음 코스일 때 { rootReservationId, rootStoreId, rootStartAt, proposalId | null } — 기준 예약을 보여주고,
  * 예약 가능 시간에 after(기준 시각)를 넣어 같은 날은 그보다 늦은 시간만 받으며, 신청에 courseRootId · courseProposalId를 싣는다.
  */
-export function ReserveFlow({ store, alley, course = null }) {
+export function ReserveFlow({ store, alley, course = null, initialStartAt = null }) {
   const { status, role, account } = useSession();
   const loggedIn = status === SESSION_STATUS.AUTHENTICATED;
   const isMember = loggedIn && role === 'customer';
 
   const [days] = useState(() => upcomingDays(DATE_CHOICES));
-  const [dateKey, setDateKey] = useState(days[0].key);
-  const [slotStartAt, setSlotStartAt] = useState(null);
+  const initialDay = initialStartAt ? serviceDateKey(Date.parse(initialStartAt)) : null;
+  const preset = initialDay && days.some((day) => day.key === initialDay);
+  const [dateKey, setDateKey] = useState(preset ? initialDay : days[0].key);
+  const [slotStartAt, setSlotStartAt] = useState(preset ? initialStartAt : null);
   const [party, setParty] = useState(2);
   const [guest, setGuest] = useState(EMPTY_GUEST);
   const [consent, setConsent] = useState(false);
