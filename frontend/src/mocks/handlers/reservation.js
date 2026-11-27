@@ -50,6 +50,9 @@ const MOCK_APPLIED_COUPONS = {
 };
 const usedCoupons = new Set(); // 예약 id
 
+// 손님이 '늦을 것 같아요'(D14)로 입력한 지연(분). MOCK_DAY 순번 → 분
+const MOCK_DELAY_MINUTES = { 3: 20 };
+
 // 소개 수수료율(설정값, NFR-04). 목은 기본값 4%
 const REFERRAL_FEE_RATE = 0.04;
 
@@ -93,7 +96,8 @@ function mockOwnerReservations(date) {
       partySize: changed.partySize ?? item.partySize,
       pendingStartAt: pending ? new Date(`${date}T${pending.time}:00+09:00`).toISOString() : null,
       pendingPartySize: pending ? pending.partySize : null,
-      expectedArrivalAt: null, // 지연 입력(D14)은 B9에서 목에 더한다
+      // 손님이 입력한 지연 예상 도착 시각(D14). 확정 예약에만 들어온다
+      expectedArrivalAt: status === 'confirmed' && MOCK_DELAY_MINUTES[index] ? new Date(startAt.getTime() + MOCK_DELAY_MINUTES[index] * 60_000).toISOString() : null,
       status,
       cancelReason,
       requestedAt: new Date(startAt.getTime() - 26 * 3_600_000).toISOString(),

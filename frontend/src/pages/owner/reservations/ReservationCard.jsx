@@ -45,6 +45,14 @@ export default function ReservationCard({ reservation, referralFeeRate, onDecide
 
       {isChangeRequest && <ChangeRequestInfo reservation={reservation} />}
 
+      {/* 손님이 입력한 지연(D14, FR-RSV-10): '손님이 N분 늦어요 · 예상 도착 HH:mm'. 예약 시각은 바뀌지 않는다 */}
+      {reservation.expectedArrivalAt && status === 'confirmed' && (
+        <p className={styles.delayTag} role="note">
+          손님이 {Math.max(0, Math.round((Date.parse(reservation.expectedArrivalAt) - Date.parse(startAt)) / 60_000))}분 늦어요 · 예상 도착{' '}
+          <time dateTime={reservation.expectedArrivalAt}>{formatTime(reservation.expectedArrivalAt)}</time>
+        </p>
+      )}
+
       {canceled && cancelReason && <p className={styles.cancelReason}>취소 사유: {CANCEL_REASON_LABELS[cancelReason] ?? cancelReason}</p>}
 
       <p className={styles.cardMeta}>{details.join(' · ')}</p>
