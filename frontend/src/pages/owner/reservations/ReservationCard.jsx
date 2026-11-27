@@ -12,7 +12,7 @@ import {
 import Badge from '@/components/Badge/Badge.jsx';
 import Button from '@/components/Button/Button.jsx';
 import TextField from '@/components/TextField/TextField.jsx';
-import { formatTime, formatWon } from './reservationFormat.js';
+import { formatDayLabel, formatTime, formatWon, toDateKey } from './reservationFormat.js';
 import { describeAppliedCoupon, previewVisit } from './visitPreview.js';
 import styles from './OwnerReservations.module.css';
 
@@ -26,6 +26,8 @@ export default function ReservationCard({ reservation, referralFeeRate, onDecide
   const { startAt, maskedName, partySize, status, cancelReason, customerType, fromRecommendation, requestNote, depositAmount } =
     reservation;
   const canceled = status === 'canceled';
+  // 변경 신청(D8, O-02): 신청 상태이고 바꿀 값이 있으면 확정 예약의 변경 요청이다
+  const isChangeRequest = status === 'requested' && (reservation.pendingStartAt != null || reservation.pendingPartySize != null);
   const details = [`${partySize}명`, customerType === 'guest' ? '비회원' : '회원'];
   if (depositAmount > 0) details.push(`예약금 ${formatWon(depositAmount)}`);
 
@@ -38,8 +40,10 @@ export default function ReservationCard({ reservation, referralFeeRate, onDecide
           </time>
           <span>{maskedName ?? '이름 없음'}</span>
         </p>
-        <Badge tone={status}>{RESERVATION_STATUS_LABELS[status] ?? status}</Badge>
+        <Badge tone={status}>{isChangeRequest ? '변경 요청' : (RESERVATION_STATUS_LABELS[status] ?? status)}</Badge>
       </div>
+
+      {isChangeRequest && <ChangeRequestInfo reservation={reservation} />}
 
       {canceled && cancelReason && <p className={styles.cancelReason}>취소 사유: {CANCEL_REASON_LABELS[cancelReason] ?? cancelReason}</p>}
 
@@ -63,7 +67,12 @@ export default function ReservationCard({ reservation, referralFeeRate, onDecide
         </p>
       )}
 
-      {status === 'requested' && <DecisionActions reservation={reservation} onDecided={onDecided} onOutdated={onOutdated} />}
+      {status === 'requested' &&
+        (isChangeRequest ? (
+          <ChangeDecisionActions reservation={reservation} onOutdated={onOutdated} />
+        ) : (
+          <DecisionActions reservation={reservation} onDecided={onDecided} onOutdated={onOutdated} />
+        ))}
       {status === 'confirmed' && (
         <VisitAction reservation={reservation} referralFeeRate={referralFeeRate} onDecided={onDecided} onOutdated={onOutdated} />
       )}
@@ -232,6 +241,87 @@ function CouponUseAction({ reservation, onDecided }) {
       <Button variant="secondary" onClick={confirmUse} disabled={busy}>
         쿠폰 사용 확인
       </Button>
+    </div>
+  );
+}
+
+/** 운영 시간대 '11월 28일 21:00' · 같은 날이면 '21:00' */
+function describeWhen(instant, baseInstant) {
+  return toDateKey(instant) === toDateKey(baseInstant) ? formatTime(instant) : `${formatDayLabel(toDateKey(instant))} ${formatTime(instant)}`;
+}
+
+/**
+ * O-02 예약 변경 요청(B7, FR-RSV-07): 원래 일시 · 인원과 바뀔 일시 · 인원. O-01 카드 안에 합쳐 보여 준다(07-screens O-02 '합쳐도 된다').
+ * 원래 시각과 바뀐 시각 중 이른 쪽까지 승인하지 않으면 변경만 자동 거절된다(원래 예약은 그대로).
+ */
+function ChangeRequestInfo({ reservation }) {
+  const { startAt, partySize, pendingStartAt, pendingPartySize } = reservation;
+  const nextStart = pendingStartAt ?? startAt;
+  const nextParty = pendingPartySize ?? partySize;
+  return (
+    <div className={styles.changeBox}>
+      <p>
+        <span className={styles.changeLabel}>원래</span> {describeWhen(startAt, startAt)} · {partySize}명
+      </p>
+      <p>
+        <span className={styles.changeLabel}>바꿀 값</span> <strong>{describeWhen(nextStart, startAt)} · {nextParty}명</strong>
+      </p>
+      <p className={styles.cardMeta}>원래 시각과 바뀐 시각 중 이른 쪽까지 승인하지 않으면 변경만 자동 거절되고, 원래 예약은 그대로예요.</p>
+    </div>
+  );
+}
+
+/**
+ * 변경 요청의 승인 · 거절(B7, FR-RSV-07). D3 승인 · 거절 API를 그대로 쓴다(D8 「사장님 처리」).
+ * 승인: 자리를 다시 확인하고 예약금 차액을 서버가 정산해 바꾼 값으로 확정. 거절: 원래 값으로 확정 유지(취소가 아님).
+ * 예약 날짜가 바뀔 수 있어 처리 뒤 목록을 다시 읽는다.
+ */
+function ChangeDecisionActions({ reservation, onOutdated }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const who = reservation.maskedName ?? '손님';
+  const next = `${describeWhen(reservation.pendingStartAt ?? reservation.startAt, reservation.startAt)} · ${reservation.pendingPartySize ?? reservation.partySize}명`;
+  const original = `${formatTime(reservation.startAt)} · ${reservation.partySize}명`;
+
+  async function decide(action) {
+    setBusy(true);
+    setError(null);
+    try {
+      if (action === 'confirm') {
+        await confirmReservation(reservation.id);
+        onOutdated(`${who}님 변경을 승인했어요 · 바꾼 값(${next})으로 확정됐고, 예약금 차액은 자동으로 정산돼요.`);
+      } else {
+        await rejectReservation(reservation.id);
+        onOutdated(`${who}님 변경을 거절했어요 · 원래 예약(${original}) 그대로예요.`);
+      }
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.code === 'insufficient_balance') {
+        setError('손님 가상 잔액이 모자라 늘어난 예약금을 받을 수 없어요. 변경은 대기 그대로예요.');
+      } else if (caught instanceof ApiError && (caught.code === 'conflict' || caught.code === 'not_found')) {
+        onOutdated(`${who}님 변경 요청은 이미 처리됐거나 처리할 수 있는 시각이 지났어요. 목록을 다시 불러왔어요.`);
+        return;
+      } else {
+        setError(caught instanceof ApiError ? caught.message : '처리하지 못했어요.');
+      }
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className={styles.decision}>
+      {error && (
+        <p className={styles.error} role="alert">
+          {error}
+        </p>
+      )}
+      <div className={styles.actions}>
+        <Button variant="secondary" onClick={() => decide('reject')} disabled={busy}>
+          변경 거절
+        </Button>
+        <Button onClick={() => decide('confirm')} disabled={busy}>
+          변경 승인
+        </Button>
+      </div>
     </div>
   );
 }

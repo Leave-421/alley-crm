@@ -307,3 +307,22 @@
 .referralTag::before {
   content: '✓ ';
 }
+
+/* 변경 요청(B7 O-02): 원래 값 → 바꿀 값 */
+.changeBox {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-3);
+  border: 1px dashed var(--color-berry-500);
+  border-radius: var(--radius-md);
+  background: var(--color-pink-50);
+  font-size: var(--text-md);
+}
+
+.changeLabel {
+  display: inline-block;
+  min-width: 52px;
+  color: var(--color-text-muted);
+  font-weight: var(--weight-semibold);
+}

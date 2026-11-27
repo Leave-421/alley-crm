@@ -117,6 +117,7 @@ export default function OwnerReservationsPage() {
   const items = state.status === 'ready' ? state.items : [];
   const active = items.filter((item) => item.status !== 'canceled');
   const waiting = items.filter((item) => item.status === 'requested').length;
+  const changeRequests = items.filter((item) => item.status === 'requested' && (item.pendingStartAt != null || item.pendingPartySize != null)).length;
   const visited = items.filter((item) => item.status === 'visited').length;
   const remaining = items.filter((item) => item.status === 'requested' || item.status === 'confirmed').length;
 
@@ -144,7 +145,7 @@ export default function OwnerReservationsPage() {
 
       {state.status === 'ready' && (
         <p className={styles.summary}>
-          {isToday && `오늘 ${formatTime(nowMs)} 기준 · `}예약 {active.length}건 · 신청 대기 {waiting}건
+          {isToday && `오늘 ${formatTime(nowMs)} 기준 · `}예약 {active.length}건 · 신청 대기 {waiting}건{changeRequests > 0 && `(변경 요청 ${changeRequests}건)`}
         </p>
       )}
 
