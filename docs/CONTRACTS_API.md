@@ -275,7 +275,7 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 | `visit_report_check_requested` | 그 가게 사장님 | `{ "visitReportId", "reservationId" }` | 상인회 신고 확인 요청 커밋 뒤(`VisitReportOwnerCheckRequestedEvent`, 「방문 신고 (C23)」) |
 | `delay_reported` | 그 가게 사장님 | `{ "reservationId", "startAt", "expectedArrivalAt" }` | 지연 입력 커밋 뒤(D14, 2절 「늦을 것 같아요」) |
 | `visit_amount_recorded` | 회원만 | 2절 「방문 금액 알림」 | 방문 처리 커밋 뒤(D21) |
-| `next_store_recommended` | 그 예약의 손님(회원 계정 · 비회원 예약) | `{ "reservationId", "baseStoreId" }` | 예약 신청 커밋 뒤 E 계산이 후보가 있을 때 내보내는 `NextStoreRecommendedEvent`(3.11). C14 리스너는 3.11 N-1 |
+| `next_store_recommended` | 그 예약의 손님(회원 계정 · 비회원 예약) | `{ "reservationId", "baseStoreId" }` | 예약 신청 커밋 뒤 E 계산이 후보가 있을 때 내보내는 `NextStoreRecommendedEvent`(3.11), C14 `ReservationNotificationListener`(#298) |
 
 "예약한 손님"은 회원이면 그 계정(`account`), 비회원이면 그 예약(`guest_reservation`)이다. 기능 쪽은 `notifyReservationCustomer(reservationId, customerId, type, payload)`로 같은 규칙을 쓴다.
 
@@ -1425,7 +1425,7 @@ DB가 막지 않는 것(유형별 필수 칸, 확정 뒤 변경 금지, 중단�
 | # | 내용 | 정해지지 않은 동안 | 결정 주체 |
 | --- | --- | --- | --- |
 | V-1 | (닫힘) 오늘의 코스 `timeBand` 값 목록 → `CONTRACTS.md` 「3」 `timeBand`(E2 #16, 결정 11-26) | — | E2 (#16) |
-| V-2 | 이 절과 3.1의 비로그인 경로를 보안 설정 · `CONTRACTS.md` 「6」 목록에 더하기: `POST /api/v1/store-clicks`, `POST /api/v1/course-previews` (3.1 R-10의 두 경로와 함께) | `store-clicks`는 **반영됨**(#222). `course-previews`는 API가 아직 없어, 그 API를 만드는 PR에서 `SecurityConfig` · 「6」 목록에 함께 더한다 | C (#24) · E |
+| V-2 | 이 절과 3.1의 비로그인 경로를 보안 설정 · `CONTRACTS.md` 「6」 목록에 더하기: `POST /api/v1/store-clicks`, `POST /api/v1/course-previews` (3.1 R-10의 두 경로와 함께) | **반영됨**: `store-clicks`(#222), `course-previews`(#298) | C (#24) · E |
 | V-3 | 로그인 · 예약 신청에서 `VisitorService`를 부르는 것 | E3는 서비스만 제공하고 테스트는 서비스 단위로 한다 | C2 (#24) · C4 (#38) |
 
 ### 3.4 쿠폰 상세 · 다운로드 (E12 #25 · 계약 #154)
@@ -2138,5 +2138,5 @@ DB가 막지 않는 것(유형별 필수 칸, 확정 뒤 변경 금지, 중단�
 
 | # | 내용 | 정해지지 않은 동안 | 결정 주체 |
 | --- | --- | --- | --- |
-| N-1 | C14 리스너: `NextStoreRecommendedEvent` → 손님(회원 계정 · 비회원 예약)에게 `next_store_recommended` 알림, 1절 표 줄 | E8은 이벤트만 내보낸다 | C (C14) |
-| N-2 | 이 절의 `POST` 경로를 로그인 없이 여는 보안 설정(3.1 R-10 · 3.3 V-2와 함께) | 로그인한 요청으로만 동작 | C |
+| N-1 | C14 리스너: `NextStoreRecommendedEvent` → 손님(회원 계정 · 비회원 예약)에게 `next_store_recommended` 알림, 1절 표 줄 | **반영됨**(#298) | C (C14) |
+| N-2 | 이 절의 `POST` 경로를 로그인 없이 여는 보안 설정(3.1 R-10 · 3.3 V-2와 함께) | **반영됨**(#298). CSRF 토큰은 계속 필요 | C |

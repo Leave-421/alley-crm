@@ -1,6 +1,7 @@
 package com.alleycrm.notification;
 
 import com.alleycrm.account.AccountService;
+import com.alleycrm.recommend.NextStoreRecommendedEvent;
 import com.alleycrm.reservation.CancelReason;
 import com.alleycrm.reservation.ReservationNoticeReader;
 import com.alleycrm.reservation.ReservationStatus;
@@ -73,6 +74,14 @@ class ReservationNotificationListener {
                 notifyOwner(e.storeId(), NotificationType.RESERVATION_CANCELED, Map.of("reservationId", id));
             }
         }
+    }
+
+    /** 예약 뒤 다음 가게 추천 후보가 있음(E8) → 그 예약의 손님(회원 계정 · 비회원 예약)에게(FR-CRS-02, 3.11 N-1) */
+    @TransactionalEventListener
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    void onNextStoreRecommended(NextStoreRecommendedEvent e) {
+        notifications.notifyReservationCustomer(e.reservationId(), e.customerId(), NotificationType.NEXT_STORE_RECOMMENDED,
+                Map.of("reservationId", String.valueOf(e.reservationId()), "baseStoreId", String.valueOf(e.storeId())));
     }
 
     /** 사장님 계정이 아직 없는 가게면 남기지 않는다 */

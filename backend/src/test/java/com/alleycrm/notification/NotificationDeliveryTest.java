@@ -6,6 +6,7 @@ import com.alleycrm.TestcontainersConfiguration;
 import com.alleycrm.account.AccountService;
 import com.alleycrm.common.time.AppClock;
 import com.alleycrm.coupon.AssociationCouponOpenedEvent;
+import com.alleycrm.recommend.NextStoreRecommendedEvent;
 import com.alleycrm.reservation.ReservationStateService;
 import com.alleycrm.reservation.ReservationStatusChangedEvent;
 import com.alleycrm.store.StoreJoinDecidedEvent;
@@ -147,6 +148,28 @@ class NotificationDeliveryTest {
                 .containsExactly(Map.of("type", "change_approved", "payload", Map.of("reservationId", String.valueOf(approved))));
         assertThat(notices("guest_reservation", rejected))
                 .containsExactly(Map.of("type", "change_rejected", "payload", Map.of("reservationId", String.valueOf(rejected))));
+    }
+
+    @Test
+    void FR_CRS_02_다음_가게_추천이_있으면_회원_계정과_비회원_예약에_알림_롤백되면_없음() {
+        long memberReservation = reservation(memberCustomerId, "requested", NOW.plus(Duration.ofDays(1)), null);
+        long guestReservation = reservation(guestCustomerId, "requested", NOW.plus(Duration.ofDays(1)), null);
+        long rolledBack = reservation(guestCustomerId, "requested", NOW.plus(Duration.ofDays(2)), null);
+
+        tx.executeWithoutResult(s -> {
+            events.publishEvent(new NextStoreRecommendedEvent(memberReservation, storeId, memberCustomerId));
+            events.publishEvent(new NextStoreRecommendedEvent(guestReservation, storeId, guestCustomerId));
+        });
+        tx.executeWithoutResult(s -> {
+            events.publishEvent(new NextStoreRecommendedEvent(rolledBack, storeId, guestCustomerId));
+            s.setRollbackOnly();
+        });
+
+        assertThat(notices("account", memberAccountId)).containsExactly(Map.of("type", "next_store_recommended",
+                "payload", Map.of("reservationId", String.valueOf(memberReservation), "baseStoreId", String.valueOf(storeId))));
+        assertThat(notices("guest_reservation", guestReservation)).containsExactly(Map.of("type", "next_store_recommended",
+                "payload", Map.of("reservationId", String.valueOf(guestReservation), "baseStoreId", String.valueOf(storeId))));
+        assertThat(notices("guest_reservation", rolledBack)).isEmpty();
     }
 
     @Test
