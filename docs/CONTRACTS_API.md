@@ -271,7 +271,7 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 | `reminder` | 예약한 손님 | `{ "reservationId" }` | 자동 작업 `reservation_reminder`: 방문 일시가 30분 안으로 들어온 확정 예약마다 한 번. 화면은 이 알림에서 늦을 것 같아요(G-07)로 보낸다(FR-NTF-03 #3) |
 | `store_join_result` | 그 가게 사장님 | `{ "storeId", "joinStatus" }` | 가입 승인 · 거절 커밋 뒤(`StoreJoinDecidedEvent`) |
 | `association_coupon_opened` | 회원 계정 전부 | `{ "associationCouponEventId" }` | 3.9 「행사 알림」 |
-| `coupon_status` | 회원 | `{ "couponId", "status" }` (`used` · `expired`) | 사용 확인 · 만료 작업 커밋 뒤(`CouponStatusChangedEvent`, 3.6 「쿠폰 상태 알림」). C14 리스너는 3.6 S-4. 비회원은 쿠폰이 없어 만들지 않는다(FR-NTF-03 #4 · #5) |
+| `coupon_status` | 회원 | `{ "couponId", "status" }` (`used` · `expired`) | 사용 확인 · 만료 작업 커밋 뒤(`CouponStatusChangedEvent`, 3.6 「쿠폰 상태 알림」), C14 `CouponStatusNotificationListener`(#305). 비회원은 쿠폰이 없어 만들지 않는다(FR-NTF-03 #4 · #5) |
 | `visit_report_check_requested` | 그 가게 사장님 | `{ "visitReportId", "reservationId" }` | 상인회 신고 확인 요청 커밋 뒤(`VisitReportOwnerCheckRequestedEvent`, 「방문 신고 (C23)」) |
 | `delay_reported` | 그 가게 사장님 | `{ "reservationId", "startAt", "expectedArrivalAt" }` | 지연 입력 커밋 뒤(D14, 2절 「늦을 것 같아요」) |
 | `visit_amount_recorded` | 회원만 | 2절 「방문 금액 알림」 | 방문 처리 커밋 뒤(D21) |
@@ -1701,7 +1701,7 @@ DB가 막지 않는 것(유형별 필수 칸, 확정 뒤 변경 금지, 중단�
 | --- | --- | --- | --- |
 | S-1 | 사장님 예약 응답(D3 · D4 · D11 · O-13)의 `coupon` 칸 채우기 — E가 `CouponApplyService.appliedCouponFor(reservationId)`(3.5 모양)를 제공하고 D가 응답에 넣는다. 지금은 `null` | 사장님 화면은 사용 확인 API의 `conflict`로 판단 | D (#14 · #19) |
 | S-3 | 만료 작업 실행 주기 | 메서드만 둔다 | D (D7 #103) |
-| S-4 | C14 리스너: `CouponStatusChangedEvent` → 회원에게 `coupon_status` 알림 | E14는 이벤트만 내보낸다 | C (C14) |
+| S-4 | C14 리스너: `CouponStatusChangedEvent` → 회원에게 `coupon_status` 알림 | **반영됨**(#305) | C (C14) |
 
 ### 3.7 오늘의 코스 (E10 #52 · 계약 #210)
 
