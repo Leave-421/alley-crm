@@ -11,6 +11,8 @@ import com.alleycrm.account.AccountService;
 import com.alleycrm.common.TestCsrf;
 import com.alleycrm.common.time.AppClock;
 import com.alleycrm.coupon.AssociationCouponOpenedEvent;
+import com.alleycrm.notification.NotificationService;
+import com.alleycrm.notification.NotificationType;
 import com.alleycrm.wallet.WalletOwner;
 import com.alleycrm.wallet.WalletService;
 import com.alleycrm.wallet.WalletTxType;
@@ -68,6 +70,9 @@ class AssociationCouponClaimApiTest {
 
     @Autowired
     ApplicationEvents events;
+
+    @Autowired
+    NotificationService notifications;
 
     long region;
     long storeA;
@@ -176,6 +181,44 @@ class AssociationCouponClaimApiTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error.code").value("csrf_invalid"));
         assertThat(issuedCount(event)).isZero();
+    }
+
+    @Test
+    void 비회원_예약_조회_세션은_행사_알림이_없고_쿠폰을_보거나_받을_수_없다_FR_CPN_13_3() throws Exception {
+        long event = event(10, "2026-11-30 02:00:00", "2026-12-07 15:00:00", false);
+        String phone = "01055556666";
+        long guestCustomer = insert("INSERT INTO customer (type, name, phone) VALUES ('guest', '비회원', '" + phone + "')");
+        String reservationNo = "G" + System.nanoTime() % 100_000_000_000L;
+        long reservation = insert("""
+                INSERT INTO reservation (reservation_no, store_id, customer_id, start_at, party_size, status, requested_at)
+                VALUES ('%s', %d, %d, '2026-12-01 03:00:00', 2, 'confirmed', '2026-11-30 02:00:00')
+                """.formatted(reservationNo, storeA, guestCustomer));
+        // 행사 알림은 회원 계정마다(C14 리스너), 비회원 예약 알림은 그 예약으로 간다
+        String memberLogin = "m" + System.nanoTime();
+        accounts.signupCustomer(memberLogin, PASSWORD, "회원", null, null);
+        long memberAccount = jdbc.queryForObject("SELECT id FROM account WHERE login_id = ?", Long.class, memberLogin);
+        notifications.notifyAccount(memberAccount, NotificationType.ASSOCIATION_COUPON_OPENED,
+                Map.of("associationCouponEventId", String.valueOf(event)));
+        notifications.notifyGuestReservation(reservation, NotificationType.RESERVATION_CONFIRMED, Map.of());
+
+        MockHttpSession guest = (MockHttpSession) mvc.perform(post("/api/v1/guest/lookup").with(TestCsrf.csrf(mvc))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reservationNo\":\"" + reservationNo + "\",\"phone\":\"" + phone + "\"}"))
+                .andExpect(status().isOk())
+                .andReturn().getRequest().getSession(false);
+
+        // 비회원 알림함(G-13): 그 예약의 알림만, 상인회 행사 알림은 없다
+        mvc.perform(get("/api/v1/notifications").session(guest))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[*].type").value(Matchers.contains(NotificationType.RESERVATION_CONFIRMED)));
+        mvc.perform(get("/api/v1/notifications").session(login(memberLogin)))
+                .andExpect(jsonPath("$.items[*].type")
+                        .value(Matchers.hasItem(NotificationType.ASSOCIATION_COUPON_OPENED)));
+        // 행사 카드 · 받기는 회원만
+        offer(guest, event).andExpect(status().isForbidden()).andExpect(jsonPath("$.error.code").value("forbidden_role"));
+        claim(guest, event).andExpect(status().isForbidden()).andExpect(jsonPath("$.error.code").value("forbidden_role"));
+        assertThat(issuedCount(event)).isZero();
+        assertThat(couponCount(event)).isZero();
     }
 
     @Test
