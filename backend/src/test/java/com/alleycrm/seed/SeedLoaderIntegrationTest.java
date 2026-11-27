@@ -221,7 +221,10 @@ class SeedLoaderIntegrationTest {
         DemoCourseSeeder.Result course = result.demoCourses();
 
         assertThat(count("visitor")).isEqualTo(course.visitors()).isPositive();
-        assertThat(count("recommendation_exposure")).isEqualTo(course.exposures()).isPositive();
+        // 노출 = 지도 추천 노출(E17b) + 쿠폰 출처 노출(쿠폰 한 장에 하나) + 중복 차단 노출(쿠폰 사례)
+        DemoCouponSeeder.Result coupons = result.demoCoupons();
+        assertThat(count("recommendation_exposure"))
+                .isEqualTo(course.exposures() + coupons.coupons() + coupons.blockedRevisits()).isPositive();
         assertThat(count("course_proposal")).isEqualTo(course.proposals());
         assertThat(countReal("recommendation_exposure")).isZero();
         assertThat(countReal("course_proposal")).isZero();
