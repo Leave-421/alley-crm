@@ -125,6 +125,19 @@ public class AssociationCouponEvent {
         return isActive() && !now.isBefore(issueStartAt) && now.isBefore(issueEndAt) && remainingQuantity() > 0;
     }
 
+    /**
+     * 이 행사의 쿠폰을 그 가게 예약에 그 시각(신청 시각)에 쓸 수 있는지(3.8 · 3.10): 쓸 수 있는 기간이 시작됐고, 가게가
+     * 쓸 수 있는 가게다. 쿠폰 상태 · 만료는 {@link Coupon#isUsableAt}이 본다.
+     *
+     * @param storeRegionId 그 가게가 승인된 참여 가게면 권역 ID, 아니면 null
+     */
+    public boolean isUsableAt(long storeId, Long storeRegionId, Instant at) {
+        if (at.isBefore(validStartAt) || storeRegionId == null) {
+            return false;
+        }
+        return eligibleStoreScope == EligibleStoreScope.ALL ? regionId.equals(storeRegionId) : storeIds.contains(storeId);
+    }
+
     public Long getId() {
         return id;
     }

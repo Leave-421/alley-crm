@@ -194,12 +194,13 @@ class AssociationCouponClaimApiTest {
     }
 
     @Test
-    void 받은_상인회_쿠폰을_예약에_고르면_500이_아니라_409() throws Exception {
+    void 받은_상인회_쿠폰을_쓸_수_없는_가게_예약에_고르면_409_FR_CPN_14_2() throws Exception {
+        long notSelected = store("고르지 않은 가게");
         long event = event(10, "2026-11-30 02:00:00", "2026-12-07 15:00:00", false);
         String couponId = json.readTree(claim(member1, event).andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString()).get("couponId").asString();
         Map<String, Object> body = new HashMap<>();
-        body.put("storeId", String.valueOf(storeA));
+        body.put("storeId", String.valueOf(notSelected)); // 행사는 A · B만
         body.put("startAt", "2026-12-01T09:00:00Z");
         body.put("partySize", 2);
         body.put("shareConsent", true);

@@ -1,5 +1,6 @@
 package com.alleycrm.config;
 
+import com.alleycrm.account.GuestPrincipal;
 import com.alleycrm.common.error.ErrorCode;
 import com.alleycrm.common.error.ErrorResponse;
 import jakarta.servlet.http.HttpServletResponse;
@@ -8,8 +9,11 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
@@ -48,7 +52,15 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/recommendations", "/api/v1/today-courses",
                                 "/api/v1/coupon-offers/*").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/recommendation-exposures", "/api/v1/store-clicks").permitAll()
-                        .anyRequest().authenticated())
+                        // 비회원 예약 조회(C13): 맞으면 그 전화번호의 예약만 다루는 제한 세션을 받는다
+                        .requestMatchers(HttpMethod.POST, "/api/v1/guest/lookup").permitAll()
+                        .requestMatchers("/api/v1/guest/**").hasRole(GuestPrincipal.ROLE)
+                        // 계정과 비회원 제한 세션이 같이 쓰는 경로. 받는 쪽은 세션으로 정한다
+                        .requestMatchers(HttpMethod.GET, "/api/v1/notifications").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/notifications/*/read", "/api/v1/auth/logout").authenticated()
+                        // 그 밖은 로그인한 계정만. 비회원 제한 세션은 403 forbidden_role
+                        .anyRequest().access((authentication, context) -> new AuthorizationDecision(
+                                isAccountSession(authentication.get()))))
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((request, response, e) ->
                                 writeError(response, ErrorCode.UNAUTHORIZED))
@@ -57,6 +69,13 @@ public class SecurityConfig {
                                         ? ErrorCode.CSRF_INVALID
                                         : ErrorCode.FORBIDDEN_ROLE)));
         return http.build();
+    }
+
+    /** 로그인했고 비회원 제한 세션이 아님. 익명이면 거절 → 401(진입점), 비회원 세션이면 거절 → 403. */
+    private static boolean isAccountSession(Authentication authentication) {
+        return authentication != null && authentication.isAuthenticated()
+                && !(authentication instanceof AnonymousAuthenticationToken)
+                && !(authentication.getPrincipal() instanceof GuestPrincipal);
     }
 
     /** 비밀번호 해시(bcrypt, {bcrypt} 접두어). */

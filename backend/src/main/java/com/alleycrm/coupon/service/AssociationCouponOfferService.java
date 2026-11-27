@@ -8,7 +8,7 @@ import com.alleycrm.coupon.domain.Coupon;
 import com.alleycrm.coupon.domain.EligibleStoreScope;
 import com.alleycrm.coupon.dto.AssociationCouponOfferResponse;
 import com.alleycrm.coupon.dto.AssociationCouponOfferResponse.OfferStore;
-import com.alleycrm.coupon.dto.AssociationCouponResponse;
+import com.alleycrm.coupon.dto.CouponResponse;
 import com.alleycrm.coupon.repository.AssociationCouponEventRepository;
 import com.alleycrm.coupon.repository.AssociationCouponReader;
 import com.alleycrm.coupon.repository.CouponRepository;
@@ -63,7 +63,7 @@ public class AssociationCouponOfferService {
      * 테스트가 잠금 획득 실패로 깨졌다). 같은 행사 안의 순서는 행사 행 잠금이 지킨다.
      */
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    public AssociationCouponResponse claim(long eventId, long customerId) {
+    public CouponResponse claim(long eventId, long customerId) {
         if (!events.existsById(eventId)) {
             throw new ApiException(ErrorCode.NOT_FOUND);
         }
@@ -78,7 +78,7 @@ public class AssociationCouponOfferService {
                 .orElseThrow(() -> new IllegalStateException("상인회 쿠폰 행사를 다시 읽지 못했습니다: " + eventId));
         try {
             Coupon saved = coupons.saveAndFlush(Coupon.claimAssociation(customerId, event, now));
-            return AssociationCouponResponse.of(saved, event);
+            return CouponResponse.of(saved, event);
         } catch (DataIntegrityViolationException e) {
             // 같은 회원이 동시에 두 번 받음: 먼저 커밋한 쪽만 남고, 이 트랜잭션은 받은 수 증가까지 되돌린다.
             if (violates(e, ONE_PER_MEMBER_CONSTRAINT)) {

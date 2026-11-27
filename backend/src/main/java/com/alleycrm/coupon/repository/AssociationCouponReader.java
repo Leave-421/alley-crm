@@ -4,6 +4,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -30,6 +31,12 @@ public class AssociationCouponReader {
         return new HashSet<>(jdbc.queryForList("""
                 SELECT id FROM store WHERE region_id = :regionId AND join_status = 'approved' AND id IN (:ids)
                 """, new MapSqlParameterSource("regionId", regionId).addValue("ids", ids), Long.class));
+    }
+
+    /** 그 가게가 승인된(참여) 가게면 권역 ID. 상인회 쿠폰의 쓸 수 있는 가게 판단(3.10). */
+    public Optional<Long> approvedStoreRegion(long storeId) {
+        return jdbc.queryForList("SELECT region_id FROM store WHERE id = :id AND join_status = 'approved'",
+                new MapSqlParameterSource("id", storeId), Long.class).stream().findFirst();
     }
 
     /** 가게 ID → 이름(ID 순). 쓸 수 있는 가게를 회원 카드에 보여줄 때(3.9). */
