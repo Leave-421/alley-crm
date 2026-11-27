@@ -7,6 +7,7 @@ import HomePage from '@/pages/customer/home/HomePage.jsx';
 import MyPage from '@/pages/customer/my/MyPage.jsx';
 import PolicyPage from '@/pages/customer/policy/PolicyPage.jsx';
 import ReservePage from '@/pages/customer/reserve/ReservePage.jsx';
+import NotificationsPage from '@/pages/notifications/NotificationsPage.jsx';
 
 // 손님 영역(/). 담당 A가 children에 화면 경로를 더하고, 자리표시를 실제 화면으로 바꾼다.
 // 비회원도 둘러볼 수 있어서 영역 전체에는 가드를 걸지 않는다.
@@ -26,7 +27,7 @@ export const customerRoutes = [
       // 마이(G-10)는 비회원에게도 '로그인하고 쿠폰 받기'를 보여줘서 가드를 걸지 않는다(회원 부분은 화면이 나눈다)
       { path: 'my', handle: { title: '마이' }, element: <MyPage /> }, // G-10 A14
       { path: 'policy', handle: { title: '정책 · 개인정보' }, element: <PolicyPage /> }, // G-12 A16
-      { path: 'notifications', handle: { title: '알림함' }, element: <PlaceholderPage screenId="G-11" title="알림함" /> },
+      { path: 'notifications', handle: { title: '알림함' }, element: <NotificationsPage /> }, // G-11 A15(사장님 O-10과 같은 화면)
       // 로그인 화면(G-08)의 '비회원 예약 조회' 진입 주소. 화면은 A13에서 만든다
       { path: 'guest-reservation', handle: { title: '비회원 예약 조회' }, element: <PlaceholderPage screenId="G-13" title="비회원 예약 조회" /> },
     ],
