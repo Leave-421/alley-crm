@@ -287,6 +287,31 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 - 제한 세션으로 새 로그인 필요 경로를 열려면 `SecurityConfig`의 비회원 허용 경로에 더한다(C 확인).
 - 예약 신청(D2)은 제한 세션에서도 비회원 신청이다(`GuestPrincipal`은 계정 이름이 없다).
 
+### 정보 공유 설정 (C11)
+
+상인회가 권역의 가게 간 공유 항목을 켜고 끈다(A-08, FR-CUS-06). 항목 값은 `CONTRACTS.md` 「3」 `shareItem`. 이름 · 연락처 · 방문한 가게 목록은 **항상 공유하는 필수 항목**이라 끌 수 없다(11-24 (5)). 가게(사장님)는 바꿀 수 없다.
+
+- 바꾼 값은 **그 뒤 예약**의 공유 동의 기록(C8, 예약 신청 단계 82)에 바로 쓰인다. 이미 남은 동의 기록은 바꾸지 않는다.
+- `gender_age_group`이 꺼진 권역에서는 추천(E, `RecommendationService`)이 회원의 성별 · 연령대를 쓰지 않는다. 다른 손님 방문 기록과 성별 · 연령대를 비교하는 것도 빠진다(FR-CUS-06 #1).
+- 다른 기능이 항목 공유 여부를 볼 때는 `ShareConsentService.isShared(regionId, item)`을 쓴다(서버 내부).
+- 공유 항목 `SharePolicyItem`: `{ "item": "gender_age_group", "enabled": true, "required": false }` — `required`가 `true`면 끌 수 없다.
+
+#### `GET /api/v1/association/share-policy` — 공유 설정 보기
+
+- 역할: 상인회(자기 권역). 사장님 · 손님은 `403 forbidden_role`.
+- 응답 `200`: `{ "items": [SharePolicyItem] }` — 6개, `name` · `phone` · `visited_stores` · `party_size` · `visit_datetime` · `gender_age_group` 순서. 처음에는 모두 켜짐.
+- 실패: `unauthorized` · `forbidden_role`
+
+#### `PUT /api/v1/association/share-policy/{item}` — 항목 하나 켜기 · 끄기
+
+- 역할: 상인회(자기 권역). `X-XSRF-TOKEN` 필요.
+- 요청: `{ "enabled": false }` (필수)
+- 응답 `200`: `GET`과 같은 전체 목록
+- 실패:
+  - `invalid` — 없는 항목 · `enabled` 없음
+  - `conflict` — 필수 항목을 끄려 함(FR-CUS-06 #2 · #3). 필수 항목을 켜는 요청은 그대로 `200`
+  - `unauthorized` · `forbidden_role` · `csrf_invalid`
+
 ### 알림 (C14)
 
 앱 · 웹 안 알림함(G-11 손님 · O-10 사장님). 실제 문자 · 카카오 발송은 없다. 알림을 받는 쪽은 계정(회원 · 사장님) 또는 비회원 예약이다(`CONTRACTS.md` 「3」 `notification.recipientType`).
