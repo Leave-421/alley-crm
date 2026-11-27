@@ -1,6 +1,8 @@
 package com.alleycrm.notification;
 
 import com.alleycrm.account.AccountPrincipal;
+import com.alleycrm.account.GuestPrincipal;
+import com.alleycrm.account.GuestSessionService;
 import com.alleycrm.common.error.ApiException;
 import com.alleycrm.common.error.ErrorCode;
 import com.alleycrm.notification.NotificationService.Counts;
@@ -17,26 +19,37 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 내 알림 목록 · 읽음 처리(C14). 받는 쪽은 로그인 계정으로만 정한다(IDOR). */
+/** 내 알림 목록 · 읽음 처리(C14). 받는 쪽은 세션(로그인 계정 또는 비회원 제한 세션, C13)으로만 정한다(IDOR). */
 @RestController
 class NotificationController {
 
     private final NotificationService notifications;
+    private final GuestSessionService guests;
 
-    NotificationController(NotificationService notifications) {
+    NotificationController(NotificationService notifications, GuestSessionService guests) {
         this.notifications = notifications;
+        this.guests = guests;
     }
 
     @GetMapping("/api/v1/notifications")
-    Map<String, Object> list(@AuthenticationPrincipal AccountPrincipal me,
+    Map<String, Object> list(@AuthenticationPrincipal Object principal,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         if (page < 0 || size < 1 || size > 100) {
             throw new ApiException(ErrorCode.INVALID);
         }
-        List<NotificationResponse> items = notifications.pageForAccount(me.id(), page, size).stream()
-                .map(NotificationResponse::of).toList();
-        Counts counts = notifications.countsForAccount(me.id());
+        List<Notification> found;
+        Counts counts;
+        if (principal instanceof GuestPrincipal guest) { // 비회원 예약 조회 제한 세션(C13): 그 전화번호 예약들의 알림
+            List<Long> reservationIds = guests.reservationIds(guest);
+            found = notifications.pageForGuestReservations(reservationIds, page, size);
+            counts = notifications.countsForGuestReservations(reservationIds);
+        } else {
+            long accountId = ((AccountPrincipal) principal).id();
+            found = notifications.pageForAccount(accountId, page, size);
+            counts = notifications.countsForAccount(accountId);
+        }
+        List<NotificationResponse> items = found.stream().map(NotificationResponse::of).toList();
         return Map.of("items", items, "page", page, "size", size,
                 "totalElements", counts.total(), "totalPages", (counts.total() + size - 1) / size,
                 "unreadCount", counts.unread());
@@ -44,8 +57,12 @@ class NotificationController {
 
     @PostMapping("/api/v1/notifications/{notificationId}/read")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    void read(@AuthenticationPrincipal AccountPrincipal me, @PathVariable long notificationId) {
-        notifications.markAccountNotificationRead(me.id(), notificationId);
+    void read(@AuthenticationPrincipal Object principal, @PathVariable long notificationId) {
+        if (principal instanceof GuestPrincipal guest) {
+            notifications.markGuestNotificationRead(guests.reservationIds(guest), notificationId);
+        } else {
+            notifications.markAccountNotificationRead(((AccountPrincipal) principal).id(), notificationId);
+        }
     }
 
     /** 계약 `Notification`. ID는 문자열. */
