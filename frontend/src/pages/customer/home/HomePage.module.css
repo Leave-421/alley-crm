@@ -1,0 +1,199 @@
+/* 확정 목업 GuestHome의 최종 계산값(.card · .bd · .h1 · .h2 · .cap · 바로 가기 목록). 휴대폰은 목업 그대로 한 줄,
+   넓은 화면은 동네 그림을 크게 두고 바로 가기를 옆으로 */
+.page {
+  padding: var(--space-2) var(--layout-gutter) 0;
+}
+
+.greeting {
+  margin: 14px 0 0;
+  color: var(--color-heading);
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: var(--weight-regular);
+  line-height: 34px;
+  letter-spacing: -0.2px;
+}
+
+.columns {
+  display: grid;
+  gap: 0;
+}
+
+.card {
+  margin-top: 22px;
+  padding: 18px;
+  border: 1px solid var(--color-surface-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: var(--radius-badge);
+  background: #f2dce5;
+  color: #7a3a58;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.cardTitle {
+  margin: 10px 0 0;
+  color: var(--color-text);
+  font-size: 24px;
+  font-weight: var(--weight-heavy);
+  line-height: 30px;
+}
+
+.lead {
+  margin: 6px 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-base);
+  line-height: 22px;
+}
+
+/* 동네 그림(1024 × 506)과 골목 이름표. 이름표는 그림 크기에 따라 같은 자리에 붙는다 */
+.map {
+  position: relative;
+  margin-top: 14px;
+  aspect-ratio: 1024 / 506;
+  overflow: hidden;
+  border-radius: 18px;
+  background: #e1d4db;
+}
+
+.mapImage {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* 누르는 자리는 44px 이상(이름표 자체는 22px) */
+.pin {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 var(--space-1);
+  transform: translate(-50%, -50%);
+  text-decoration: none;
+}
+
+.pinLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 22px;
+  padding: 0 var(--space-2) 0 6px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 2px 8px rgba(39, 22, 26, 0.28);
+  color: var(--color-ink-900);
+  font-size: 11px;
+  font-weight: var(--weight-heavy);
+  line-height: 14px;
+  white-space: nowrap;
+  transition: transform var(--duration-fast);
+}
+
+.pin:active .pinLabel {
+  transform: scale(0.96);
+}
+
+.pin:focus-visible {
+  outline: none;
+}
+
+.pin:focus-visible .pinLabel {
+  outline: 2px solid var(--color-ink-700);
+  outline-offset: 2px;
+}
+
+.pinDot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #9c4a6b;
+}
+
+.caption {
+  margin: var(--space-2) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: 18px;
+}
+
+.pick {
+  margin-top: 14px;
+  text-decoration: none;
+}
+
+.sectionTitle {
+  margin: 28px 0 10px;
+  color: var(--color-ink-800);
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: var(--weight-regular);
+  line-height: 26px;
+}
+
+.list {
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-surface-border);
+  border-radius: 18px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 60px;
+  border-bottom: 1px solid #e4d9df;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.row:last-child {
+  border-bottom: 0;
+}
+
+.rowLabel {
+  flex: 1;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+}
+
+.chevron {
+  flex: none;
+  color: #8e6f80;
+}
+
+/* 넓은 화면: 동네 그림 카드를 크게, 바로 가기는 오른쪽 열 */
+@media (min-width: 960px) {
+  .columns {
+    grid-template-columns: minmax(0, 1.7fr) minmax(260px, 1fr);
+    gap: var(--space-6);
+    align-items: start;
+  }
+
+  .sectionTitle {
+    margin-top: 22px;
+  }
+
+  .pinLabel {
+    height: 28px;
+    padding: 0 var(--space-3) 0 var(--space-2);
+    font-size: var(--text-md);
+  }
+}
