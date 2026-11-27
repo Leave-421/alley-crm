@@ -315,6 +315,67 @@
   box-shadow: inset 0 0 0 1.5px var(--color-ink-700);
 }
 
+/* 다음 코스: 기준 가게 예약 */
+.rootCard {
+  margin-bottom: 14px;
+}
+
+.rootLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: 4px;
+  font-size: var(--text-lg);
+}
+
+/* 쿠폰 고르기(기본 '적용 안 함') */
+.couponList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: var(--space-2);
+}
+
+.couponOption {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow: inset 0 0 0 1px rgba(63, 36, 42, 0.14);
+  color: var(--color-ink-900);
+  font-size: var(--text-md);
+  text-align: left;
+  cursor: pointer;
+}
+
+.couponOn {
+  box-shadow: inset 0 0 0 2px var(--color-ink-700);
+}
+
+.radio {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px #d5c5ce;
+}
+
+.couponOn .radio {
+  box-shadow: inset 0 0 0 5px var(--color-ink-700);
+}
+
+.couponSub {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
 /* 예약금 */
 .sumRow {
   display: flex;

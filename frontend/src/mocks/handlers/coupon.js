@@ -1,5 +1,6 @@
 import { http, HttpResponse } from 'msw/http';
 import { errorResponse, rejectInvalidCsrf } from '../responses.js';
+import { getMockAccount } from '../session.js';
 
 // CONTRACTS_API.md 「3.2 쿠폰 행사 설정」(담당 E, E11 #23)의 목.
 // 로그인한 사장님의 가게 하나를 흉내 낸다. 역할 검사(401 · 403)는 로그인 계약(C2) 목이 생기면 더한다.
@@ -107,5 +108,34 @@ export const couponHandlers = [
 
     event.stoppedAt = new Date().toISOString();
     return HttpResponse.json(toResponse(event));
+  }),
+
+  // GET /api/v1/coupons/usable?storeId= (3.5) — 회원 손님만. 목: 어느 가게든 받아 둔 3,000원 할인 쿠폰 한 장
+  http.get('/api/v1/coupons/usable', ({ request }) => {
+    const account = getMockAccount();
+    if (!account) return errorResponse(401, 'unauthorized', '로그인이 필요해요.');
+    if (account.role !== 'customer') return errorResponse(403, 'forbidden_role', '회원 손님만 쓸 수 있어요.');
+    const storeId = new URL(request.url).searchParams.get('storeId');
+    if (!storeId) return errorResponse(400, 'invalid', '가게를 확인해 주세요.');
+    const downloadedAt = new Date(Date.now() - 2 * 86_400_000).toISOString();
+    const expiresAt = new Date(Date.now() + 5 * 86_400_000).toISOString();
+    return HttpResponse.json({
+      items: [
+        {
+          couponId: `cp-${storeId}`,
+          eventId: `ev-${storeId}`,
+          storeId,
+          status: 'downloaded',
+          benefitType: 'fixed_discount',
+          discountAmount: 3000,
+          discountPercent: null,
+          maxDiscountAmount: null,
+          serviceName: null,
+          conditions: null,
+          downloadedAt,
+          expiresAt,
+        },
+      ],
+    });
   }),
 ];
