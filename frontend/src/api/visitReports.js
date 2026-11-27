@@ -26,3 +26,31 @@ export function requestOwnerCheck(reportId) {
 export function recordVisitReportResult(reportId, result) {
   return api.post(`/api/v1/association/visit-reports/${encodeURIComponent(reportId)}/result`, { result });
 }
+
+// ── 사장님 쪽(B29): 확인 요청 받은 신고 · 답변(C23), '맞음' 뒤 금액 정정(D22) · 늦은 방문 처리(D23) ──
+
+/** 내 가게 신고(사장님). 확인 요청을 받은 신고(확인 요청 · 처리 완료)만, 최근 것부터, 공통 페이지 */
+export function getOwnerVisitReports({ page = 0, size = 20 } = {}) {
+  return api.get('/api/v1/owner/visit-reports', { query: { page, size } });
+}
+
+/** 사장님 답변 1 ~ 200자(확인 요청인 동안만, 다시 보내면 고쳐 쓴다). 응답은 VisitReport */
+export function replyToVisitReport(reportId, reply) {
+  return api.post(`/api/v1/owner/visit-reports/${encodeURIComponent(reportId)}/reply`, { reply });
+}
+
+/** 답변 길이(C23) */
+export const REPLY_MAX_LENGTH = 200;
+
+/**
+ * 방문 금액 정정(D22): '맞음' 금액 신고가 있는 방문 예약만, 신고 한 건에 한 번. 원래 금액 · 수수료는 고치지 않고 정정을 더한다.
+ * @returns {Promise<{ reservationId, originalAmount, correctedAmount, feeDifference, settlementMonth, createdAt }>}
+ */
+export function correctVisitAmount(reservationId, correctedAmount) {
+  return api.post(`/api/v1/owner/reservations/${encodeURIComponent(reservationId)}/amount-correction`, { correctedAmount });
+}
+
+/** 늦은 방문 처리(D23): '맞음' 미처리 신고가 있는 자동 취소 예약 → 방문. 응답은 방문 처리와 같은 모양 */
+export function processLateVisit(reservationId, visitAmount) {
+  return api.post(`/api/v1/owner/reservations/${encodeURIComponent(reservationId)}/late-visit`, { visitAmount });
+}

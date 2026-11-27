@@ -184,6 +184,7 @@ export default function OwnerReservationsPage() {
       <nav className={styles.links} aria-label="예약 관리 바로가기">
         <Link to="/owner/settings">예약 운영 설정 ›</Link>
         <Link to="/owner/store">가게 정보 ›</Link>
+        <Link to="/owner/reports">신고 확인 ›</Link>
       </nav>
 
       {notice && (

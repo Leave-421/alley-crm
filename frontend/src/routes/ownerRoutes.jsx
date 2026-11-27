@@ -7,6 +7,7 @@ import ReservationSettingsPage from '@/pages/owner/settings/ReservationSettingsP
 import StoreInfoPage from '@/pages/owner/store/StoreInfoPage.jsx';
 import PlaceholderPage from '@/pages/PlaceholderPage.jsx';
 import CouponSettingsPage from '@/pages/owner/coupon/CouponSettingsPage.jsx';
+import OwnerReportsPage from '@/pages/owner/reports/OwnerReportsPage.jsx';
 import OwnerReservationsPage from '@/pages/owner/reservations/OwnerReservationsPage.jsx';
 import SettlementPage from '@/pages/owner/settlement/SettlementPage.jsx';
 import NotificationsPage from '@/pages/notifications/NotificationsPage.jsx';
@@ -36,6 +37,8 @@ export const ownerRoutes = [
           { path: 'coupons', handle: { title: '쿠폰 설정' }, element: <CouponSettingsPage /> }, // O-09 B15
           { path: 'settings', handle: { title: '가게 · 예약 설정' }, element: <ReservationSettingsPage /> }, // O-03 B10, 진입은 O-01 '예약 운영 설정'
           { path: 'store', handle: { title: '가게 정보' }, element: <StoreInfoPage /> }, // O-12 B24, 진입은 O-01 · O-03 '가게 정보'
+          // B29 신고 확인 · 금액 정정 · 늦은 방문 처리(O-10 · O-13 요소, 위치는 임시로 B가 정함). '예약' 탭 안, O-01에서 진입
+          { path: 'reports', handle: { title: '신고 확인' }, element: <OwnerReportsPage /> },
           { path: 'notifications', handle: { title: '알림함' }, element: <NotificationsPage /> }, // O-10 A15(손님 G-11과 같은 화면)
         ],
       },
