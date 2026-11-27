@@ -2,6 +2,7 @@ package com.alleycrm.recommend.recommendation;
 
 import com.alleycrm.common.error.ApiException;
 import com.alleycrm.common.error.ErrorCode;
+import com.alleycrm.customer.ShareConsentService;
 import com.alleycrm.recommend.candidate.CandidateRequester;
 import com.alleycrm.recommend.candidate.CandidateService;
 import com.alleycrm.recommend.domain.ReasonType;
@@ -70,15 +71,18 @@ public class RecommendationService {
     private final ExplorationRecordService records;
     private final SettingService settings;
     private final Clock clock;
+    private final ShareConsentService sharePolicy;
 
     public RecommendationService(RecommendationRepository repository, CandidateService candidates,
-            RecommendScoreService scores, ExplorationRecordService records, SettingService settings, Clock clock) {
+            RecommendScoreService scores, ExplorationRecordService records, SettingService settings, Clock clock,
+            ShareConsentService sharePolicy) {
         this.repository = repository;
         this.candidates = candidates;
         this.scores = scores;
         this.records = records;
         this.settings = settings;
         this.clock = clock;
+        this.sharePolicy = sharePolicy;
     }
 
     /** 지도 추천 조회. 기준 가게가 손님에게 보이지 않으면 404. 아무것도 기록하지 않는다. */
@@ -150,7 +154,10 @@ public class RecommendationService {
         Profile profile = Profile.UNKNOWN;
         if (requester.memberCustomerId() != null) {
             candidateRequester = CandidateRequester.member(requester.memberCustomerId());
-            profile = repository.memberProfile(requester.memberCustomerId());
+            // 상인회가 성별 · 연령대 공유를 끄면 쓰지 않는다(FR-CUS-06 #1, C11). 다른 손님 방문 기록의 성별 · 연령대 비교도 빠진다
+            if (sharePolicy.isShared(regionOf(base.id()), ShareConsentService.GENDER_AGE_GROUP)) {
+                profile = repository.memberProfile(requester.memberCustomerId());
+            }
         }
         List<Long> candidateIds = candidates.findCandidates(base.id(), baseTime, candidateRequester);
         List<RecommendScore> scored = scores.score(base.id(), candidateIds, baseTime, profile).stream()
