@@ -1,5 +1,6 @@
 package com.alleycrm.settlement;
 
+import com.alleycrm.common.time.ServiceTime;
 import com.alleycrm.coupon.domain.CouponIssuer;
 import com.alleycrm.coupon.dto.VisitCouponDiscount;
 import com.alleycrm.coupon.service.CouponVisitService;
@@ -13,7 +14,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
-import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.Optional;
 import org.springframework.context.event.EventListener;
@@ -33,8 +33,6 @@ import org.springframework.stereotype.Component;
  */
 @Component
 class ReferralFeeListener {
-
-    static final ZoneId SERVICE_ZONE = ZoneId.of("Asia/Seoul");
 
     private final JdbcTemplate jdbc;
     private final SettingService settings;
@@ -67,7 +65,7 @@ class ReferralFeeListener {
                 .map(VisitCouponDiscount::couponCost).orElse(0);
         int base = Math.max(0, e.visitAmount() - discount);
         int fee = rate.multiply(BigDecimal.valueOf(base)).setScale(0, RoundingMode.DOWN).intValueExact();
-        String month = YearMonth.from(e.visitedAt().atZone(SERVICE_ZONE)).toString();
+        String month = YearMonth.from(e.visitedAt().atZone(ServiceTime.ZONE)).toString();
 
         jdbc.update("""
                 INSERT INTO referral_fee (reservation_id, receiving_store_id, sender_store_id, visit_amount, coupon_discount,

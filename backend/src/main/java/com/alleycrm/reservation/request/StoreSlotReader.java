@@ -1,5 +1,7 @@
 package com.alleycrm.reservation.request;
 
+import static com.alleycrm.common.time.ServiceTime.utc;
+
 import com.alleycrm.reservation.ReservationStatus;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -80,8 +82,4 @@ public class StoreSlotReader {
         return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
     }
 
-    /** DB 시각은 UTC 벽시계(hibernate.jdbc.time_zone=UTC) */
-    private static LocalDateTime utc(Instant t) {
-        return LocalDateTime.ofInstant(t, ZoneOffset.UTC);
-    }
-}
+    /** DB 시각은 UTC 벽시계(hibernate.jdbc.time_zone=UTC) */}

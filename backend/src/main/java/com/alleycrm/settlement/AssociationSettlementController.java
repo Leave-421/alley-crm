@@ -1,12 +1,14 @@
 package com.alleycrm.settlement;
 
+import static com.alleycrm.common.time.ServiceTime.instant;
+
 import com.alleycrm.common.error.ApiException;
 import com.alleycrm.common.error.ErrorCode;
+import com.alleycrm.common.time.ServiceTime;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
-import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
@@ -27,8 +29,6 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 class AssociationSettlementController {
-
-    static final ZoneId SERVICE_ZONE = ZoneId.of("Asia/Seoul");
 
     private final JdbcTemplate jdbc;
     private final Clock clock;
@@ -104,8 +104,8 @@ class AssociationSettlementController {
     /** 그 달(예약 시작 달, 운영 시간대) 예약에 걸린, 처리 완료되지 않은 금액 · 미처리 신고 수 */
     private int unprocessedReports(long regionId, String month) {
         YearMonth ym = YearMonth.parse(month);
-        LocalDateTime from = LocalDateTime.ofInstant(ym.atDay(1).atStartOfDay(SERVICE_ZONE).toInstant(), ZoneOffset.UTC);
-        LocalDateTime to = LocalDateTime.ofInstant(ym.plusMonths(1).atDay(1).atStartOfDay(SERVICE_ZONE).toInstant(), ZoneOffset.UTC);
+        LocalDateTime from = LocalDateTime.ofInstant(ym.atDay(1).atStartOfDay(ServiceTime.ZONE).toInstant(), ZoneOffset.UTC);
+        LocalDateTime to = LocalDateTime.ofInstant(ym.plusMonths(1).atDay(1).atStartOfDay(ServiceTime.ZONE).toInstant(), ZoneOffset.UTC);
         Integer n = jdbc.queryForObject("""
                 SELECT COUNT(*) FROM visit_report v
                 JOIN reservation r ON r.id = v.reservation_id
@@ -116,7 +116,7 @@ class AssociationSettlementController {
     }
 
     private boolean monthEnded(String month) {
-        YearMonth now = YearMonth.from(Instant.now(clock).atZone(SERVICE_ZONE));
+        YearMonth now = YearMonth.from(Instant.now(clock).atZone(ServiceTime.ZONE));
         return YearMonth.parse(month).isBefore(now);
     }
 
@@ -143,9 +143,5 @@ class AssociationSettlementController {
         } catch (DateTimeParseException e) {
             throw new ApiException(ErrorCode.INVALID);
         }
-    }
-
-    private static Instant instant(LocalDateTime t) {
-        return t == null ? null : t.toInstant(ZoneOffset.UTC);
     }
 }

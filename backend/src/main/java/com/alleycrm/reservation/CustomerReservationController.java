@@ -2,8 +2,6 @@ package com.alleycrm.reservation;
 
 import com.alleycrm.common.error.ApiException;
 import com.alleycrm.common.error.ErrorCode;
-import java.util.List;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -18,16 +16,16 @@ import org.springframework.web.bind.annotation.RestController;
 class CustomerReservationController {
 
     private final ReservationStateService states;
-    private final JdbcTemplate jdbc;
+    private final MemberCustomerResolver members;
 
-    CustomerReservationController(ReservationStateService states, JdbcTemplate jdbc) {
+    CustomerReservationController(ReservationStateService states, MemberCustomerResolver members) {
         this.states = states;
-        this.jdbc = jdbc;
+        this.members = members;
     }
 
     @PostMapping("/api/v1/reservations/{id}/cancel")
     ReservationResponse cancel(@PathVariable long id, Authentication auth) {
-        return ReservationResponse.of(states.cancelByCustomer(memberCustomerId(auth), id), null);
+        return ReservationResponse.of(states.cancelByCustomer(members.customerId(auth), id), null);
     }
 
     /** 예약 변경(D8, FR-RSV-07): 바꿀 날짜(startAt) · 인원(partySize) 중 하나 이상. 사장님이 다시 승인한다 */
@@ -36,20 +34,10 @@ class CustomerReservationController {
         if (body == null || (body.startAt() == null && body.partySize() == null)) {
             throw new ApiException(ErrorCode.INVALID);
         }
-        return ReservationResponse.of(states.requestChange(memberCustomerId(auth), id, body.startAt(), body.partySize()), null);
+        return ReservationResponse.of(states.requestChange(members.customerId(auth), id, body.startAt(), body.partySize()), null);
     }
 
     record ChangeRequest(java.time.Instant startAt, Integer partySize) {
     }
 
-    private long memberCustomerId(Authentication auth) {
-        List<Long> ids = jdbc.queryForList("""
-                SELECT c.id FROM account a JOIN customer c ON c.account_id = a.id
-                WHERE a.login_id = ? AND a.role = 'customer'
-                """, Long.class, auth.getName());
-        if (ids.isEmpty()) {
-            throw new ApiException(ErrorCode.FORBIDDEN_ROLE);
-        }
-        return ids.get(0);
-    }
 }
