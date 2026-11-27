@@ -57,6 +57,49 @@ export function findMockCustomerReservation(id) {
   return customerReservations.get(id) ?? null;
 }
 
+// 내 예약(D13) 목: 회원이 처음 열 때 그 계정의 예약을 몇 건 깔아 둔다(코스 묶음 · 기준 예약 거절 · 지난 예약 · 취소 사유를 다 볼 수 있게)
+const seededAccounts = new Set();
+const DAY_MS = 86_400_000;
+
+/** 운영 시간대 날짜(오늘 + days)의 HH:mm → UTC ISO */
+function kstAt(days, time) {
+  const day = serviceDay(Date.now() + offsetMs + days * DAY_MS);
+  return new Date(Date.parse(`${day}T${time}:00Z`) - KST_OFFSET_MS).toISOString();
+}
+
+function seedMyReservations(accountId) {
+  if (seededAccounts.has(accountId)) return;
+  seededAccounts.add(accountId);
+  const base = { partySize: 2, cancelReason: null, requestNote: null, coupon: null, courseRootId: null, fromRecommendation: false, visitAmount: null, visitedAt: null, refundAmount: null, pendingStartAt: null, pendingPartySize: null };
+  const rows = [
+    // 코스 묶음: 기준 가게 예약은 가게가 거절했지만 다음 코스 예약은 그대로(FR-RSV-12)
+    { id: `m-${accountId}-10`, storeId: 'S03', startAt: kstAt(1, '18:00'), status: 'canceled', cancelReason: 'store_rejected', depositAmount: 10000, refundAmount: 10000 },
+    { id: `m-${accountId}-11`, storeId: 'S06', startAt: kstAt(1, '19:30'), status: 'confirmed', courseRootId: `m-${accountId}-10`, depositAmount: 10000 },
+    { id: `m-${accountId}-20`, storeId: 'S11', startAt: kstAt(3, '18:30'), status: 'requested', partySize: 3, depositAmount: 15000 },
+    { id: `m-${accountId}-30`, storeId: 'S07', startAt: kstAt(-5, '12:00'), status: 'visited', depositAmount: 0, visitAmount: 32000, visitedAt: kstAt(-5, '12:05') },
+    { id: `m-${accountId}-31`, storeId: 'S13', startAt: kstAt(-9, '19:00'), status: 'canceled', cancelReason: 'customer_canceled', depositAmount: 10000, refundAmount: 10000 },
+    { id: `m-${accountId}-32`, storeId: 'S02', startAt: kstAt(-12, '15:00'), status: 'canceled', cancelReason: 'auto_canceled', depositAmount: 10000 },
+  ];
+  for (const row of rows) {
+    customerReservations.set(row.id, { ...base, reservationNo: mockReservationNo(), requestedAt: kstAt(-14, '10:00'), ...row, accountId });
+  }
+}
+
+/** 내 예약 한 줄(D13 모양): 가게 이름 · 지금 취소할 수 있는지 · 그때 환불액을 붙인다 */
+function toMineRow(reservation) {
+  const nowMs = Date.now() + offsetMs;
+  const startMs = Date.parse(reservation.startAt);
+  const active = reservation.status === 'requested' || reservation.status === 'confirmed';
+  const cancelable = active && startMs > nowMs;
+  const { accountId: _accountId, ...rest } = reservation; // 계정 ID는 응답에 넣지 않는다
+  return {
+    ...rest,
+    storeName: MOCK_STORES.find((store) => store.id === reservation.storeId)?.name ?? '',
+    cancelable,
+    refundIfCanceled: cancelable ? (startMs - nowMs >= DAY_MS ? reservation.depositAmount : Math.floor(reservation.depositAmount * 0.5)) : null,
+  };
+}
+
 /** 다음 코스(D12) 검사: 기준 예약이 없으면 not_found, 같은 가게 · 같은 날 기준 시각과 같거나 이르면 conflict. 통과하면 null */
 function rejectBadCourse(body) {
   if (!body.courseRootId) return null;
@@ -282,6 +325,28 @@ export const reservationHandlers = [
     const found = findMockReservation(params.id);
     if (!found) return errorResponse(404, 'not_found', '예약을 찾을 수 없어요.');
     return HttpResponse.json({ ...found, referralFeeRate: REFERRAL_FEE_RATE });
+  }),
+
+  // GET /api/v1/reservations/mine (D13) — 회원 손님의 내 예약. 묶음 = 기준 예약 + 그 다음 코스들, 묶음은 가장 이른 시각 순 · 안은 시간순
+  http.get('/api/v1/reservations/mine', () => {
+    const blocked = rejectAnonymous();
+    if (blocked) return blocked;
+    const account = getMockAccount();
+    if (account.role !== 'customer') return errorResponse(403, 'forbidden_role', '손님만 볼 수 있어요.');
+    seedMyReservations(account.id);
+    const mine = [...customerReservations.values()].filter((item) => item.accountId === account.id);
+    const groups = new Map();
+    for (const reservation of mine) {
+      const key = reservation.courseRootId ?? reservation.id;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(reservation);
+    }
+    const items = [...groups.entries()].map(([key, list]) => {
+      const sorted = list.sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt));
+      return { courseRootId: sorted.length > 1 ? key : null, reservations: sorted.map(toMineRow) };
+    });
+    items.sort((a, b) => Date.parse(a.reservations[0].startAt) - Date.parse(b.reservations[0].startAt));
+    return HttpResponse.json({ items });
   }),
 
   // GET /api/v1/stores/{storeId}/available-slots?date= (D5) — 누구나. 가게 영업시간을 슬롯 30분으로 나눈다

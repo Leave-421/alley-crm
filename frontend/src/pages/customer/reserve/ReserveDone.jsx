@@ -1,27 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import buttonStyles from '@/components/Button/Button.module.css';
-import { RECOMMENDATION_BADGE_LABELS, getCourseProposals, getRecommendations, recordCourseProposals } from '@/api/recommendations.js';
+import { RECOMMENDATION_BADGE_LABELS } from '@/api/recommendations.js';
 import { ALLEY_LABELS, CATEGORY_LABELS } from '@/map/storeCatalog.js';
+import { loadRecommendationCards, nextCourseLink } from './recommendationCards.js';
 import { formatDateKey, formatSlotTime, serviceDateKey } from './reserveTime.js';
 import styles from './ReservePage.module.css';
-
-/**
- * 추천 카드 묶음을 불러온다.
- * - 회원의 기준 가게 예약(G-02): 정식 코스 제안(E7)을 조회하고 그린 가게를 표시 기록해 가게마다 courseProposalId를 받는다
- *   — '다음 코스로 예약하기'가 그 ID를 달고 가야 소개 후보가 된다.
- * - 비회원(제한 세션이 없어 정식 제안을 못 봄) · 다음 코스 완료(G-03): 그 가게 기준 지도 추천(기록 없음).
- */
-async function loadCards({ reservation, storeId, useProposals }) {
-  if (useProposals) {
-    const data = await getCourseProposals(reservation.id);
-    const shown = data.items.map((card) => card.store.id);
-    const recorded = shown.length > 0 ? await recordCourseProposals(reservation.id, shown) : { items: [] };
-    const proposalIds = new Map(recorded.items.map((item) => [item.storeId, item.courseProposalId]));
-    return { ...data, items: data.items.map((card) => ({ ...card, proposalId: proposalIds.get(card.store.id) ?? null })) };
-  }
-  return getRecommendations(storeId);
-}
 
 /**
  * 예약 신청 완료(G-02 · G-03 완료 화면). 상태 '신청', 비회원은 예약번호(FR-AUTH-03).
@@ -33,7 +17,8 @@ export default function ReserveDone({ store, alley, reservation, isMember, isCou
 
   useEffect(() => {
     let active = true;
-    loadCards({ reservation, storeId: store.id, useProposals: isMember && !isCourse })
+    // 회원의 기준 가게 예약은 정식 제안(소개 후보가 되게), 비회원(제한 세션 없음) · 다음 코스 완료는 지도 추천
+    loadRecommendationCards({ reservationId: reservation.id, storeId: store.id, useProposals: isMember && !isCourse })
       .then((data) => active && setRecommendation({ data }))
       .catch((error) => active && setRecommendation({ error }));
     return () => {
@@ -116,11 +101,7 @@ export default function ReserveDone({ store, alley, reservation, isMember, isCou
                 <p className={styles.cap}>{card.reasonText}</p>
                 <div className={styles.recActions}>
                   {!isCourse && (
-                    <Link
-                      to={`/reservations/${encodeURIComponent(reservation.id)}/next?store=${encodeURIComponent(card.store.id)}${card.proposalId ? `&proposal=${encodeURIComponent(card.proposalId)}` : ''}`}
-                      state={{ rootStoreId: store.id, rootStartAt: reservation.startAt }}
-                      className={`${buttonStyles.button} ${buttonStyles.primary} ${styles.recPrimary}`}
-                    >
+                    <Link {...nextCourseLink(reservation, card)} className={`${buttonStyles.button} ${buttonStyles.primary} ${styles.recPrimary}`}>
                       다음 코스로 예약하기
                     </Link>
                   )}
