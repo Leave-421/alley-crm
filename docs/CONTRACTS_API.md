@@ -279,7 +279,9 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 #### `GET /api/v1/guest/reservations` — 내 비회원 예약 목록
 
 - 역할: 비회원 제한 세션만. 로그인 안 함 `401 unauthorized`, 계정 세션 `403 forbidden_role`.
-- 응답 `200`: `{ "items": [Reservation] }` — 그 전화번호의 (파기되지 않은) 비회원 예약 전체, 방문 일시가 늦은 것부터. 페이지 없음(비회원 한 명의 예약 수).
+- 응답 `200`: `{ "items": [Reservation + 취소 안내] }` — 그 전화번호의 (파기되지 않은) 비회원 예약 전체, 방문 일시가 늦은 것부터. 페이지 없음(비회원 한 명의 예약 수).
+  - 항목은 `Reservation`의 칸 그대로에 **`cancelable`**(지금 취소할 수 있는지: 신청 · 확정이고 가게 취소 마감 전) · **`refundIfCanceled`**(지금 취소하면 돌려받는 예약금, 취소할 수 없으면 `null`)를 더한 것. 회원 내 예약(D13)과 같은 뜻 · 같은 D6 규칙이다.
+  - 취소 · 변경은 아래 「비회원 취소 · 변경 (D6 · D8)」.
 
 #### 다른 기능이 제한 세션을 받는 법 (서버 내부)
 
@@ -610,13 +612,13 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 
 - 환불은 상태 변경 이벤트를 받은 예약금 환불(D10)이 같은 트랜잭션에서 한다. 회원은 잔액으로, 비회원은 전화번호 기록으로. 쿠폰 적용 취소(E) · 알림(C)도 같은 이벤트로.
 - 실패: `not_found` · `conflict`(신청 · 확정이 아님, 마감 지남) · `unauthorized` · `forbidden_role` · `csrf_invalid`
-- **비회원 취소:** 비회원 예약 조회 세션(C13)이 생기면 같은 서비스 `ReservationStateService.cancelByCustomer(customerId, reservationId)`를 부른다(규칙 · 응답 같음).
+- **비회원 취소:** `POST /api/v1/guest/reservations/{id}/cancel`(아래 「비회원 취소 · 변경」).
 
 ### 예약 변경 (D8)
 
 #### `POST /api/v1/reservations/{id}/change` — 회원 손님 예약 변경 (G-05, FR-RSV-07)
 
-- 역할: 회원 손님(내 예약). `X-XSRF-TOKEN` 필요. 비회원은 비회원 예약 조회 세션(C13)에서 같은 `ReservationStateService.requestChange`를 부른다.
+- 역할: 회원 손님(내 예약). `X-XSRF-TOKEN` 필요. 비회원은 `POST /api/v1/guest/reservations/{id}/change`(아래 「비회원 취소 · 변경」).
 - 요청: `{ "startAt": "2026-11-29T10:00:00Z", "partySize": 3 }` — 둘 중 하나 이상(바뀐 값이 없으면 `invalid`).
 - `confirmed`만, **가게 취소 마감 전까지**(기획 11-27). 새 시각 · 인원은 예약 신청과 같은 규칙(영업시간 · 휴무일 · 기간 · 자리 · 한 팀 최대 인원).
 - 결과: `status: "requested"`, 원래 `startAt` · `partySize`는 그대로, `pendingStartAt` · `pendingPartySize`에 바꿀 값(#1). 돈은 움직이지 않는다. 응답 `200`: `Reservation`.
@@ -632,6 +634,22 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 | 자동 거절(D7) | 원래 시각과 바뀐 시각 중 이른 쪽까지 승인이 없으면 변경만 거절, 원래 값 유지(#4) |
 
 같은 예약 ID라 적용된 쿠폰은 그대로다(05-policy).
+
+### 비회원 취소 · 변경 (D6 · D8, G-13)
+
+비회원 예약 조회 제한 세션(C13)에서만 쓴다. 규칙 · 요청 · 응답은 회원 경로와 같다. 대상 예약이 그 전화번호의 비회원 예약(`GuestSessionService.reservationIds`)이 아니면 `404 not_found`.
+
+#### `POST /api/v1/guest/reservations/{id}/cancel` — 비회원 취소
+
+- 역할: 비회원 제한 세션. `X-XSRF-TOKEN` 필요. 본문 없음.
+- 규칙 · 응답: 회원 취소(`POST /api/v1/reservations/{id}/cancel`)와 같다. 환불은 전화번호 기록(`wallet_tx.guest_phone`, `deposit_refunded`)으로 남는다.
+- 실패: `not_found` · `conflict` · `unauthorized`(세션 없음) · `forbidden_role`(계정 세션) · `csrf_invalid`
+
+#### `POST /api/v1/guest/reservations/{id}/change` — 비회원 예약 변경
+
+- 역할: 비회원 제한 세션. `X-XSRF-TOKEN` 필요.
+- 요청 · 규칙 · 응답: 회원 변경(`POST /api/v1/reservations/{id}/change`)과 같다. 비회원은 잔액이 없어 신청 때 잔액 확인을 하지 않고, 사장님이 승인할 때 차액을 전화번호 기록으로 남긴다.
+- 실패: `invalid` · `not_found` · `conflict` · `slot_unavailable` · `unauthorized` · `forbidden_role` · `csrf_invalid`
 
 ### 내 예약 · 코스 묶음 (D13)
 
