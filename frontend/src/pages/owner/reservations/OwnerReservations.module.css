@@ -326,3 +326,19 @@
   color: var(--color-text-muted);
   font-weight: var(--weight-semibold);
 }
+
+/* 지연 입력(B9, FR-RSV-10): 글자 + 앞 표시로도 구분(NFR-11) */
+.delayTag {
+  align-self: flex-start;
+  padding: 4px 10px;
+  border-left: 3px solid var(--color-rust-600);
+  border-radius: var(--radius-sm);
+  background: var(--color-peach-100);
+  color: var(--color-ink-900);
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+}
+
+.delayTag::before {
+  content: '⏱ ';
+}
