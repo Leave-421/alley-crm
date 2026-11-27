@@ -111,7 +111,9 @@ class SeedLoaderIntegrationTest {
 
         assertThat(count("account")).isZero();
         assertThat(countReal("customer")).isZero();
-        assertThat(count("visitor")).isZero();
+        // 시드도 가상 방문자(E17)를 넣으므로, 직접 넣은 방문자가 지워졌는지 본다
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM visitor WHERE anon_id = ?", Integer.class,
+                "00000000-0000-0000-0000-000000000001")).isZero();
         assertThat(count("setting")).isZero();
         assertThat(count("store")).isEqualTo(15);
         assertThat(second.clearedTables()).doesNotContain("flyway_schema_history");
@@ -142,7 +144,7 @@ class SeedLoaderIntegrationTest {
         loader.resetAndLoad(data);
 
         assertThat(countReal("reservation")).isZero();
-        assertThat(count("course_proposal")).isZero();
+        assertThat(countReal("course_proposal")).isZero(); // 시드의 정식 제안(E17)은 data_source = demo
         assertThat(countReal("customer")).isZero();
         assertThat(count("store")).isEqualTo(15);
     }
