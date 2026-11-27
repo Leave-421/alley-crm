@@ -13,6 +13,7 @@ import com.alleycrm.common.TestCsrf;
 import com.alleycrm.common.error.ApiException;
 import com.alleycrm.common.time.AppClock;
 import com.alleycrm.reservation.ReservationStateService;
+import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -56,6 +57,10 @@ class ReferralJudgementTest {
     private static final Instant DEADLINE = Instant.parse("2026-11-25T15:00:00Z");
     /** B 방문일: 2026-11-28 12:00 Asia/Seoul (기준 예약일보다 뒤) */
     private static final String B_START = "2026-11-28T03:00:00Z";
+    /** 기준 예약을 옮긴 날: 2026-11-27 18:00 Asia/Seoul */
+    private static final Instant CHANGED_BASE_START = Instant.parse("2026-11-27T09:00:00Z");
+    /** 2026-11-26 12:00 Asia/Seoul — 원래 마감(11-25 끝)은 지났고 바뀐 마감(11-27 끝) 전 */
+    private static final Instant AFTER_ORIGINAL_DEADLINE = Instant.parse("2026-11-26T03:00:00Z");
 
     @Autowired
     MockMvc mvc;
@@ -74,6 +79,9 @@ class ReferralJudgementTest {
 
     @Autowired
     ReservationStateService reservationStates;
+
+    @Autowired
+    EntityManager entityManager;
 
     long region;
     long storeA;
@@ -193,6 +201,39 @@ class ReferralJudgementTest {
     }
 
     @Test
+    void 기준_예약일을_바꾸면_이미_신청한_B는_그대로이고_새_신청은_바뀐_날_당일까지_소개_후보_FR_STL_01_7() throws Exception {
+        long storeC = store("C 주점", "pub");
+        reservationStates.confirm(storeA, base);
+        long b = courseRequestAt(storeB, B_START, NOW); // 11-25(원래 기준 예약일)에 B 신청
+
+        // A 예약을 11-27로 변경 · 사장님 확정(FR-RSV-07). 예약 2시간 전까지 바꿀 수 있는 가게
+        jdbc.update("UPDATE store SET cancel_deadline_hours = 2 WHERE id = ?", storeA);
+        reservationStates.requestChange(customer, base, CHANGED_BASE_START, null);
+        reservationStates.confirm(storeA, base);
+        entityManager.flush(); // 실제로는 요청마다 커밋된다. 아래 JDBC 조회 · 추천 계산이 바뀐 날을 보게 한다
+        assertThat(jdbc.queryForObject("SELECT DATE_FORMAT(start_at, '%Y-%m-%dT%H:%i:%sZ') FROM reservation WHERE id = ?",
+                String.class, base)).isEqualTo(CHANGED_BASE_START.toString());
+
+        // B는 신청 때(11-25 기준) 판정한 그대로
+        Map<String, Object> rowB = reservation(b);
+        assertThat(rowB.get("course_proposal_id")).isNotNull();
+        assertThat(rowB.get("sender_store_id")).isEqualTo(storeA);
+        confirmAndVisit(b);
+        assertThat(feeCount(b)).isEqualTo(1);
+
+        // 원래 마감이 지난 11-26에도 바뀐 기준 예약일(11-27) 당일까지는 소개 후보
+        clock.setTo(AFTER_ORIGINAL_DEADLINE);
+        mvc.perform(get("/api/v1/course-proposals").param("baseReservationId", String.valueOf(base)).session(member))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.applyDeadline").value("2026-11-27T15:00:00Z"));
+        long c = courseRequestAt(storeC, "2026-11-28T06:00:00Z", AFTER_ORIGINAL_DEADLINE);
+        Map<String, Object> rowC = reservation(c);
+        assertThat(rowC.get("course_proposal_id")).isNotNull();
+        assertThat(rowC.get("course_root_id")).isEqualTo(base);
+        assertThat(rowC.get("sender_store_id")).isEqualTo(storeA);
+    }
+
+    @Test
     void 방문_처리를_두_번_시도해도_소개_수수료는_한_번_FR_STL_01_8() throws Exception {
         long b = courseReservationBeforeDeadline();
         visit(b);
@@ -208,15 +249,27 @@ class ReferralJudgementTest {
 
     /** 기준 예약의 정식 코스 제안을 조회하고 B를 그렸다고 기록(3.1). B의 제안 ID. */
     private long proposeB() throws Exception {
+        return propose(storeB);
+    }
+
+    /** 기준 예약의 정식 코스 제안을 조회하고 그 가게를 그렸다고 기록(3.1). 그 가게의 제안 ID. */
+    private long propose(long store) throws Exception {
         mvc.perform(get("/api/v1/course-proposals").param("baseReservationId", String.valueOf(base)).session(member))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items[*].store.id").value(org.hamcrest.Matchers.hasItem(String.valueOf(storeB))));
+                .andExpect(jsonPath("$.items[*].store.id").value(org.hamcrest.Matchers.hasItem(String.valueOf(store))));
         String body = mvc.perform(post("/api/v1/course-proposals").session(member).with(TestCsrf.csrf(mvc))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"baseReservationId\":\"" + base + "\",\"storeIds\":[\"" + storeB + "\"]}"))
+                        .content("{\"baseReservationId\":\"" + base + "\",\"storeIds\":[\"" + store + "\"]}"))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         return Long.parseLong(json.readTree(body).get("items").get(0).get("courseProposalId").asString());
+    }
+
+    /** 그 시각에 정식 제안을 보고 '다음 코스로 예약하기'로 신청한(신청 상태) 예약. */
+    private long courseRequestAt(long store, String startAt, Instant at) throws Exception {
+        clock.setTo(at);
+        long proposal = propose(store);
+        return id(request(store, startAt, base, proposal, null).andExpect(status().isCreated()));
     }
 
     /** FR-STL-01 #1처럼 마감 직전에 '다음 코스로 예약하기'로 신청한(신청 상태) 예약. */
