@@ -494,6 +494,26 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 - 기간은 전체다. 업종별 이동 비율 · 시간대별 예약(FR-ANL-08, 여유)은 이 API에 없다.
 - 실패: `unauthorized` · `forbidden_role`
 
+### 사장님 손님 흐름 (C17)
+
+#### `GET /api/v1/owner/customer-flows` — 우리 가게 손님 흐름 (O-07)
+
+- 역할: 사장님(`requireApprovedOwnStore`, 내 가게). 상인회 · 손님은 `403 forbidden_role`.
+- 응답 `200`:
+
+  ```json
+  {
+    "inbound":  [ { "storeId": "3", "storeName": "string", "moves": { "count": 6, "belowMinimum": false } } ],
+    "outbound": [ { "storeId": "7", "storeName": "string", "moves": { "count": null, "belowMinimum": true } } ]
+  }
+  ```
+
+  - `inbound`: 다른 가게에 들렀다가 같은 날 이어서 우리 가게에 온 이동. `outbound`: 우리 가게 뒤 같은 날 이어서 다른 가게로 간 이동. 이동 정의는 「상인회 방문 흐름 (C20)」의 `moves`와 같다.
+  - 다른 가게가 드러나므로 고유 손님 1 ~ 4명 묶음은 「분석 공통: 5명 미만 숨김」대로 숨긴다(FR-ANL-02 #1).
+  - 참여 가게(승인 · 탈퇴 신청 중)만, 기록이 있는 가게만. 순서는 보이는 묶음을 많은 순으로 먼저, 숨긴 묶음은 뒤에 가게 ID 순(숨긴 값의 크기가 순서로 드러나지 않게).
+  - 묶음 숫자만 준다. 손님 단위 값은 없다(FR-CUS-05). 기간은 전체.
+- 실패: `unauthorized` · `forbidden_role`
+
 ## 2. 예약 · 잔액 · 수수료 · 정산 · 서버 시계 (담당 D)
 
 D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약 · 방문 처리, 가상 잔액 · 예약금, 수수료 · 정산, 시연용 시각 조작.
