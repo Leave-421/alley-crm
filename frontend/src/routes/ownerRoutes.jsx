@@ -9,6 +9,7 @@ import PlaceholderPage from '@/pages/PlaceholderPage.jsx';
 import CouponSettingsPage from '@/pages/owner/coupon/CouponSettingsPage.jsx';
 import OwnerReservationsPage from '@/pages/owner/reservations/OwnerReservationsPage.jsx';
 import SettlementPage from '@/pages/owner/settlement/SettlementPage.jsx';
+import NotificationsPage from '@/pages/notifications/NotificationsPage.jsx';
 
 // 사장님 영역(/owner). 담당 B가 children에 화면 경로를 더하고, 자리표시를 실제 화면으로 바꾼다.
 // A가 만드는 화면(알림함 O-10, 손님 흐름 O-07)은 A가 그 줄의 element만 바꾼다.
@@ -35,7 +36,7 @@ export const ownerRoutes = [
           { path: 'coupons', handle: { title: '쿠폰 설정' }, element: <CouponSettingsPage /> }, // O-09 B15
           { path: 'settings', handle: { title: '가게 · 예약 설정' }, element: <ReservationSettingsPage /> }, // O-03 B10, 진입은 O-01 '예약 운영 설정'
           { path: 'store', handle: { title: '가게 정보' }, element: <StoreInfoPage /> }, // O-12 B24, 진입은 O-01 · O-03 '가게 정보'
-          { path: 'notifications', handle: { title: '알림함' }, element: <PlaceholderPage screenId="O-10" title="알림함" /> },
+          { path: 'notifications', handle: { title: '알림함' }, element: <NotificationsPage /> }, // O-10 A15(손님 G-11과 같은 화면)
         ],
       },
     ],

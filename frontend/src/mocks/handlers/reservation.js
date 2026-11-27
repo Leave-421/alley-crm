@@ -106,9 +106,20 @@ function discountFor(coupon, visitAmount) {
   return 0;
 }
 
+// 실시간 알림 목(ownerNotificationStream.js)이 '새 예약'을 넣는 곳. 날짜 → 그날 더 들어온 예약들
+const incomingByDate = new Map();
+const INCOMING_TEMPLATE = { time: '22:00', partySize: 2, status: 'requested', cancelReason: null, customerType: 'guest', maskedName: '윤*솔', fromRecommendation: true, requestNote: '방금 들어온 예약', depositAmount: 0 };
+
+/** 그날 새 신청 예약을 하나 더한다(목). 더한 예약 id를 돌려준다. */
+export function addMockIncomingReservation(date) {
+  const list = incomingByDate.get(date) ?? [];
+  incomingByDate.set(date, [...list, { ...INCOMING_TEMPLATE, time: `22:${String(list.length * 10).padStart(2, '0')}` }]);
+  return `${date.replaceAll('-', '')}-${MOCK_DAY.length + list.length + 1}`;
+}
+
 function mockOwnerReservations(date) {
   const day = date.replaceAll('-', '');
-  return MOCK_DAY.map((item, index) => {
+  return [...MOCK_DAY, ...(incomingByDate.get(date) ?? [])].map((item, index) => {
     const id = `${day}-${index + 1}`;
     const changed = decided.get(id) ?? {};
     const startAt = new Date(`${date}T${changed.time ?? item.time}:00+09:00`);
@@ -121,7 +132,7 @@ function mockOwnerReservations(date) {
     const visitedAt = changed.visitedAt ?? (item.status === 'visited' ? startAt.toISOString() : null);
     return {
       id,
-      reservationNo: `K7Q2M9X${'ABCDEFGHJ'[index]}`, // 8자, 헷갈리는 0 O 1 I 없음(계약)
+      reservationNo: `K7Q2M9X${'ABCDEFGHJKLMNPQR'[index] ?? 'Z'}`, // 8자, 헷갈리는 0 O 1 I 없음(계약)
       startAt: startAt.toISOString(),
       partySize: changed.partySize ?? item.partySize,
       pendingStartAt: pending ? new Date(`${date}T${pending.time}:00+09:00`).toISOString() : null,
@@ -142,7 +153,7 @@ function mockOwnerReservations(date) {
       visitedAt,
       ...referralOf({ status, fromRecommendation: item.fromRecommendation, coupon: MOCK_APPLIED_COUPONS[index] ?? null, visitAmount }),
     };
-  });
+  }).sort((a, b) => a.startAt.localeCompare(b.startAt)); // 시각 순(D4)
 }
 
 /** 목 예약 id('YYYYMMDD-n')로 그날 목록에서 찾는다. 없으면 null. */

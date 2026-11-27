@@ -28,7 +28,7 @@ import org.springframework.stereotype.Component;
  *   <li>수수료 = 계산 금액 × 수수료율(설정값, 생길 때 값을 기록), 1원 미만 버림</li>
  *   <li>받은 가게 잔액 → 권역 공동 기금. 가게 잔액이 모자라도 빼고 마이너스가 될 수 있다(기획 11-25 (4))</li>
  *   <li>쿠폰 비용은 수수료와 따로 기록한다. 가게 쿠폰만(상인회 쿠폰은 기금이 낸다, 11-25 (5))</li>
- *   <li>정산 달 = 방문 처리된 달(운영 시간대)</li>
+ *   <li>정산 달 = 방문 처리된 달(운영 시간대). 늦은 방문 처리(D23)는 원래 예약 달(이벤트의 settlementAt)</li>
  * </ul>
  */
 @Component
@@ -65,7 +65,7 @@ class ReferralFeeListener {
                 .map(VisitCouponDiscount::couponCost).orElse(0);
         int base = Math.max(0, e.visitAmount() - discount);
         int fee = rate.multiply(BigDecimal.valueOf(base)).setScale(0, RoundingMode.DOWN).intValueExact();
-        String month = YearMonth.from(e.visitedAt().atZone(ServiceTime.ZONE)).toString();
+        String month = YearMonth.from(e.settlementAt().atZone(ServiceTime.ZONE)).toString();
 
         jdbc.update("""
                 INSERT INTO referral_fee (reservation_id, receiving_store_id, sender_store_id, visit_amount, coupon_discount,

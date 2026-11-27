@@ -342,3 +342,10 @@
 .delayTag::before {
   content: '⏱ ';
 }
+
+/* 실시간 연결 상태(B9) */
+.realtime {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}

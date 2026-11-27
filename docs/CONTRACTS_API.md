@@ -317,7 +317,7 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 | `visit_report_check_requested` | 그 가게 사장님 | `{ "visitReportId", "reservationId" }` | 상인회 신고 확인 요청 커밋 뒤(`VisitReportOwnerCheckRequestedEvent`, 「방문 신고 (C23)」) |
 | `delay_reported` | 그 가게 사장님 | `{ "reservationId", "startAt", "expectedArrivalAt" }` | 지연 입력 커밋 뒤(D14, 2절 「늦을 것 같아요」) |
 | `visit_amount_recorded` | 회원만 | 2절 「방문 금액 알림」 | 방문 처리 커밋 뒤(D21) |
-| `next_store_recommended` | — | — | **미연결.** 다음 가게 추천(E)을 만드는 PR이 이벤트를 내보내고 이 표에 줄을 더한다 |
+| `next_store_recommended` | 그 예약의 손님(회원 계정 · 비회원 예약) | `{ "reservationId", "baseStoreId" }` | 예약 신청 커밋 뒤 E 계산이 후보가 있을 때 내보내는 `NextStoreRecommendedEvent`(3.11). C14 리스너는 3.11 N-1 |
 
 "예약한 손님"은 회원이면 그 계정(`account`), 비회원이면 그 예약(`guest_reservation`)이다. 기능 쪽은 `notifyReservationCustomer(reservationId, customerId, type, payload)`로 같은 규칙을 쓴다.
 
@@ -822,9 +822,34 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
   - `conflict` — `confirmed`가 아님(신청 · 취소 · 이미 방문)
   - `unauthorized` · `forbidden_role` · `csrf_invalid`
 
+#### `POST /api/v1/owner/reservations/{id}/late-visit` — 늦은 방문 처리 (D23, FR-STL-09 #2 · #5, FR-RSV-02 #4, 11-25 (5))
+
+- 역할: 사장님(내 가게 예약). `X-XSRF-TOKEN` 필요. 화면: O-10 · O-13에서 상인회가 '맞음'으로 기록한 미처리 신고 건.
+- 요청: `{ "visitAmount": 30000 }` — 방문 처리와 같다(쿠폰 할인 전, 0 ~ 10,000,000원).
+- 조건: `canceled`(사유 `auto_canceled`)이고, 그 예약에 상인회가 '맞음'(`valid`)으로 기록한 미처리 신고(`not_processed`)가 있을 때만(C23 `hasValidReport`).
+- `canceled` → `visited`. `visitAmount` · `visitedAt`(처리 시각)을 남기고 `cancelReason` · `canceledAt`은 지운다. 예약금은 움직이지 않는다(자동 취소 때 돌려주지 않았다).
+- 방문 처리와 같이 `ReservationStatusChangedEvent`(`canceled` → `visited`)와 `VisitProcessedEvent`를 내보낸다: 소개 수수료(D15) · 쿠폰 '적용 취소' → '예약에 적용됨'(E14, 사용 확인은 따로) · 방문 금액 알림(D21).
+- 정산 달 = **원래 예약 달**(`VisitProcessedEvent.settlementAt` = 예약 시각, FR-STL-09 #3).
+- 응답 `200`: 방문 처리와 같은 모양(`Reservation` + `couponDiscountAmount` · `referralConfirmed` · `referralFee`).
+- 실패: `invalid`(금액) · `not_found`(없는 예약 · 다른 가게) · `conflict`(자동 취소가 아님 · '맞음' 미처리 신고 없음) · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+#### `POST /api/v1/owner/reservations/{id}/amount-correction` — 방문 금액 정정 (D22, FR-STL-09 #1 · #3 · #4, 11-25 (5) · 11-27 (2))
+
+- 역할: 사장님(내 가게 예약). `X-XSRF-TOKEN` 필요. 화면: O-10 · O-13에서 상인회가 '맞음'으로 기록한 금액 신고 건.
+- 요청: `{ "correctedAmount": 40000 }` — 정정 금액(쿠폰 할인 전, 0 ~ 10,000,000원).
+- 조건: `visited`이고, 그 예약에 상인회가 '맞음'으로 기록한 금액 신고(`amount`) 중 아직 정정에 쓰지 않은 것이 있을 때만. 신고 한 건에 정정 한 번(`uk_correction_report`).
+- 원래 방문 금액(`reservation.visit_amount`) · 수수료(`referral_fee`)는 **고치지 않고** `visit_amount_correction`을 더한다.
+- 수수료 차액(소개 예약만): 정정 금액으로 다시 계산한 수수료(원래 `fee_rate`, 쿠폰 할인은 정정 금액 기준 E14 `discountFor`, 1원 미만 버림) − 지금까지 낸 수수료(원래 수수료 + 앞선 정정 차액).
+  - 늘면 가게 → 공동 기금(`fee_difference_charged` · `fee_difference_deposited`). 가게 잔액은 마이너스가 될 수 있다.
+  - 줄면 공동 기금 → 가게(`fee_difference_withdrawn` · `fee_difference_refunded`, 11-27 (2)). 기금은 마이너스가 될 수 없어 모자라면 `insufficient_balance`로 거절하고 아무것도 남기지 않는다.
+  - 소개 예약이 아니면 차액 0, 돈은 움직이지 않는다.
+- 정산 달 = 원래 방문(예약) 달: 수수료 행의 정산 달, 수수료가 없으면 예약 달(FR-STL-09 #3). 월 정산(D17) · 사장님 수수료 내역(D16)의 `totalFee`에 차액이 들어간다.
+- 응답 `200`: `{ "reservationId": "string", "originalAmount": 30000, "correctedAmount": 40000, "feeDifference": 400, "settlementMonth": "2026-11", "createdAt": "..." }` — `originalAmount`는 이 정정 직전 금액(앞선 정정이 있으면 그 정정 금액).
+- 실패: `invalid`(금액) · `not_found` · `conflict`(방문이 아님 · 쓸 수 있는 '맞음' 금액 신고 없음) · `insufficient_balance`(줄어든 차액을 기금이 못 돌려줌) · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
 #### '방문 처리됨' 이벤트 `VisitProcessedEvent` (서버 내부, D11)
 
-방문 처리하면 `ReservationStatusChangedEvent`(`confirmed` → `visited`)와 함께 `VisitProcessedEvent(reservationId, storeId, customerId, visitAmount, visitedAt, courseProposalId, senderStoreId)`를 같은 트랜잭션에서 내보낸다. 받는 쪽은 D11 코드를 고치지 않는다.
+방문 처리하면 `ReservationStatusChangedEvent`(`confirmed` → `visited`)와 함께 `VisitProcessedEvent(reservationId, storeId, customerId, visitAmount, visitedAt, courseProposalId, senderStoreId, settlementAt)`를 같은 트랜잭션에서 내보낸다. `settlementAt`은 정산 달을 정하는 시각으로, 보통 `visitedAt`과 같고 늦은 방문 처리(D23)는 원래 예약 시각이다. 받는 쪽은 D11 코드를 고치지 않는다.
 
 | 받는 쪽 | 받는 방법 | 할 일 |
 | --- | --- | --- |
@@ -853,7 +878,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 | 수수료 | 계산 금액 × 수수료율(설정값 `referral_fee_rate`, 그 가게 권역). **1원 미만 버림.** 수수료율은 생길 때 값을 `fee_rate`에 남긴다(NFR-04 #1) |
 | 돈 | 받은 가게 지갑 → 권역 공동 기금(`referral_fee_charged` · `fund_deposited`, 예약 id 남김). 가게 잔액이 모자라도 빼서 마이너스가 될 수 있다(기획 11-25 (4)) |
 | 쿠폰 비용 | `coupon_cost`에 따로 기록. 가게 쿠폰만(상인회 쿠폰은 기금이 내므로 0, 11-25 (5)) |
-| 정산 달 | 방문 처리된 달(운영 시간대 Asia/Seoul) `YYYY-MM` |
+| 정산 달 | 방문 처리된 달(운영 시간대 Asia/Seoul) `YYYY-MM`. 늦은 방문 처리(D23)는 원래 예약 달(`settlementAt`) |
 
 수수료 내역 조회 API는 D16에서 이 절에 더한다.
 
@@ -886,7 +911,8 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
   "totalCouponCost": 5000,
   "items": [
     { "reservationId": "string", "reservationNo": "K7Q2M9XA", "maskedName": "김*코", "visitedAt": "2026-11-10T10:00:00Z",
-      "visitAmount": 30000, "couponDiscount": 5000, "feeBase": 25000, "feeRate": 0.04, "feeAmount": 1000, "couponCost": 5000 }
+      "visitAmount": 30000, "couponDiscount": 5000, "feeBase": 25000, "feeRate": 0.04, "feeAmount": 1000, "couponCost": 5000,
+      "feeDifference": 0 }
   ]
 }
 ```
@@ -894,6 +920,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
   - `settlementStatus`: 그 달 월 정산(D17) 상태 `aggregated` · `confirmed`, 아직 없으면 `null`(화면의 '잠정').
   - `referralFeeRate`: 지금 설정값. 건별 `feeRate`는 그 수수료가 생길 때 값이다(NFR-04).
   - `couponCost`: 내 가게가 낸 쿠폰 비용(수수료와 따로, FR-STL-02).
+  - `feeDifference`: 이 예약의 방문 금액 정정(D22) 수수료 차액 합(줄면 음수, 없으면 0). `feeAmount`는 원래 수수료 그대로이고, `totalFee` = Σ(`feeAmount` + `feeDifference`).
 - 실패: `invalid`(month 형식) · `unauthorized` · `forbidden_role`
 
 #### `GET /api/v1/owner/referral-stats?month=2026-11` — 소개 실적 (O-08, FR-STL-04)
@@ -922,11 +949,12 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
   "unprocessedReportCount": 0,
   "count": 2,
   "totalFee": 2200,
-  "stores": [ { "storeId": "3", "storeName": "B", "count": 2, "totalFee": 2200, "avgVisitAmount": 27500, "couponCost": 0 } ]
+  "stores": [ { "storeId": "3", "storeName": "B", "count": 2, "totalFee": 2200, "feeDifference": 0, "avgVisitAmount": 27500, "couponCost": 0 } ]
 }
 ```
 
   - `status`: 확정 전이면 `aggregated`(수수료 기록에서 그때 집계), 확정 뒤 `confirmed`.
+  - `totalFee` · `feeDifference`: 가게별 수수료 합은 원래 수수료 + 방문 금액 정정(D22) 차액. `feeDifference`는 그중 차액 합(줄면 음수). 차액은 원래 수수료의 정산 달에 들어간다(FR-STL-09 #3).
   - `avgVisitAmount`: 가게별 소개 건 평균 방문 금액(**쿠폰 할인 후**, 원 단위 반올림). 낮은지 판단하는 표시는 없다(판단은 상인회 몫, 11-24 (5)).
   - `unprocessedReportCount`: 그 달(예약 시작 달) 예약에 걸린, 처리 완료되지 않은 금액 · 미처리 신고 수(11-25 (5)).
   - `canConfirm`: 확정 전 · 그 달이 끝남 · 처리 안 된 신고 0일 때 `true`.
@@ -2100,3 +2128,57 @@ DB가 막지 않는 것(유형별 필수 칸, 확정 뒤 변경 금지, 중단�
 | 쓸 수 있는 기간 시작 | 신청 시각 < 행사 `validStartAt`이면 쓸 수 없음 | 05-policy "기한은 예약 신청 시각으로 판단" |
 | 기금 부담 기록 | 쿠폰 `discount_applied`(새 거래 없음) | FR-CPN-12 예산은 만들 때 기금에서 미리 잡음 |
 | 가게 휴업 · 운영 중단 | 상인회 쿠폰은 바꾸지 않는다(다른 가게에서 쓸 수 있음). 그 가게 예약이 취소되면 3.5대로 적용 취소 | FR-CPN-07 #4는 대상 가게가 하나인 가게 쿠폰 규칙 |
+
+### 3.11 리롤 · 거절 · 다음 가게 추천 알림 (E8 #49 · 계약 #284)
+
+> 상태: **계약.** 구현은 #49에서 한다. 묶음 넘기기(리롤 화면)는 3.1 `page`로 이미 된다(FR-CRS-06 #1 · #2 · #4). 이 절은 거절 · 리롤 **기록**과 예약 뒤 **다음 가게 추천 알림**을 더한다.
+> 기준: 기획 저장소 `05-policy.md` 「다음 방문 추천」 6단계(리롤 · 거절 · 추천 알림), `03-requirements.md` FR-CRS-02 · 06 · FR-NTF-03, `06-data.md` RECOMMENDATION_FEEDBACK. 알림 만들기 규칙은 1절 「알림 (C14)」.
+
+#### `POST /api/v1/recommendation-feedback` — 추천 거절 · 리롤 기록
+
+- 역할: 누구나(로그인 불필요, 3.1 지도 추천과 같음). 상태 변경이라 `X-XSRF-TOKEN` 필요.
+- 요청: `{ "type": "reject", "exposureIds": ["123", "124", "125"] }`
+  - `type`: `reject` 거절 · `reroll` 리롤(`CONTRACTS.md` 「3」 `feedback.type`). **사유는 받지 않는다**(FR-CRS-06).
+  - `exposureIds`: 3.1 `POST /api/v1/recommendation-exposures`로 받은 노출 ID 1 ~ 3개, 중복 없음. 리롤은 다음 묶음을 부르기 전 지금 묶음의 노출들, 거절은 거절한 카드(묶음 전체면 묶음의 노출들).
+- 노출은 **이 요청자의 것**이어야 한다: 이 브라우저의 방문자(3.3 쿠키)의 노출이거나 로그인한 회원에 이어진 방문자의 노출(3.4 쿠폰 다운로드와 같은 규칙). 아니면 `404 not_found`(존재 숨김)이고 아무것도 기록하지 않는다.
+- 같은 (노출, 종류)는 한 번만 남긴다. 다시 보내도 `204`이고 새 행을 만들지 않는다.
+- **순위 · 후보에 쓰지 않는다**(FR-CRS-06 #3). 같은 조건으로 다시 조회하면 순위가 같다.
+- 응답 `204`. 쿠키가 없었으면 `Set-Cookie: alley_vid=…`(3.3).
+- 실패: `invalid`(type 값 · exposureIds 0개 · 3개 초과 · 중복 · 숫자 아님) · `not_found` · `csrf_invalid`
+
+#### 다음 가게 추천 알림 (서버 내부, E8 → C14)
+
+- 예약 신청이 커밋된 뒤(`ReservationRequestedEvent`, D2) E가 **자기 트랜잭션**에서 그 예약의 다음 가게 추천을 계산한다: 3.1 지도 추천과 같은 계산, 기준 가게 = 그 예약의 가게, **기준 시각 = 그 예약 시각**(FR-CRS-02 #2), 요청자 = 그 손님(회원 · 비회원 모두. 같은 날 제외 · 성별 · 연령대는 3.1 「손님 식별에 따른 차이」).
+- 후보가 1곳 이상이면 같은 트랜잭션에서 `NextStoreRecommendedEvent(reservationId, storeId, customerId)`(`com.alleycrm.recommend`)를 내보낸다. 후보가 없으면 내보내지 않는다.
+- 계산이 실패해도 **예약은 그대로**다(예약 커밋 뒤라 되돌리지 않음). 알림만 생기지 않는다.
+- C14가 `@TransactionalEventListener`(커밋 뒤)로 받아 알림을 만든다(1절 규칙: 기능은 이벤트, 알림은 C14). 받는 쪽은 그 예약의 손님 — 회원이면 계정(`notifyAccount`), 비회원이면 그 예약(`notifyGuestReservation`, C13 제한 세션에서 봄).
+
+| `type` | 받는 쪽 | `payload` | 만드는 곳 |
+| --- | --- | --- | --- |
+| `next_store_recommended` | 그 예약의 손님(회원 계정 · 비회원 예약) | `{ "reservationId", "baseStoreId" }` | 예약 신청 커밋 뒤 E 계산(`NextStoreRecommendedEvent`, C14 리스너) |
+
+- 화면: 알림을 누르면 `baseStoreId`를 기준 가게로 G-01을 연다(FR-CRS-02 #1). 추천 카드는 3.1 `GET /api/v1/recommendations`(회원은 그 가게에 예약이 있어 기준 시각이 예약 시각, 3.1 R-6). 정식 코스 제안은 3.1 `GET /api/v1/course-proposals?baseReservationId=`로 열고, 이미 표시된 같은 제안과 1건으로 센다(FR-CRS-02 #3, 3.1 「조합당 1건」).
+- 알림은 숫자 근거(점수 · 손님 수)를 담지 않는다(FR-CRS-05).
+
+#### 정책에 따라 정한 것 (3.11)
+
+| 항목 | 정한 것 | 근거 |
+| --- | --- | --- |
+| 거절 단위 | 노출 ID(카드 한 장 또는 묶음) | 06-data RECOMMENDATION_FEEDBACK `exposure_id` |
+| 거절 · 리롤과 순위 | 기록만, 순위 · 후보에 쓰지 않음 | FR-CRS-06, 05-policy 6단계 |
+| 알림 계산 | 지도 추천과 같은 계산, 기준 시각 = 예약 시각 | FR-CRS-02 #2, 05-policy 6단계 "추천 알림도 같은 계산" |
+
+#### 구현 기준 (정책에 명시 없음 — 관련 담당 확인 요청)
+
+| 항목 | 이 계약의 기준 | 정책 근거 | 확인할 담당 |
+| --- | --- | --- | --- |
+| 알림 시점 | 예약 **신청** 커밋 뒤 한 번(확정 때 다시 보내지 않음) | FR-CRS-02 "예약 뒤" | A (G-11) |
+| 후보 없음 | 알림을 만들지 않음 | 빈 추천 알림 방지 | A |
+| 같은 (노출, 종류) 다시 보냄 | 한 번만 기록 | 네트워크 재전송 | — |
+
+#### 미확정 (3.11)
+
+| # | 내용 | 정해지지 않은 동안 | 결정 주체 |
+| --- | --- | --- | --- |
+| N-1 | C14 리스너: `NextStoreRecommendedEvent` → 손님(회원 계정 · 비회원 예약)에게 `next_store_recommended` 알림, 1절 표 줄 | E8은 이벤트만 내보낸다 | C (C14) |
+| N-2 | 이 절의 `POST` 경로를 로그인 없이 여는 보안 설정(3.1 R-10 · 3.3 V-2와 함께) | 로그인한 요청으로만 동작 | C |
