@@ -270,7 +270,9 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 | `association_coupon_opened` | 회원 계정 전부 | `{ "associationCouponEventId" }` | 3.9 「행사 알림」 |
 | `coupon_status` | 회원 | `{ "couponId", "status" }` (`used` · `expired`) | **미연결.** E14가 사용 완료 · 만료 때 이벤트를 내보내면 C14가 리스너를 단다. 비회원은 쿠폰이 없어 만들지 않는다(FR-NTF-03 #4 · #5) |
 | `visit_report_check_requested` | 그 가게 사장님 | `{ "visitReportId", "reservationId" }` | 상인회 신고 확인 요청 커밋 뒤(`VisitReportOwnerCheckRequestedEvent`, 「방문 신고 (C23)」) |
-| `change_requested` · `change_approved` · `change_rejected` · `delay_reported` · `next_store_recommended` · `visit_amount_recorded` | — | — | **미연결.** 그 기능(예약 변경 · 지연 입력 D, 다음 가게 추천 E, 방문 금액 D21)을 만드는 PR이 이벤트를 내보내고 이 표에 줄을 더한다 |
+| `delay_reported` | 그 가게 사장님 | `{ "reservationId", "startAt", "expectedArrivalAt" }` | 지연 입력 커밋 뒤(D14, 2절 「늦을 것 같아요」) |
+| `visit_amount_recorded` | 회원만 | 2절 「방문 금액 알림」 | 방문 처리 커밋 뒤(D21) |
+| `change_requested` · `change_approved` · `change_rejected` · `next_store_recommended` | — | — | **미연결.** 그 기능(예약 변경 D, 다음 가게 추천 E)을 만드는 PR이 이벤트를 내보내고 이 표에 줄을 더한다 |
 
 "예약한 손님"은 회원이면 그 계정(`account`), 비회원이면 그 예약(`guest_reservation`)이다. 기능 쪽은 `notifyReservationCustomer(reservationId, customerId, type, payload)`로 같은 규칙을 쓴다.
 
