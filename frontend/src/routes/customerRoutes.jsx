@@ -3,6 +3,7 @@ import AppLayout from '@/layouts/AppLayout.jsx';
 import { CUSTOMER_MENU } from '@/layouts/menus.js';
 import PlaceholderPage from '@/pages/PlaceholderPage.jsx';
 import AlleyScreen from '@/pages/customer/alley/AlleyScreen.jsx';
+import AlleyPickPage from '@/pages/customer/alleys/AlleyPickPage.jsx';
 import HomePage from '@/pages/customer/home/HomePage.jsx';
 import PolicyPage from '@/pages/customer/policy/PolicyPage.jsx';
 
@@ -16,8 +17,7 @@ export const customerRoutes = [
     element: <AppLayout menu={CUSTOMER_MENU} />,
     children: [
       { index: true, element: <HomePage /> }, // G-14 A24
-      // 골목 고르기(G-15, A25)는 아직 자리표시
-      { path: 'alleys', handle: { title: '골목 고르기' }, element: <PlaceholderPage screenId="G-15" title="골목 고르기" /> },
+      { path: 'alleys', handle: { title: '골목 고르기' }, element: <AlleyPickPage /> }, // G-15 A25
       // 예약하기(G-02)는 A4의 '예약하기' 바가 가리키는 자리표시. 실제 화면은 A8(#28)에서 만든다
       { path: 'alleys/:alley/reserve', handle: { title: '예약하기' }, element: <PlaceholderPage screenId="G-02" title="예약하기" /> },
       { path: 'reservations', handle: { title: '내 예약' }, element: <PlaceholderPage screenId="G-04" title="내 예약" /> },

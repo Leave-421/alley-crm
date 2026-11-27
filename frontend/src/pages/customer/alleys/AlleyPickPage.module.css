@@ -1,0 +1,125 @@
+/* 확정 목업 GuestAlleys의 최종 계산값. 폰은 카드 한 줄씩, 넓은 화면은 골목 3개를 나란히 */
+.page {
+  padding: var(--space-2) var(--layout-gutter) 0;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: var(--radius-badge);
+  background: #f2dce5;
+  color: #7a3a58;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.title {
+  margin: 10px 0 4px;
+  color: var(--color-heading);
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: var(--weight-regular);
+  line-height: 34px;
+  letter-spacing: -0.2px;
+}
+
+.lead {
+  margin: 0 0 14px;
+  color: var(--color-text-muted);
+  font-size: var(--text-base);
+  line-height: 22px;
+}
+
+.grid {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  border: 1px solid var(--color-surface-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.photo {
+  display: block;
+  width: 100%;
+  height: 140px;
+  object-fit: cover;
+  border-radius: 16px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.name {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-heavy);
+  line-height: 26px;
+}
+
+.intro {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: 16px;
+}
+
+.stores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 목업: 가게 이름 칩은 누르는 칩이 아니라 이름표(높이 28 · 글자 12) */
+.store {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: var(--text-sm);
+  cursor: default;
+}
+
+.enter {
+  min-height: 44px;
+  margin-top: var(--space-3);
+  text-decoration: none;
+}
+
+@media (min-width: 960px) {
+  .grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-4);
+  }
+
+  .photo {
+    height: 180px;
+  }
+
+  /* 카드 높이를 맞추고 버튼은 아래에 붙인다 */
+  .enter {
+    margin-top: auto;
+  }
+
+  .stores {
+    margin-bottom: var(--space-3);
+  }
+}
