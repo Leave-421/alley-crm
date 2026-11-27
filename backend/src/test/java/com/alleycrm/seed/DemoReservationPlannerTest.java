@@ -3,6 +3,8 @@ package com.alleycrm.seed;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.alleycrm.recommend.domain.DayType;
+import com.alleycrm.recommend.domain.TimeBand;
 import com.alleycrm.seed.DemoReservationPlanner.Plan;
 import com.alleycrm.seed.DemoReservationPlanner.Reservation;
 import java.time.DayOfWeek;
@@ -10,6 +12,9 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -138,6 +143,70 @@ class DemoReservationPlannerTest {
             assertThat(r.reservationNo()).matches("[A-HJ-NP-Z2-9]{8}");
             assertThat(numbers.add(r.reservationNo())).isTrue();
         });
+    }
+
+    // ---- 같은 날 연속 방문 (E17, 06-data 6단계) ----
+
+    @Test
+    void 이십대는_카페_다음에_디저트를_훨씬_자주_간다_NFR_08_패턴_1() {
+        // 추천 실제 기록 점수(E6)와 같은 기준: 카페 방문 중 같은 날 바로 다음 방문이 디저트인 비율
+        Map<Boolean, int[]> byTwenties = new HashMap<>(); // [카페 방문 수, 그중 바로 다음이 디저트]
+        for (List<Reservation> day : visitedDays().values()) {
+            for (int i = 0; i < day.size(); i++) {
+                if (STORES.get(day.get(i).storeCode()).category() != SeedCategory.CAFE) {
+                    continue;
+                }
+                boolean twenties = "age_20_or_under".equals(PLAN.customers().get(day.get(i).customerIndex()).ageGroup());
+                int[] counts = byTwenties.computeIfAbsent(twenties, k -> new int[2]);
+                counts[0]++;
+                if (i + 1 < day.size() && STORES.get(day.get(i + 1).storeCode()).category() == SeedCategory.DESSERT) {
+                    counts[1]++;
+                }
+            }
+        }
+        double twentiesShare = (double) byTwenties.get(true)[1] / byTwenties.get(true)[0];
+        double othersShare = (double) byTwenties.get(false)[1] / byTwenties.get(false)[0];
+
+        assertThat(byTwenties.get(true)[1]).isGreaterThan(50);
+        assertThat(twentiesShare).isGreaterThan(othersShare * 2);
+    }
+
+    @Test
+    void 오늘의_코스_칸마다_5명_이상인_3곳_동선이_있다_FR_CRS_11() {
+        // 오늘의 코스 계산(3.7)과 같게: 같은 날 방문 처리 예약을 시간순으로, 연달아 있는 서로 다른 세 가게, 첫 방문 칸
+        Map<String, Map<List<String>, Set<Integer>>> byCell = new HashMap<>();
+        for (List<Reservation> day : visitedDays().values()) {
+            for (int i = 0; i + 2 < day.size(); i++) {
+                List<String> route = List.of(day.get(i).storeCode(), day.get(i + 1).storeCode(), day.get(i + 2).storeCode());
+                if (new HashSet<>(route).size() < 3) {
+                    continue;
+                }
+                LocalDateTime first = local(day.get(i));
+                String cell = DayType.of(first.toLocalDate()) + "/" + TimeBand.of(first.toLocalTime());
+                byCell.computeIfAbsent(cell, k -> new HashMap<>())
+                        .computeIfAbsent(route, k -> new HashSet<>()).add(day.get(i).customerIndex());
+            }
+        }
+
+        for (String cell : List.of("WEEKDAY/LUNCH", "WEEKDAY/AFTERNOON", "WEEKDAY/EVENING",
+                "WEEKEND/LUNCH", "WEEKEND/AFTERNOON", "WEEKEND/EVENING")) {
+            long shown = byCell.getOrDefault(cell, Map.of()).entrySet().stream()
+                    .filter(e -> e.getValue().size() >= DemoReservationPlanner.COURSE_MIN_CUSTOMERS)
+                    .map(e -> e.getKey().get(0))
+                    .distinct()
+                    .count();
+            assertThat(shown).as(cell + " 칸에서 첫 가게가 다른 5명 이상 동선 수").isGreaterThanOrEqualTo(1);
+        }
+    }
+
+    /** 손님 · 운영 시간대 날짜별 방문 처리 예약(시작 시각 순). */
+    private static Map<String, List<Reservation>> visitedDays() {
+        Map<String, List<Reservation>> days = new HashMap<>();
+        PLAN.reservations().stream()
+                .filter(r -> r.status().equals("visited"))
+                .sorted(Comparator.comparing(Reservation::startAt))
+                .forEach(r -> days.computeIfAbsent(r.customerIndex() + "@" + localDate(r), k -> new ArrayList<>()).add(r));
+        return days;
     }
 
     private static LocalDateTime local(Reservation r) {
