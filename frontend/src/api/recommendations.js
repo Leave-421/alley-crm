@@ -17,6 +17,15 @@ export function getRecommendations(baseStoreId, page = 0) {
 }
 
 /**
+ * 지도 추천 표시 기록(탐색 노출). 카드 묶음을 실제로 그린 뒤 한 번 보낸다. displayId는 묶음을 새로 그릴 때마다 새 UUID,
+ * 재전송이면 같은 값. storeIds는 그린 가게(1 ~ 3곳, 화면 순서). 응답 exposureId는 쿠폰 출처(FR-CPN-10)에 쓴다.
+ * @returns {Promise<{ items: { storeId: string, exposureId: string }[] }>}
+ */
+export function recordRecommendationExposures({ displayId, baseStoreId, page, storeIds }) {
+  return api.post('/api/v1/recommendation-exposures', { displayId, baseStoreId, page, storeIds });
+}
+
+/**
  * 기준 예약의 정식 코스 제안(E7). 손님(회원 · 비회원 제한 세션)만, 남의 예약이면 404. 기록하지 않는다.
  * @returns {Promise<{ baseReservationId: string, baseStoreId: string, applyDeadline: string, page: number, pageCount: number, items: object[], publicData: object | null }>}
  */

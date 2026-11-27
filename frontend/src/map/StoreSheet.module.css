@@ -94,6 +94,13 @@
   border: 1.5px solid #e3d3dc;
   border-radius: 999px;
   background: #fff;
+  color: #130a0d;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 800;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
 }
 
 .nextRank,
@@ -222,11 +229,18 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  box-sizing: border-box;
+  width: 100%;
   margin-top: 10px;
   padding: 12px;
   border: 1.5px solid #e3d3dc;
   border-radius: 20px;
   background: #fff;
+  color: #130a0d;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
 }
 
 .recRank {
@@ -235,8 +249,72 @@
   font-size: 14px;
 }
 
+/* 목업: 같은 골목은 진한 색, 다른 골목(이동)은 분홍빛 */
+.rankSame {
+  background: #523344;
+}
+
+.rankOther {
+  background: #9c4a6b;
+}
+
 .recText {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
+}
+
+.recName {
+  font-size: 15.5px;
+  line-height: 21px;
+  font-weight: 800;
+}
+
+.recWhere {
+  margin-top: -6px;
+  color: #574050;
+  font-size: 12px;
+  line-height: 17px;
+  font-weight: 600;
+}
+
+.recBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.recBadge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f1e5eb;
+  color: #523344;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 800;
+}
+
+.recBadgeLocal {
+  background: #f3edf1;
+  color: #8a6a7c;
+}
+
+.recBadgeBenefit {
+  background: #fbe2e5;
+  color: #7a3a58;
+}
+
+.recReason {
+  color: #574050;
+  font-size: 12px;
+  line-height: 17px;
+}
+
+.recNotice {
+  margin: 10px 0 0;
+  color: var(--color-ink-500);
+  font-size: 12px;
+  line-height: 17px;
 }
