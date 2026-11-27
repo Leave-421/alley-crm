@@ -13,6 +13,7 @@ import com.alleycrm.common.TestCsrf;
 import com.alleycrm.common.error.ApiException;
 import com.alleycrm.common.time.AppClock;
 import com.alleycrm.reservation.ReservationStateService;
+import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -78,6 +79,9 @@ class ReferralJudgementTest {
 
     @Autowired
     ReservationStateService reservationStates;
+
+    @Autowired
+    EntityManager entityManager;
 
     long region;
     long storeA;
@@ -206,6 +210,7 @@ class ReferralJudgementTest {
         jdbc.update("UPDATE store SET cancel_deadline_hours = 2 WHERE id = ?", storeA);
         reservationStates.requestChange(customer, base, CHANGED_BASE_START, null);
         reservationStates.confirm(storeA, base);
+        entityManager.flush(); // 실제로는 요청마다 커밋된다. 아래 JDBC 조회 · 추천 계산이 바뀐 날을 보게 한다
         assertThat(jdbc.queryForObject("SELECT DATE_FORMAT(start_at, '%Y-%m-%dT%H:%i:%sZ') FROM reservation WHERE id = ?",
                 String.class, base)).isEqualTo(CHANGED_BASE_START.toString());
 
