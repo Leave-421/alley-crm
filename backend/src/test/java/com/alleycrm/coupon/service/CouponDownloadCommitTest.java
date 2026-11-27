@@ -35,6 +35,9 @@ class CouponDownloadCommitTest {
     CouponOfferService service;
 
     @Autowired
+    CouponApplyService applyService;
+
+    @Autowired
     JdbcTemplate jdbc;
 
     long region;
@@ -91,6 +94,14 @@ class CouponDownloadCommitTest {
                 .isInstanceOfSatisfying(ApiException.class, e -> assertThat(e.errorCode()).isEqualTo(ErrorCode.CONFLICT));
         assertThat(issuedCount()).isEqualTo(1);
         assertThat(couponCount()).isEqualTo(1);
+    }
+
+    @Test
+    void 예약_화면의_사용_가능한_쿠폰은_읽기_전용_트랜잭션에서_잠그지_않고_읽는다() {
+        // 테스트 트랜잭션 없이 부른다. 읽기 전용 트랜잭션에서 SELECT ... FOR UPDATE를 내면 500이었다(#261 회귀)
+        service.download(account, exposure());
+
+        assertThat(applyService.usable(account, targetStore).items()).hasSize(1);
     }
 
     private long exposure() {

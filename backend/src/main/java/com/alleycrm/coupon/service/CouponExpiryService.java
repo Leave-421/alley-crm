@@ -36,7 +36,7 @@ public class CouponExpiryService {
     @Transactional
     public int expireDue() {
         Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
-        List<Coupon> due = coupons.findByStatusAndExpiresAtLessThanEqualOrderByIdAsc(CouponStatus.DOWNLOADED, now);
+        List<Coupon> due = coupons.findWithLockByStatusAndExpiresAtLessThanEqualOrderByIdAsc(CouponStatus.DOWNLOADED, now);
         for (Coupon coupon : due) {
             coupon.expire();
             events.publishEvent(new CouponStatusChangedEvent(coupon.getId(), coupon.getCustomerId(),
