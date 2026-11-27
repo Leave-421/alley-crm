@@ -2,6 +2,7 @@ package com.alleycrm.common.error;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
@@ -48,6 +49,7 @@ public class GlobalExceptionHandler {
     }
 
     private static ResponseEntity<ErrorResponse> respond(ErrorCode code, String message) {
-        return ResponseEntity.status(code.status()).body(ErrorResponse.of(code, message));
+        // 응답 타입을 정해 둬야 Accept가 JSON이 아닌 요청(SSE의 text/event-stream 등)에도 계약 모양 그대로 나간다
+        return ResponseEntity.status(code.status()).contentType(MediaType.APPLICATION_JSON).body(ErrorResponse.of(code, message));
     }
 }

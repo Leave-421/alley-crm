@@ -132,7 +132,7 @@ public class ReservationStateService {
         if (r.hasPendingChange()) {
             // 변경 거절: 원래 예약으로 확정 유지(FR-RSV-07 #3), 돈은 그대로
             r.revertChange();
-            publish(r, ReservationStatus.REQUESTED, false);
+            publish(r, ReservationStatus.REQUESTED, false, ReservationStatusChangedEvent.CHANGE_REJECTED);
             return r;
         }
         r.cancel(CancelReason.STORE_REJECTED, now());
@@ -185,7 +185,7 @@ public class ReservationStateService {
                 // 변경만 자동 거절: 원래 시각과 바뀐 시각 중 이른 쪽까지 승인 없음 → 원래 예약 유지(FR-RSV-07 #4)
                 if (!changeDeadline(r).isAfter(now)) {
                     r.revertChange();
-                    publish(r, ReservationStatus.REQUESTED, true);
+                    publish(r, ReservationStatus.REQUESTED, true, ReservationStatusChangedEvent.CHANGE_REJECTED);
                     n++;
                 }
                 continue;
@@ -257,7 +257,7 @@ public class ReservationStateService {
             throw new ApiException(ErrorCode.INSUFFICIENT_BALANCE);
         }
         r.requestChange(start, party);
-        publish(r, ReservationStatus.CONFIRMED, false);
+        publish(r, ReservationStatus.CONFIRMED, false, ReservationStatusChangedEvent.CHANGE_REQUESTED);
         return r;
     }
 
@@ -274,7 +274,7 @@ public class ReservationStateService {
             settleDeposit(r, diff);
         }
         r.approveChange(newDeposit, now);
-        publish(r, ReservationStatus.REQUESTED, false);
+        publish(r, ReservationStatus.REQUESTED, false, ReservationStatusChangedEvent.CHANGE_APPROVED);
         return r;
     }
 
@@ -332,8 +332,13 @@ public class ReservationStateService {
     }
 
     private void publish(Reservation r, String from, boolean byScheduler) {
+        publish(r, from, byScheduler, null);
+    }
+
+    /** change: 예약 변경(D8)일 때만 ReservationStatusChangedEvent.CHANGE_* 값 */
+    private void publish(Reservation r, String from, boolean byScheduler, String change) {
         events.publishEvent(new ReservationStatusChangedEvent(r.getId(), r.getStoreId(), r.getCustomerId(),
-                from, r.getStatus(), r.getCancelReason(), byScheduler));
+                from, r.getStatus(), r.getCancelReason(), byScheduler, change));
     }
 
     private Instant now() {

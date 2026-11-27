@@ -1,6 +1,7 @@
 import { http, HttpResponse } from 'msw/http';
 import { errorResponse, rejectAnonymous, rejectInvalidCsrf } from '../responses.js';
 import { getMockAccount } from '../session.js';
+import { MOCK_STORES } from '@/map/storeCatalog.js';
 
 // CONTRACTS_API.md 「2. 예약 · 잔액 · 수수료 · 정산 · 서버 시계 (담당 D)」의 목.
 // 계약이 main에 머지된 엔드포인트만 더한다. 계약이 없는 API의 목은 지어내지 않는다.
@@ -15,6 +16,35 @@ function clockResponse(realNowMs = Date.now()) {
     now: new Date(realNowMs + offsetMs).toISOString(),
     offsetSeconds: Math.round(offsetMs / 1000),
   });
+}
+
+// 손님 예약 신청(D2) · 예약 가능 시간(D5)의 목 값. 가게는 골목 화면과 같은 목 가게 목록(map/storeCatalog.js)
+const MOCK_MAX_PARTY_SIZE = 4;
+const MOCK_DEPOSIT_PER_PERSON = 5000;
+const SLOT_MINUTES = 30;
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+const RESERVATION_NO_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 헷갈리는 0 O 1 I 제외(D2)
+
+/** 영업일(운영 시간대 날짜)의 슬롯. 종료가 시작보다 이르면 다음 날 새벽까지. 몇 칸은 다 찬 것으로 둔다 */
+function mockSlots(store, date, nowMs) {
+  if (!store.openTime || !store.closeTime) return [];
+  const weekday = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][new Date(`${date}T00:00:00Z`).getUTCDay()];
+  if ((store.closedDays ?? []).includes(weekday)) return [];
+  const toMinutes = (time) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
+  const open = toMinutes(store.openTime);
+  let close = toMinutes(store.closeTime);
+  if (close <= open) close += 24 * 60;
+  const dayStartUtc = Date.parse(`${date}T00:00:00Z`) - KST_OFFSET_MS;
+  const slots = [];
+  for (let minute = open, index = 0; minute + SLOT_MINUTES <= close; minute += SLOT_MINUTES, index += 1) {
+    const startMs = dayStartUtc + minute * 60_000;
+    slots.push({ startAt: new Date(startMs).toISOString(), available: startMs > nowMs && index % 5 !== 3 });
+  }
+  return slots;
+}
+
+function mockReservationNo() {
+  return Array.from({ length: 8 }, () => RESERVATION_NO_CHARS[Math.floor(Math.random() * RESERVATION_NO_CHARS.length)]).join('');
 }
 
 /** 사장님 API의 역할 검사: 로그인 안 함 401, 사장님이 아니면 403 forbidden_role. 통과하면 null. */
@@ -49,6 +79,9 @@ const MOCK_APPLIED_COUPONS = {
   6: { couponId: '503', benefitType: 'service', discountAmount: null, discountPercent: null, maxDiscountAmount: null, serviceName: '음료 1잔' },
 };
 const usedCoupons = new Set(); // 예약 id
+
+// 손님이 '늦을 것 같아요'(D14)로 입력한 지연(분). MOCK_DAY 순번 → 분
+const MOCK_DELAY_MINUTES = { 3: 20 };
 
 // 소개 수수료율(설정값, NFR-04). 목은 기본값 4%
 const REFERRAL_FEE_RATE = 0.04;
@@ -93,7 +126,8 @@ function mockOwnerReservations(date) {
       partySize: changed.partySize ?? item.partySize,
       pendingStartAt: pending ? new Date(`${date}T${pending.time}:00+09:00`).toISOString() : null,
       pendingPartySize: pending ? pending.partySize : null,
-      expectedArrivalAt: null, // 지연 입력(D14)은 B9에서 목에 더한다
+      // 손님이 입력한 지연 예상 도착 시각(D14). 확정 예약에만 들어온다
+      expectedArrivalAt: status === 'confirmed' && MOCK_DELAY_MINUTES[index] ? new Date(startAt.getTime() + MOCK_DELAY_MINUTES[index] * 60_000).toISOString() : null,
       status,
       cancelReason,
       requestedAt: new Date(startAt.getTime() - 26 * 3_600_000).toISOString(),
@@ -216,6 +250,63 @@ export const reservationHandlers = [
     const found = findMockReservation(params.id);
     if (!found) return errorResponse(404, 'not_found', '예약을 찾을 수 없어요.');
     return HttpResponse.json({ ...found, referralFeeRate: REFERRAL_FEE_RATE });
+  }),
+
+  // GET /api/v1/stores/{storeId}/available-slots?date= (D5) — 누구나. 가게 영업시간을 슬롯 30분으로 나눈다
+  http.get('/api/v1/stores/:storeId/available-slots', ({ params, request }) => {
+    const store = MOCK_STORES.find((item) => item.id === params.storeId);
+    if (!store) return errorResponse(404, 'not_found', '가게를 찾을 수 없어요.');
+    const date = new URL(request.url).searchParams.get('date');
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date))) {
+      return errorResponse(400, 'invalid', '날짜를 확인해 주세요.');
+    }
+    return HttpResponse.json({
+      date,
+      acceptingReservations: true,
+      maxPartySize: MOCK_MAX_PARTY_SIZE,
+      depositPerPerson: MOCK_DEPOSIT_PER_PERSON,
+      slots: mockSlots(store, date, Date.now() + offsetMs),
+    });
+  }),
+
+  // POST /api/v1/reservations (D2) — 손님(로그인 불필요). 회원이면 회원 예약, 아니면 비회원 예약
+  http.post('/api/v1/reservations', async (info) => {
+    const blocked = rejectInvalidCsrf(info);
+    if (blocked) return blocked;
+    const account = getMockAccount();
+    if (account && account.role !== 'customer') return errorResponse(403, 'forbidden_role', '손님 계정으로만 예약할 수 있어요.');
+    const body = await info.request.json().catch(() => null);
+    const guest = body?.guest;
+    const guestOk = account || (guest && typeof guest.name === 'string' && guest.name.trim().length >= 1 && guest.name.trim().length <= 20 && /^\d{10,11}$/.test(guest.phone ?? ''));
+    if (!body?.storeId || !body?.startAt || !Number.isInteger(body?.partySize) || body.partySize < 1 || body.partySize > MOCK_MAX_PARTY_SIZE || body.shareConsent !== true || !guestOk) {
+      return errorResponse(400, 'invalid', '입력한 내용을 확인해 주세요.');
+    }
+    if (!MOCK_STORES.some((item) => item.id === body.storeId)) return errorResponse(404, 'not_found', '가게를 찾을 수 없어요.');
+    const nowIso = new Date(Date.now() + offsetMs).toISOString();
+    if (Date.parse(body.startAt) <= Date.now() + offsetMs) return errorResponse(409, 'slot_unavailable', '예약할 수 없는 시간이에요.');
+    return HttpResponse.json(
+      {
+        id: String(Date.now()),
+        reservationNo: mockReservationNo(),
+        storeId: body.storeId,
+        startAt: body.startAt,
+        partySize: body.partySize,
+        status: 'requested',
+        cancelReason: null,
+        requestedAt: nowIso,
+        requestNote: body.requestNote ?? null,
+        depositAmount: MOCK_DEPOSIT_PER_PERSON * body.partySize,
+        coupon: null,
+        courseRootId: null,
+        fromRecommendation: false,
+        visitAmount: null,
+        visitedAt: null,
+        refundAmount: null,
+        pendingStartAt: null,
+        pendingPartySize: null,
+      },
+      { status: 201 },
+    );
   }),
 
   http.get('/api/v1/demo/clock', () => rejectAnonymous() ?? clockResponse()),
