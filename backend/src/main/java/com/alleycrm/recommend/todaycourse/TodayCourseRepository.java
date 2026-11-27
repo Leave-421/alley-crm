@@ -51,7 +51,7 @@ class TodayCourseRepository {
     Set<Long> findBookableStores(long regionId) {
         return new HashSet<>(jdbc.queryForList("""
                 SELECT id FROM store
-                WHERE region_id = ? AND join_status = 'approved' AND business_status = 'open'
+                WHERE region_id = ? AND join_status IN ('approved', 'withdraw_requested') AND business_status = 'open'
                   AND reservation_enabled = TRUE
                 """, Long.class, regionId));
     }

@@ -50,7 +50,7 @@ public class CouponLimitRepository {
     public Optional<TargetStore> findVisibleStore(long storeId) {
         List<TargetStore> rows = jdbc.query("""
                 SELECT id, business_status, business_status_changed_at FROM store
-                WHERE id = ? AND join_status = 'approved'
+                WHERE id = ? AND join_status IN ('approved', 'withdraw_requested')
                 """,
                 (rs, n) -> new TargetStore(rs.getLong("id"), rs.getString("business_status"),
                         utc(rs.getObject("business_status_changed_at", LocalDateTime.class))),

@@ -1,8 +1,10 @@
+import { Link } from 'react-router';
 import AppLayout from '@/layouts/AppLayout.jsx';
 import { CUSTOMER_MENU } from '@/layouts/menus.js';
 import PlaceholderPage from '@/pages/PlaceholderPage.jsx';
 import AlleyScreen from '@/pages/customer/alley/AlleyScreen.jsx';
 import HomePage from '@/pages/customer/home/HomePage.jsx';
+import PolicyPage from '@/pages/customer/policy/PolicyPage.jsx';
 
 // 손님 영역(/). 담당 A가 children에 화면 경로를 더하고, 자리표시를 실제 화면으로 바꾼다.
 // 비회원도 둘러볼 수 있어서 영역 전체에는 가드를 걸지 않는다.
@@ -19,7 +21,17 @@ export const customerRoutes = [
       // 예약하기(G-02)는 A4의 '예약하기' 바가 가리키는 자리표시. 실제 화면은 A8(#28)에서 만든다
       { path: 'alleys/:alley/reserve', handle: { title: '예약하기' }, element: <PlaceholderPage screenId="G-02" title="예약하기" /> },
       { path: 'reservations', handle: { title: '내 예약' }, element: <PlaceholderPage screenId="G-04" title="내 예약" /> },
-      { path: 'my', handle: { title: '마이' }, element: <PlaceholderPage screenId="G-10" title="마이" /> },
+      // 마이(G-10)는 아직 자리표시. 정책 · 개인정보(G-12)로 가는 진입만 둔다
+      {
+        path: 'my',
+        handle: { title: '마이' },
+        element: (
+          <PlaceholderPage screenId="G-10" title="마이">
+            <Link to="/policy">정책 · 개인정보</Link>
+          </PlaceholderPage>
+        ),
+      },
+      { path: 'policy', handle: { title: '정책 · 개인정보' }, element: <PolicyPage /> }, // G-12 A16
       { path: 'notifications', handle: { title: '알림함' }, element: <PlaceholderPage screenId="G-11" title="알림함" /> },
       // 로그인 화면(G-08)의 '비회원 예약 조회' 진입 주소. 화면은 A13에서 만든다
       { path: 'guest-reservation', handle: { title: '비회원 예약 조회' }, element: <PlaceholderPage screenId="G-13" title="비회원 예약 조회" /> },
