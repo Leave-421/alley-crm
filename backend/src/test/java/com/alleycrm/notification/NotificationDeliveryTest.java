@@ -7,6 +7,7 @@ import com.alleycrm.account.AccountService;
 import com.alleycrm.common.time.AppClock;
 import com.alleycrm.coupon.AssociationCouponOpenedEvent;
 import com.alleycrm.reservation.ReservationStateService;
+import com.alleycrm.reservation.ReservationStatusChangedEvent;
 import com.alleycrm.store.StoreJoinDecidedEvent;
 import java.time.Duration;
 import java.time.Instant;
@@ -108,7 +109,8 @@ class NotificationDeliveryTest {
     }
 
     @Test
-    void FR_NTF_03_1_자동_취소는_취소_알림_손님_스스로_취소는_알림_없음() {
+    void FR_NTF_03_1_자동_취소는_손님에게_손님_스스로_취소는_사장님에게만_취소_알림() {
+        long ownerId = accountService.createOwner(storeId, "ntfowner" + System.nanoTime(), "password1").id();
         long autoCanceled = reservation(memberCustomerId, "confirmed", NOW.minus(Duration.ofDays(3)), null);
         long selfCanceled = reservation(memberCustomerId, "requested", NOW.plus(Duration.ofDays(3)), null);
 
@@ -117,6 +119,34 @@ class NotificationDeliveryTest {
 
         assertThat(notices("account", memberAccountId))
                 .containsExactly(Map.of("type", "reservation_canceled", "payload", Map.of("reservationId", String.valueOf(autoCanceled))));
+        // FR-NTF-01 #2: 손님 취소는 사장님 알림함에
+        assertThat(notices("account", ownerId))
+                .containsExactly(Map.of("type", "reservation_canceled", "payload", Map.of("reservationId", String.valueOf(selfCanceled))));
+    }
+
+    @Test
+    void 예약_변경_요청은_사장님에게_승인_거절은_손님에게_확정_알림과_구분된다() {
+        long ownerId = accountService.createOwner(storeId, "ntfowner" + System.nanoTime(), "password1").id();
+        long requested = reservation(memberCustomerId, "requested", NOW.plus(Duration.ofDays(2)), null);
+        long approved = reservation(memberCustomerId, "confirmed", NOW.plus(Duration.ofDays(2)), null);
+        long rejected = reservation(guestCustomerId, "confirmed", NOW.plus(Duration.ofDays(2)), null);
+
+        // D8 ReservationStateService가 내보내는 값 그대로(요청: 확정 → 신청, 승인 · 거절: 신청 → 확정)
+        tx.executeWithoutResult(s -> {
+            events.publishEvent(new ReservationStatusChangedEvent(requested, storeId, memberCustomerId, "confirmed", "requested",
+                    null, false, ReservationStatusChangedEvent.CHANGE_REQUESTED));
+            events.publishEvent(new ReservationStatusChangedEvent(approved, storeId, memberCustomerId, "requested", "confirmed",
+                    null, false, ReservationStatusChangedEvent.CHANGE_APPROVED));
+            events.publishEvent(new ReservationStatusChangedEvent(rejected, storeId, guestCustomerId, "requested", "confirmed",
+                    null, true, ReservationStatusChangedEvent.CHANGE_REJECTED));
+        });
+
+        assertThat(notices("account", ownerId))
+                .containsExactly(Map.of("type", "change_requested", "payload", Map.of("reservationId", String.valueOf(requested))));
+        assertThat(notices("account", memberAccountId))
+                .containsExactly(Map.of("type", "change_approved", "payload", Map.of("reservationId", String.valueOf(approved))));
+        assertThat(notices("guest_reservation", rejected))
+                .containsExactly(Map.of("type", "change_rejected", "payload", Map.of("reservationId", String.valueOf(rejected))));
     }
 
     @Test

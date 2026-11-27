@@ -318,7 +318,7 @@ class CouponStatusApiTest {
 
         // 늦은 방문 처리(D23)가 내보낼 상태 변경 이벤트
         events.publishEvent(new ReservationStatusChangedEvent(reservation, store, customer, "canceled", "visited",
-                null, false));
+                null, false, null));
 
         assertThat(statusOf(coupon)).isEqualTo("applied");
     }

@@ -264,14 +264,31 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 | `reservation_requested` | 그 가게 사장님 | `{ "reservationId" }` | 예약 신청 커밋 뒤(`ReservationRequestedEvent`) |
 | `reservation_confirmed` | 예약한 손님 | `{ "reservationId" }` | 승인 커밋 뒤(`ReservationStatusChangedEvent` → `confirmed`) |
 | `reservation_rejected` | 예약한 손님 | `{ "reservationId", "nextCourseReservationIds": ["string"] }` | 거절 · 자동 거절 커밋 뒤(`canceled` + `store_rejected`). `nextCourseReservationIds`는 이 예약을 기준 가게 예약으로 둔 다음 코스 예약 중 그대로 남은(신청 · 확정) 것, 없으면 `[]`(FR-NTF-03 #2) |
-| `reservation_canceled` | 예약한 손님 | `{ "reservationId" }` | 자동 취소 커밋 뒤(`canceled` + `auto_canceled`). 손님이 스스로 취소한 것(`customer_canceled`)은 알림을 만들지 않는다 |
+| `reservation_canceled` | 예약한 손님 | `{ "reservationId" }` | 자동 취소 커밋 뒤(`canceled` + `auto_canceled`) |
+| `reservation_canceled` | 그 가게 사장님 | `{ "reservationId" }` | 손님이 스스로 취소한 커밋 뒤(`canceled` + `customer_canceled`, FR-NTF-01 #2). 손님 본인에게는 만들지 않는다 |
+| `change_requested` | 그 가게 사장님 | `{ "reservationId" }` | 손님 변경 요청 커밋 뒤(D8, 이벤트 `change = requested`) |
+| `change_approved` · `change_rejected` | 예약한 손님 | `{ "reservationId" }` | 변경 승인 · 거절(자동 거절 포함) 커밋 뒤(D8, 이벤트 `change = approved` · `rejected`). 이때는 `reservation_confirmed`를 만들지 않는다 |
 | `reminder` | 예약한 손님 | `{ "reservationId" }` | 자동 작업 `reservation_reminder`: 방문 일시가 30분 안으로 들어온 확정 예약마다 한 번. 화면은 이 알림에서 늦을 것 같아요(G-07)로 보낸다(FR-NTF-03 #3) |
 | `store_join_result` | 그 가게 사장님 | `{ "storeId", "joinStatus" }` | 가입 승인 · 거절 커밋 뒤(`StoreJoinDecidedEvent`) |
 | `association_coupon_opened` | 회원 계정 전부 | `{ "associationCouponEventId" }` | 3.9 「행사 알림」 |
 | `coupon_status` | 회원 | `{ "couponId", "status" }` (`used` · `expired`) | **미연결.** E14가 사용 완료 · 만료 때 이벤트를 내보내면 C14가 리스너를 단다. 비회원은 쿠폰이 없어 만들지 않는다(FR-NTF-03 #4 · #5) |
-| `change_requested` · `change_approved` · `change_rejected` · `delay_reported` · `next_store_recommended` · `visit_amount_recorded` · `visit_report_check_requested` | — | — | **미연결.** 그 기능(예약 변경 · 지연 입력 D, 다음 가게 추천 E, 방문 금액 D21, 신고 C23)을 만드는 PR이 이벤트를 내보내고 이 표에 줄을 더한다 |
+| `delay_reported` · `next_store_recommended` · `visit_amount_recorded` · `visit_report_check_requested` | — | — | **미연결.** 그 기능(지연 입력 D, 다음 가게 추천 E, 방문 금액 D21, 신고 C23)을 만드는 PR이 이벤트를 내보내고 이 표에 줄을 더한다 |
 
 "예약한 손님"은 회원이면 그 계정(`account`), 비회원이면 그 예약(`guest_reservation`)이다. 기능 쪽은 `notifyReservationCustomer(reservationId, customerId, type, payload)`로 같은 규칙을 쓴다.
+
+#### `GET /api/v1/owner/notifications/stream` — 사장님 실시간 알림 (C15, SSE)
+
+- 역할: 사장님(`requireApprovedOwnStore`). 세션 쿠키로 인증한다(`EventSource`는 쿠키를 같이 보낸다). 세션이 없으면 `401 unauthorized`, 사장님이 아니면 `403 forbidden_role`(오류는 `Accept`와 상관없이 JSON). `GET`이라 CSRF 토큰은 필요 없다.
+- 응답 `200` `text/event-stream`. 연결되면 주석 한 줄(`:connected`)을 먼저 보낸다.
+- **그 사장님 계정에 알림이 저장되고 커밋될 때마다** 이벤트 하나를 보낸다. 다른 가게 · 다른 계정 알림은 보내지 않는다(NFR-05 #3). 롤백된 일에는 보내지 않는다.
+  ```text
+  event: notification
+  id: <알림 id>
+  data: {"id":"12","type":"reservation_requested","payload":{"reservationId":"34"},"readAt":null,"createdAt":"…Z"}
+  ```
+  - `data`는 위 `Notification`과 같다. 화면(O-01)은 `reservation_requested` · `change_requested` · `reservation_canceled` · `delay_reported`를 받으면 예약 목록을 다시 불러오면 된다(FR-NTF-01 #1).
+  - 연결이 없을 때 생긴 알림은 다시 보내지 않는다. 알림함(`GET /api/v1/notifications`)에서 본다.
+- 연결은 30분 뒤 서버가 닫는다. 브라우저 `EventSource`가 다시 연결한다.
 
 #### `GET /api/v1/notifications` — 내 알림 목록
 
@@ -657,7 +674,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 
 #### 상태 변경 이벤트 `ReservationStatusChangedEvent` (서버 내부)
 
-상태를 바꾸는 곳은 `ReservationStateService` 하나다. 바꿀 때마다 `ReservationStatusChangedEvent(reservationId, storeId, customerId, fromStatus, toStatus, cancelReason, byScheduler)`를 상태를 바꾼 트랜잭션 안에서 내보낸다.
+상태를 바꾸는 곳은 `ReservationStateService` 하나다. 바꿀 때마다 `ReservationStatusChangedEvent(reservationId, storeId, customerId, fromStatus, toStatus, cancelReason, byScheduler, change)`를 상태를 바꾼 트랜잭션 안에서 내보낸다. `change`는 예약 변경(D8)일 때만 값이 있다: `requested`(확정 → 신청), `approved`(신청 → 확정, 바꾼 값), `rejected`(신청 → 확정, 원래 값, 자동 거절 포함). 변경 승인과 거절은 상태만으로 구분되지 않아 이 칸으로 구분한다(C15).
 
 | 받는 쪽 | 받는 방법 | 할 일 |
 | --- | --- | --- |

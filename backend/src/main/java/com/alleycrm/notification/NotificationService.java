@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
@@ -32,12 +33,15 @@ public class NotificationService {
     private final Clock clock;
     private final ObjectMapper json;
     private final CustomerService customers;
+    private final ApplicationEventPublisher events;
 
-    NotificationService(JdbcTemplate jdbc, Clock clock, ObjectMapper json, CustomerService customers) {
+    NotificationService(JdbcTemplate jdbc, Clock clock, ObjectMapper json, CustomerService customers,
+                        ApplicationEventPublisher events) {
         this.jdbc = jdbc;
         this.clock = clock;
         this.json = json;
         this.customers = customers;
+        this.events = events;
     }
 
     /** 회원 · 사장님 계정에게 */
@@ -156,11 +160,21 @@ public class NotificationService {
         return out.toArray();
     }
 
+    /** 저장하고, 커밋 뒤 실시간 전달(C15 OwnerNotificationStream)이 받도록 이벤트를 내보낸다 */
     private void insert(String recipientType, long recipientId, String type, Map<String, Object> payload) {
+        Map<String, Object> body = payload == null ? Map.of() : payload;
+        LocalDateTime createdAt = now();
         jdbc.update("""
                 INSERT INTO notification (recipient_type, recipient_id, type, payload, created_at)
                 VALUES (?, ?, ?, ?, ?)
-                """, recipientType, recipientId, type, json.writeValueAsString(payload == null ? Map.of() : payload), now());
+                """, recipientType, recipientId, type, json.writeValueAsString(body), createdAt);
+        long id = jdbc.queryForObject("SELECT LAST_INSERT_ID()", Long.class); // 같은 트랜잭션 · 같은 연결
+        events.publishEvent(new NotificationStoredEvent(recipientType, recipientId,
+                new Notification(id, type, body, null, createdAt.toInstant(ZoneOffset.UTC))));
+    }
+
+    /** 알림 한 건이 저장됨(커밋 전). 받는 쪽은 커밋 뒤에 쓴다 */
+    record NotificationStoredEvent(String recipientType, long recipientId, Notification notification) {
     }
 
     private RowMapper<Notification> rowMapper() {

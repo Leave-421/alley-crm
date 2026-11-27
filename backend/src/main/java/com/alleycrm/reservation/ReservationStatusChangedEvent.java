@@ -12,6 +12,8 @@ package com.alleycrm.reservation;
  *
  * @param cancelReason 취소일 때만 값(CancelReason), 아니면 null
  * @param byScheduler 자동 작업(자동 거절 · 자동 취소)이면 true
+ * @param change 예약 변경(D8)이면 {@link #CHANGE_REQUESTED} · {@link #CHANGE_APPROVED} · {@link #CHANGE_REJECTED}, 아니면 null.
+ *               변경 승인과 변경 거절은 둘 다 신청 → 확정이라 이 값으로만 구분된다(C14 알림이 씀)
  */
 public record ReservationStatusChangedEvent(
         long reservationId,
@@ -20,5 +22,13 @@ public record ReservationStatusChangedEvent(
         String fromStatus,
         String toStatus,
         String cancelReason,
-        boolean byScheduler) {
+        boolean byScheduler,
+        String change) {
+
+    /** 손님 변경 요청: 확정 → 신청 */
+    public static final String CHANGE_REQUESTED = "requested";
+    /** 사장님 변경 승인: 신청 → 확정(바꾼 값) */
+    public static final String CHANGE_APPROVED = "approved";
+    /** 변경 거절 · 변경 자동 거절: 신청 → 확정(원래 값) */
+    public static final String CHANGE_REJECTED = "rejected";
 }

@@ -7,10 +7,12 @@ import com.alleycrm.common.error.ApiException;
 import com.alleycrm.common.error.ErrorCode;
 import com.alleycrm.notification.NotificationService.Counts;
 import com.alleycrm.notification.NotificationService.Notification;
+import com.alleycrm.store.StoreService;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -18,17 +20,30 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-/** 내 알림 목록 · 읽음 처리(C14). 받는 쪽은 세션(로그인 계정 또는 비회원 제한 세션, C13)으로만 정한다(IDOR). */
+/** 내 알림 목록 · 읽음 처리(C14), 사장님 실시간 알림(C15). 받는 쪽은 세션(로그인 계정 또는 비회원 제한 세션, C13)으로만 정한다(IDOR). */
 @RestController
 class NotificationController {
 
     private final NotificationService notifications;
     private final GuestSessionService guests;
+    private final StoreService stores;
+    private final OwnerNotificationStream stream;
 
-    NotificationController(NotificationService notifications, GuestSessionService guests) {
+    NotificationController(NotificationService notifications, GuestSessionService guests, StoreService stores,
+                           OwnerNotificationStream stream) {
         this.notifications = notifications;
         this.guests = guests;
+        this.stores = stores;
+        this.stream = stream;
+    }
+
+    /** 사장님 실시간 알림(C15). 세션 쿠키로 인증하고, 그 사장님 계정 알림만 보낸다 */
+    @GetMapping(path = "/api/v1/owner/notifications/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    SseEmitter stream(@AuthenticationPrincipal AccountPrincipal me) {
+        stores.requireApprovedOwnStore(me);
+        return stream.subscribe(me.id());
     }
 
     @GetMapping("/api/v1/notifications")
