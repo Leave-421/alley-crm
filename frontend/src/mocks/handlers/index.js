@@ -2,6 +2,7 @@ import { commonHandlers } from './common.js';
 import { accountHandlers } from './account.js';
 import { storeHandlers } from './store.js';
 import { storeJoinHandlers } from './storeJoin.js'; // 1의 권역 조회 · 사장님 쪽 가게 가입(C5)
+import { visitReportHandlers } from './visitReport.js'; // 1의 방문 신고(C23) 상인회 쪽
 import { reservationHandlers } from './reservation.js';
 import { settlementHandlers } from './settlement.js'; // 2의 상인회 월 정산(D17)
 import { walletHandlers } from './wallet.js'; // 2의 가상 잔액 · 충전 · 소개 수수료 내역(D9 · D10 · D16)
@@ -18,6 +19,7 @@ export const handlers = [
   ...accountHandlers,
   ...storeHandlers,
   ...storeJoinHandlers,
+  ...visitReportHandlers,
   ...reservationHandlers,
   ...walletHandlers,
   ...settlementHandlers,
