@@ -10,6 +10,8 @@ import com.alleycrm.reservation.request.StoreSlotReader;
 import com.alleycrm.reservation.request.StoreSnapshot;
 import com.alleycrm.setting.SettingKey;
 import com.alleycrm.setting.SettingService;
+import com.alleycrm.visitreport.VisitReport;
+import com.alleycrm.visitreport.VisitReportService;
 import com.alleycrm.wallet.WalletOwner;
 import com.alleycrm.wallet.WalletService;
 import com.alleycrm.wallet.WalletTxType;
@@ -41,10 +43,12 @@ public class ReservationStateService {
     private final SettingService settings;
     private final StoreSlotReader slots;
     private final WalletService wallets;
+    private final VisitReportService visitReports;
 
     public ReservationStateService(ReservationRepository reservations, JdbcTemplate jdbc, Clock clock,
             ApplicationEventPublisher events, SettingService settings,
-            StoreSlotReader slots, WalletService wallets) {
+            StoreSlotReader slots, WalletService wallets, VisitReportService visitReports) {
+        this.visitReports = visitReports;
         this.reservations = reservations;
         this.jdbc = jdbc;
         this.clock = clock;
@@ -158,7 +162,31 @@ public class ReservationStateService {
         r.visit(visitAmount, now);
         publish(r, ReservationStatus.CONFIRMED, false);
         events.publishEvent(new VisitProcessedEvent(r.getId(), r.getStoreId(), r.getCustomerId(), visitAmount, now,
-                r.getCourseProposalId(), r.getSenderStoreId()));
+                r.getCourseProposalId(), r.getSenderStoreId(), now));
+        return r;
+    }
+
+    /**
+     * 늦은 방문 처리(D23, FR-STL-09 #2 · #4, FR-RSV-02 #4): 자동 취소된 예약에 상인회가 '맞음'으로 기록한 미처리 신고가
+     * 있을 때만 취소 → 방문. 소개 수수료 · 쿠폰 되돌리기 · 방문 금액 알림은 방문 처리와 같이 이벤트로 진행된다.
+     * 정산 달은 원래 예약 달(#3). 예약금은 자동 취소 때 돌려주지 않았으므로 움직이지 않는다.
+     */
+    @Transactional
+    public Reservation lateVisit(long storeId, long reservationId, Integer visitAmount) {
+        if (visitAmount == null || visitAmount < 0 || visitAmount > MAX_VISIT_AMOUNT) {
+            throw new ApiException(ErrorCode.INVALID);
+        }
+        Reservation r = lockOwn(storeId, reservationId);
+        requireStatus(r, ReservationStatus.CANCELED);
+        if (!CancelReason.AUTO_CANCELED.equals(r.getCancelReason())
+                || !visitReports.hasValidReport(reservationId, VisitReport.TYPE_NOT_PROCESSED)) {
+            throw new ApiException(ErrorCode.CONFLICT);
+        }
+        Instant now = now();
+        r.lateVisit(visitAmount, now);
+        publish(r, ReservationStatus.CANCELED, false);
+        events.publishEvent(new VisitProcessedEvent(r.getId(), r.getStoreId(), r.getCustomerId(), visitAmount, now,
+                r.getCourseProposalId(), r.getSenderStoreId(), r.getStartAt()));
         return r;
     }
 

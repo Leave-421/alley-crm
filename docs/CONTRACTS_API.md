@@ -763,9 +763,34 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
   - `conflict` — `confirmed`가 아님(신청 · 취소 · 이미 방문)
   - `unauthorized` · `forbidden_role` · `csrf_invalid`
 
+#### `POST /api/v1/owner/reservations/{id}/late-visit` — 늦은 방문 처리 (D23, FR-STL-09 #2 · #5, FR-RSV-02 #4, 11-25 (5))
+
+- 역할: 사장님(내 가게 예약). `X-XSRF-TOKEN` 필요. 화면: O-10 · O-13에서 상인회가 '맞음'으로 기록한 미처리 신고 건.
+- 요청: `{ "visitAmount": 30000 }` — 방문 처리와 같다(쿠폰 할인 전, 0 ~ 10,000,000원).
+- 조건: `canceled`(사유 `auto_canceled`)이고, 그 예약에 상인회가 '맞음'(`valid`)으로 기록한 미처리 신고(`not_processed`)가 있을 때만(C23 `hasValidReport`).
+- `canceled` → `visited`. `visitAmount` · `visitedAt`(처리 시각)을 남기고 `cancelReason` · `canceledAt`은 지운다. 예약금은 움직이지 않는다(자동 취소 때 돌려주지 않았다).
+- 방문 처리와 같이 `ReservationStatusChangedEvent`(`canceled` → `visited`)와 `VisitProcessedEvent`를 내보낸다: 소개 수수료(D15) · 쿠폰 '적용 취소' → '예약에 적용됨'(E14, 사용 확인은 따로) · 방문 금액 알림(D21).
+- 정산 달 = **원래 예약 달**(`VisitProcessedEvent.settlementAt` = 예약 시각, FR-STL-09 #3).
+- 응답 `200`: 방문 처리와 같은 모양(`Reservation` + `couponDiscountAmount` · `referralConfirmed` · `referralFee`).
+- 실패: `invalid`(금액) · `not_found`(없는 예약 · 다른 가게) · `conflict`(자동 취소가 아님 · '맞음' 미처리 신고 없음) · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+#### `POST /api/v1/owner/reservations/{id}/amount-correction` — 방문 금액 정정 (D22, FR-STL-09 #1 · #3 · #4, 11-25 (5) · 11-27 (2))
+
+- 역할: 사장님(내 가게 예약). `X-XSRF-TOKEN` 필요. 화면: O-10 · O-13에서 상인회가 '맞음'으로 기록한 금액 신고 건.
+- 요청: `{ "correctedAmount": 40000 }` — 정정 금액(쿠폰 할인 전, 0 ~ 10,000,000원).
+- 조건: `visited`이고, 그 예약에 상인회가 '맞음'으로 기록한 금액 신고(`amount`) 중 아직 정정에 쓰지 않은 것이 있을 때만. 신고 한 건에 정정 한 번(`uk_correction_report`).
+- 원래 방문 금액(`reservation.visit_amount`) · 수수료(`referral_fee`)는 **고치지 않고** `visit_amount_correction`을 더한다.
+- 수수료 차액(소개 예약만): 정정 금액으로 다시 계산한 수수료(원래 `fee_rate`, 쿠폰 할인은 정정 금액 기준 E14 `discountFor`, 1원 미만 버림) − 지금까지 낸 수수료(원래 수수료 + 앞선 정정 차액).
+  - 늘면 가게 → 공동 기금(`fee_difference_charged` · `fee_difference_deposited`). 가게 잔액은 마이너스가 될 수 있다.
+  - 줄면 공동 기금 → 가게(`fee_difference_withdrawn` · `fee_difference_refunded`, 11-27 (2)). 기금은 마이너스가 될 수 없어 모자라면 `insufficient_balance`로 거절하고 아무것도 남기지 않는다.
+  - 소개 예약이 아니면 차액 0, 돈은 움직이지 않는다.
+- 정산 달 = 원래 방문(예약) 달: 수수료 행의 정산 달, 수수료가 없으면 예약 달(FR-STL-09 #3). 월 정산(D17) · 사장님 수수료 내역(D16)의 `totalFee`에 차액이 들어간다.
+- 응답 `200`: `{ "reservationId": "string", "originalAmount": 30000, "correctedAmount": 40000, "feeDifference": 400, "settlementMonth": "2026-11", "createdAt": "..." }` — `originalAmount`는 이 정정 직전 금액(앞선 정정이 있으면 그 정정 금액).
+- 실패: `invalid`(금액) · `not_found` · `conflict`(방문이 아님 · 쓸 수 있는 '맞음' 금액 신고 없음) · `insufficient_balance`(줄어든 차액을 기금이 못 돌려줌) · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
 #### '방문 처리됨' 이벤트 `VisitProcessedEvent` (서버 내부, D11)
 
-방문 처리하면 `ReservationStatusChangedEvent`(`confirmed` → `visited`)와 함께 `VisitProcessedEvent(reservationId, storeId, customerId, visitAmount, visitedAt, courseProposalId, senderStoreId)`를 같은 트랜잭션에서 내보낸다. 받는 쪽은 D11 코드를 고치지 않는다.
+방문 처리하면 `ReservationStatusChangedEvent`(`confirmed` → `visited`)와 함께 `VisitProcessedEvent(reservationId, storeId, customerId, visitAmount, visitedAt, courseProposalId, senderStoreId, settlementAt)`를 같은 트랜잭션에서 내보낸다. `settlementAt`은 정산 달을 정하는 시각으로, 보통 `visitedAt`과 같고 늦은 방문 처리(D23)는 원래 예약 시각이다. 받는 쪽은 D11 코드를 고치지 않는다.
 
 | 받는 쪽 | 받는 방법 | 할 일 |
 | --- | --- | --- |
@@ -794,7 +819,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 | 수수료 | 계산 금액 × 수수료율(설정값 `referral_fee_rate`, 그 가게 권역). **1원 미만 버림.** 수수료율은 생길 때 값을 `fee_rate`에 남긴다(NFR-04 #1) |
 | 돈 | 받은 가게 지갑 → 권역 공동 기금(`referral_fee_charged` · `fund_deposited`, 예약 id 남김). 가게 잔액이 모자라도 빼서 마이너스가 될 수 있다(기획 11-25 (4)) |
 | 쿠폰 비용 | `coupon_cost`에 따로 기록. 가게 쿠폰만(상인회 쿠폰은 기금이 내므로 0, 11-25 (5)) |
-| 정산 달 | 방문 처리된 달(운영 시간대 Asia/Seoul) `YYYY-MM` |
+| 정산 달 | 방문 처리된 달(운영 시간대 Asia/Seoul) `YYYY-MM`. 늦은 방문 처리(D23)는 원래 예약 달(`settlementAt`) |
 
 수수료 내역 조회 API는 D16에서 이 절에 더한다.
 
@@ -827,7 +852,8 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
   "totalCouponCost": 5000,
   "items": [
     { "reservationId": "string", "reservationNo": "K7Q2M9XA", "maskedName": "김*코", "visitedAt": "2026-11-10T10:00:00Z",
-      "visitAmount": 30000, "couponDiscount": 5000, "feeBase": 25000, "feeRate": 0.04, "feeAmount": 1000, "couponCost": 5000 }
+      "visitAmount": 30000, "couponDiscount": 5000, "feeBase": 25000, "feeRate": 0.04, "feeAmount": 1000, "couponCost": 5000,
+      "feeDifference": 0 }
   ]
 }
 ```
@@ -835,6 +861,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
   - `settlementStatus`: 그 달 월 정산(D17) 상태 `aggregated` · `confirmed`, 아직 없으면 `null`(화면의 '잠정').
   - `referralFeeRate`: 지금 설정값. 건별 `feeRate`는 그 수수료가 생길 때 값이다(NFR-04).
   - `couponCost`: 내 가게가 낸 쿠폰 비용(수수료와 따로, FR-STL-02).
+  - `feeDifference`: 이 예약의 방문 금액 정정(D22) 수수료 차액 합(줄면 음수, 없으면 0). `feeAmount`는 원래 수수료 그대로이고, `totalFee` = Σ(`feeAmount` + `feeDifference`).
 - 실패: `invalid`(month 형식) · `unauthorized` · `forbidden_role`
 
 #### `GET /api/v1/owner/referral-stats?month=2026-11` — 소개 실적 (O-08, FR-STL-04)
@@ -863,11 +890,12 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
   "unprocessedReportCount": 0,
   "count": 2,
   "totalFee": 2200,
-  "stores": [ { "storeId": "3", "storeName": "B", "count": 2, "totalFee": 2200, "avgVisitAmount": 27500, "couponCost": 0 } ]
+  "stores": [ { "storeId": "3", "storeName": "B", "count": 2, "totalFee": 2200, "feeDifference": 0, "avgVisitAmount": 27500, "couponCost": 0 } ]
 }
 ```
 
   - `status`: 확정 전이면 `aggregated`(수수료 기록에서 그때 집계), 확정 뒤 `confirmed`.
+  - `totalFee` · `feeDifference`: 가게별 수수료 합은 원래 수수료 + 방문 금액 정정(D22) 차액. `feeDifference`는 그중 차액 합(줄면 음수). 차액은 원래 수수료의 정산 달에 들어간다(FR-STL-09 #3).
   - `avgVisitAmount`: 가게별 소개 건 평균 방문 금액(**쿠폰 할인 후**, 원 단위 반올림). 낮은지 판단하는 표시는 없다(판단은 상인회 몫, 11-24 (5)).
   - `unprocessedReportCount`: 그 달(예약 시작 달) 예약에 걸린, 처리 완료되지 않은 금액 · 미처리 신고 수(11-25 (5)).
   - `canConfirm`: 확정 전 · 그 달이 끝남 · 처리 안 된 신고 0일 때 `true`.
