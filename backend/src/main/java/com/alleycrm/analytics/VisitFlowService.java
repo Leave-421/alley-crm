@@ -61,7 +61,7 @@ public class VisitFlowService {
         List<Long> participating = jdbc.queryForList(
                 "SELECT id FROM store WHERE region_id = ? AND join_status IN ('approved', 'withdraw_requested')",
                 Long.class, regionId);
-        Map<List<Long>, long[]> moves = counts(MOVES, regionId);
+        Map<List<Long>, long[]> moves = moveCounts(regionId);
         Map<List<Long>, long[]> exposures = counts(EXPOSURES, regionId);
         Comparator<List<Long>> byIds = Comparator.<List<Long>>comparingLong(p -> p.get(0)).thenComparingLong(p -> p.get(1));
         List<List<Long>> pairs = union(moves, exposures).stream()
@@ -81,6 +81,11 @@ public class VisitFlowService {
         long[] e = exposures.getOrDefault(pair, new long[] {0, 0});
         return new Link(String.valueOf(pair.get(0)), String.valueOf(pair.get(1)),
                 MinimumGroup.mask(m[0], m[1]), MinimumGroup.mask(e[0], e[1]));
+    }
+
+    /** 권역의 확인된 연계 방문: (from, to) → {횟수, 고유 손님 수}. 사장님 손님 흐름(C17)도 같은 정의를 쓴다 */
+    Map<List<Long>, long[]> moveCounts(long regionId) {
+        return counts(MOVES, regionId);
     }
 
     private Map<List<Long>, long[]> counts(String sql, long regionId) {
