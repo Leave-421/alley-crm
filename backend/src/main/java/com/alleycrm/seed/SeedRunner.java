@@ -100,6 +100,10 @@ class SeedRunner implements ApplicationRunner {
         DemoReservationSeeder.Result demo = result.demoReservations();
         log.info("[seed] 가상 손님 {}명, 예약 {}건(방문 {} · 취소 {})", demo.customers(), demo.reservations(), demo.visited(),
                 demo.canceled());
+        DemoCourseSeeder.Result course = result.demoCourses();
+        log.info("[seed] 방문자 {}명, 추천 노출 {}건, 정식 코스 제안 {}건, 코스 예약 {}건, 소개 수수료 {}건 {}원, 정산 확정 {}달",
+                course.visitors(), course.exposures(), course.proposals(), course.courseReservations(),
+                course.referralFees(), course.totalFee(), course.confirmedSettlements());
     }
 
     private void logPlan(SeedRegionData data) {

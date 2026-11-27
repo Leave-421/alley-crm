@@ -39,8 +39,14 @@ class DemoReservationSeeder {
         this.properties = properties;
     }
 
-    /** 넣은 손님 · 예약 수. */
-    record Result(int customers, int reservations, int canceled, int visited) {
+    /**
+     * 넣은 손님 · 예약 수와 가상 데이터 2(E17)가 이어 쓸 계획 · ID.
+     *
+     * @param customerIds 계획의 손님 번호 → 손님 ID
+     * @param reservationIds 예약번호 → 예약 ID
+     */
+    record Result(int customers, int reservations, int canceled, int visited, DemoReservationPlanner.Plan plan,
+            Map<Integer, Long> customerIds, Map<String, Long> reservationIds) {
     }
 
     Result insert(SeedRegionData data, RegionStoreSeeder.Result regionStores) {
@@ -54,9 +60,14 @@ class DemoReservationSeeder {
                     insertCustomer(customer, byCustomer.getOrDefault(customer.index(), List.of())));
         }
         insertReservations(plan.reservations(), customerIds, regionStores.storeIdsByCode());
+        Map<String, Long> reservationIds = new HashMap<>();
+        jdbc.query("SELECT id, reservation_no FROM reservation WHERE data_source = ?",
+                rs -> {
+                    reservationIds.put(rs.getString("reservation_no"), rs.getLong("id"));
+                }, DEMO);
         int canceled = (int) plan.reservations().stream().filter(r -> "canceled".equals(r.status())).count();
         return new Result(plan.customers().size(), plan.reservations().size(), canceled,
-                plan.reservations().size() - canceled);
+                plan.reservations().size() - canceled, plan, customerIds, reservationIds);
     }
 
     private long insertCustomer(DemoReservationPlanner.Customer c, List<DemoReservationPlanner.Reservation> mine) {
