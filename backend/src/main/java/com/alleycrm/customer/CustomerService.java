@@ -1,5 +1,6 @@
 package com.alleycrm.customer;
 
+import java.util.Optional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,5 +41,11 @@ public class CustomerService {
                 })
                 .orElseGet(() -> customers.save(Customer.guest(name, phone, gender, ageGroup)))
                 .getId();
+    }
+
+    /** 회원 손님이면 그 계정 ID, 비회원이면 비어 있다(알림 받는 쪽을 정할 때, C14) */
+    @Transactional(readOnly = true)
+    public Optional<Long> memberAccountId(long customerId) {
+        return customers.findById(customerId).map(Customer::getAccountId);
     }
 }

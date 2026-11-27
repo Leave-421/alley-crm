@@ -15,6 +15,9 @@ public final class NotificationType {
     public static final String NEXT_STORE_RECOMMENDED = "next_store_recommended";
     public static final String COUPON_STATUS = "coupon_status";
     public static final String STORE_JOIN_RESULT = "store_join_result";
+    public static final String VISIT_AMOUNT_RECORDED = "visit_amount_recorded";
+    public static final String ASSOCIATION_COUPON_OPENED = "association_coupon_opened";
+    public static final String VISIT_REPORT_CHECK_REQUESTED = "visit_report_check_requested";
 
     static final String RECIPIENT_ACCOUNT = "account";
     static final String RECIPIENT_GUEST_RESERVATION = "guest_reservation";

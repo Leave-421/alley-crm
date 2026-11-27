@@ -220,7 +220,16 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 | `type` | 받는 쪽 | `payload` | 만드는 곳 |
 | --- | --- | --- | --- |
 | `reservation_requested` | 그 가게 사장님 | `{ "reservationId" }` | 예약 신청 커밋 뒤(`ReservationRequestedEvent`) |
-| 나머지 종류 | — | 만드는 기능(D · E 이벤트)이 생길 때 C14에서 이 표에 더한다 | — |
+| `reservation_confirmed` | 예약한 손님 | `{ "reservationId" }` | 승인 커밋 뒤(`ReservationStatusChangedEvent` → `confirmed`) |
+| `reservation_rejected` | 예약한 손님 | `{ "reservationId", "nextCourseReservationIds": ["string"] }` | 거절 · 자동 거절 커밋 뒤(`canceled` + `store_rejected`). `nextCourseReservationIds`는 이 예약을 기준 가게 예약으로 둔 다음 코스 예약 중 그대로 남은(신청 · 확정) 것, 없으면 `[]`(FR-NTF-03 #2) |
+| `reservation_canceled` | 예약한 손님 | `{ "reservationId" }` | 자동 취소 커밋 뒤(`canceled` + `auto_canceled`). 손님이 스스로 취소한 것(`customer_canceled`)은 알림을 만들지 않는다 |
+| `reminder` | 예약한 손님 | `{ "reservationId" }` | 자동 작업 `reservation_reminder`: 방문 일시가 30분 안으로 들어온 확정 예약마다 한 번. 화면은 이 알림에서 늦을 것 같아요(G-07)로 보낸다(FR-NTF-03 #3) |
+| `store_join_result` | 그 가게 사장님 | `{ "storeId", "joinStatus" }` | 가입 승인 · 거절 커밋 뒤(`StoreJoinDecidedEvent`) |
+| `association_coupon_opened` | 회원 계정 전부 | `{ "associationCouponEventId" }` | 3.9 「행사 알림」 |
+| `coupon_status` | 회원 | `{ "couponId", "status" }` (`used` · `expired`) | **미연결.** E14가 사용 완료 · 만료 때 이벤트를 내보내면 C14가 리스너를 단다. 비회원은 쿠폰이 없어 만들지 않는다(FR-NTF-03 #4 · #5) |
+| `change_requested` · `change_approved` · `change_rejected` · `delay_reported` · `next_store_recommended` · `visit_amount_recorded` · `visit_report_check_requested` | — | — | **미연결.** 그 기능(예약 변경 · 지연 입력 D, 다음 가게 추천 E, 방문 금액 D21, 신고 C23)을 만드는 PR이 이벤트를 내보내고 이 표에 줄을 더한다 |
+
+"예약한 손님"은 회원이면 그 계정(`account`), 비회원이면 그 예약(`guest_reservation`)이다. 기능 쪽은 `notifyReservationCustomer(reservationId, customerId, type, payload)`로 같은 규칙을 쓴다.
 
 #### `GET /api/v1/notifications` — 내 알림 목록
 
@@ -239,7 +248,7 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 #### 서버 내부: `NotificationService` (D · E가 씀)
 
 - 알림은 `NotificationService`로만 만든다. `notification` 테이블에 직접 넣지 않는다.
-- `notifyAccount(accountId, type, payload)` · `notifyGuestReservation(reservationId, type, payload)`. `payload`는 `Map<String, Object>`.
+- `notifyAccount(accountId, type, payload)` · `notifyGuestReservation(reservationId, type, payload)` · `notifyReservationCustomer(reservationId, customerId, type, payload)`(예약한 손님에게, 회원 · 비회원을 알아서 고른다). `payload`는 `Map<String, Object>`.
 - **트랜잭션 커밋 뒤에 만든다.** 기능 쪽은 이벤트를 내보내고, C14가 `@TransactionalEventListener`(커밋 뒤)로 받아 알림을 만든다. 롤백된 일에는 알림이 남지 않는다.
 - 생성 시각은 서버 시계(D18)를 따른다.
 
@@ -574,7 +583,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 | --- | --- | --- |
 | 예약금 환불 (D10 · D6) | `@EventListener` (같은 트랜잭션, 실패하면 상태 변경도 취소) | `store_rejected` → 100% 환불, `auto_canceled` → 환불 없음(05-policy 「예약 상태」). 손님 취소는 D6 |
 | 쿠폰 적용 취소 (E) | `@EventListener` | 방문 전 취소면 적용 쿠폰 → `apply_canceled`(30일 제한 유지) |
-| 알림 (C14 · C15) | `@TransactionalEventListener` (커밋 뒤) | 승인 · 거절 알림 |
+| 알림 (C14 · C15) | `@TransactionalEventListener` (커밋 뒤) | 확정 · 거절 · 자동 취소 알림(1절 「알림」 표) |
 
 #### `POST /api/v1/owner/reservations/{id}/visit` — 방문 처리 (D11)
 
@@ -1807,5 +1816,4 @@ DB가 막지 않는 것(유형별 필수 칸, 확정 뒤 변경 금지, 중단�
 
 | # | 내용 | 정해지지 않은 동안 | 결정 주체 |
 | --- | --- | --- | --- |
-| U-1 | C14 리스너: `AssociationCouponOpenedEvent` → 회원 전부에게 `association_coupon_opened` 알림, `NotificationType` 상수 · 1절 표 줄 | E19는 이벤트만 내보낸다. 알림함에 행사가 뜨지 않으므로 화면은 목으로 확인 | C (#42) |
 | U-2 | 회원 쿠폰함 · 예약 화면의 쿠폰 목록에 상인회 쿠폰을 넣는 것(3.5 A-1) | E20에서 정한다 | E (#172) |
