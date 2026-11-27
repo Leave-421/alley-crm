@@ -105,13 +105,54 @@ function refundIfCanceledNow(reservation) {
 /** 내 예약 한 줄(D13 모양): 가게 이름 · 지금 취소할 수 있는지 · 그때 환불액을 붙인다 */
 function toMineRow(reservation) {
   const refund = refundIfCanceledNow(reservation);
-  const { accountId: _accountId, ...rest } = reservation; // 계정 ID는 응답에 넣지 않는다
+  const { accountId: _accountId, guestPhone: _guestPhone, ...rest } = reservation; // 계정 ID · 전화번호는 응답에 넣지 않는다
   return {
     ...rest,
     storeName: MOCK_STORES.find((store) => store.id === reservation.storeId)?.name ?? '',
     cancelable: refund !== null,
     refundIfCanceled: refund,
   };
+}
+
+// 비회원 예약 조회(C13) 목: 시연용 비회원 예약. 예약번호 GSTK7Q2M + 전화번호 01098765432로 들어간다.
+// 이 탭에서 비회원으로 신청한 예약도 그 번호 · 전화번호로 들어간다.
+export const MOCK_GUEST_DEMO = Object.freeze({ reservationNo: 'GSTK7Q2M', phone: '01098765432' });
+let guestSeeded = false;
+
+function seedGuestReservations() {
+  if (guestSeeded) return;
+  guestSeeded = true;
+  const base = { cancelReason: null, requestNote: null, coupon: null, courseRootId: null, fromRecommendation: false, visitAmount: null, visitedAt: null, refundAmount: null, pendingStartAt: null, pendingPartySize: null, requestedAt: kstAt(-4, '10:00'), accountId: null, guestPhone: MOCK_GUEST_DEMO.phone };
+  const rows = [
+    { id: 'g-1', reservationNo: MOCK_GUEST_DEMO.reservationNo, storeId: 'S05', startAt: kstAt(1, '12:00'), partySize: 2, status: 'confirmed', depositAmount: 10000 },
+    { id: 'g-2', reservationNo: 'GSTP4WX9', storeId: 'S12', startAt: kstAt(2, '18:30'), partySize: 3, status: 'requested', depositAmount: 15000 },
+    { id: 'g-3', reservationNo: 'GSTH8RN3', storeId: 'S08', startAt: kstAt(-3, '13:00'), partySize: 2, status: 'visited', depositAmount: 0, visitAmount: 24000, visitedAt: kstAt(-3, '13:10') },
+  ];
+  for (const row of rows) customerReservations.set(row.id, { ...base, ...row });
+}
+
+/** 예약번호(대소문자 무시) + 전화번호가 맞는 비회원 예약. 없거나 다르면 null(둘을 구분하지 않는다) */
+export function findMockGuestReservation(reservationNo, phone) {
+  seedGuestReservations();
+  const no = String(reservationNo ?? '').toUpperCase();
+  for (const item of customerReservations.values()) {
+    if (item.guestPhone && item.reservationNo === no && item.guestPhone === phone) return toGuestReservation(item);
+  }
+  return null;
+}
+
+/** 그 전화번호의 비회원 예약 전체(Reservation 모양, 방문 일시가 늦은 것부터) */
+export function listMockGuestReservations(phone) {
+  seedGuestReservations();
+  return [...customerReservations.values()]
+    .filter((item) => item.guestPhone === phone)
+    .sort((a, b) => Date.parse(b.startAt) - Date.parse(a.startAt))
+    .map(toGuestReservation);
+}
+
+function toGuestReservation(item) {
+  const { accountId: _accountId, guestPhone: _guestPhone, ...rest } = item;
+  return rest;
 }
 
 /** 회원 손님의 자기 예약을 찾는다(남의 예약 · 없는 예약은 404, IDOR). 통과하면 { reservation } */
@@ -434,8 +475,10 @@ export const reservationHandlers = [
   http.post('/api/v1/reservations', async (info) => {
     const blocked = rejectInvalidCsrf(info);
     if (blocked) return blocked;
-    const account = getMockAccount();
-    if (account && account.role !== 'customer') return errorResponse(403, 'forbidden_role', '손님 계정으로만 예약할 수 있어요.');
+    // 비회원 제한 세션(C13)에서 한 신청도 비회원 신청이다
+    const signedIn = getMockAccount();
+    if (signedIn && signedIn.role !== 'customer' && signedIn.role !== 'guest') return errorResponse(403, 'forbidden_role', '손님 계정으로만 예약할 수 있어요.');
+    const account = signedIn?.role === 'customer' ? signedIn : null;
     const body = await info.request.json().catch(() => null);
     const guest = body?.guest;
     const guestOk = account || (guest && typeof guest.name === 'string' && guest.name.trim().length >= 1 && guest.name.trim().length <= 20 && /^\d{10,11}$/.test(guest.phone ?? ''));
@@ -468,7 +511,7 @@ export const reservationHandlers = [
       pendingStartAt: null,
       pendingPartySize: null,
     };
-    customerReservations.set(reservation.id, { ...reservation, accountId: account?.id ?? null });
+    customerReservations.set(reservation.id, { ...reservation, accountId: account?.id ?? null, guestPhone: account ? null : guest.phone });
     return HttpResponse.json(reservation, { status: 201 });
   }),
 

@@ -10,9 +10,10 @@ const PAGE_SIZE = 20;
 
 /**
  * 알림함 — 손님(G-11) · 사장님(O-10) 공용. 받는 쪽은 서버가 세션으로 정하고, 문구는 역할에 따라 notificationText가 정한다.
+ * guest: 비회원 예약 조회(G-13)에서 연 알림함(그 전화번호 비회원 예약들의 알림).
  * 목업처럼 맨 위에 '읽지 않은 알림 N개 · 모두 읽음', 알림마다 배지 · 안 읽음 점 · 문구 · 시각. 누르면 읽음 처리하고 관련 화면으로 간다.
  */
-export default function NotificationsPage() {
+export default function NotificationsPage({ guest = false }) {
   const { role } = useSession();
   const [state, setState] = useState({ status: 'loading', items: [], page: -1, totalPages: 0, unreadCount: 0, error: null });
 
@@ -91,7 +92,9 @@ export default function NotificationsPage() {
 
       <ul className={styles.list}>
         {state.items.map((notification) => {
-          const text = describeNotification(notification, role);
+          const described = describeNotification(notification, role);
+          // 비회원 제한 세션(G-13)은 회원 화면(내 예약 · 마이)을 못 열어서 관련 화면 대신 비회원 예약 조회로 돌아간다
+          const text = guest && described.to ? { ...described, to: '/guest-reservation' } : described;
           const badgeClass = [styles.badge, text.tone === BADGE_TONES.COUPON && styles.badgeCoupon, text.tone === BADGE_TONES.INFO && styles.badgeInfo].filter(Boolean).join(' ');
           const body = (
             <>
