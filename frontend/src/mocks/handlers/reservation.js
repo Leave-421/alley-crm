@@ -33,9 +33,12 @@ const MOCK_DAY = [
   { time: '20:00', partySize: 1, status: 'canceled', cancelReason: 'auto_canceled', customerType: 'guest', maskedName: null, fromRecommendation: false, requestNote: null, depositAmount: 0 },
   { time: '20:30', partySize: 2, status: 'requested', cancelReason: null, customerType: 'member', maskedName: '최*아', fromRecommendation: true, requestNote: '아이 의자 1개', depositAmount: 10000 },
   { time: '21:30', partySize: 3, status: 'requested', cancelReason: null, customerType: 'guest', maskedName: '한*름', fromRecommendation: false, requestNote: null, depositAmount: 0 },
+  // 손님이 확정 예약을 바꾸겠다고 한 변경 신청(D8): status는 requested, 원래 값은 그대로, pending에 바꿀 값
+  { time: '21:00', partySize: 2, status: 'requested', cancelReason: null, customerType: 'member', maskedName: '송*비', fromRecommendation: false, requestNote: null, depositAmount: 10000, pending: { time: '21:30', partySize: 4 } },
 ];
 
-// 승인 · 거절(D3) · 방문 처리(D11)로 바뀐 칸. 예약 id → { status, cancelReason, visitAmount?, visitedAt? }.
+// 승인 · 거절(D3) · 방문 처리(D11)로 바뀐 칸. 예약 id → { status, cancelReason, visitAmount?, visitedAt?, time?, partySize?, changeDecided? }.
+// 변경 신청(D8)을 승인하면 time · partySize가 바뀐 값으로, 거절하면 원래 값으로 confirmed가 된다.
 // 새로고침하면 처음으로 돌아간다.
 const decided = new Map();
 
@@ -73,9 +76,11 @@ function discountFor(coupon, visitAmount) {
 function mockOwnerReservations(date) {
   const day = date.replaceAll('-', '');
   return MOCK_DAY.map((item, index) => {
-    const startAt = new Date(`${date}T${item.time}:00+09:00`);
     const id = `${day}-${index + 1}`;
     const changed = decided.get(id) ?? {};
+    const startAt = new Date(`${date}T${changed.time ?? item.time}:00+09:00`);
+    // 변경 신청은 결정되기 전까지만 pending 값이 있다
+    const pending = item.pending && !changed.changeDecided ? item.pending : null;
     const status = changed.status ?? item.status;
     const cancelReason = changed.status ? changed.cancelReason : item.cancelReason;
     // 처음부터 방문인 목 예약은 방문 금액 30,000원으로 본다
@@ -83,9 +88,12 @@ function mockOwnerReservations(date) {
     const visitedAt = changed.visitedAt ?? (item.status === 'visited' ? startAt.toISOString() : null);
     return {
       id,
-      reservationNo: `K7Q2M9X${'ABCDEFGH'[index]}`, // 8자, 헷갈리는 0 O 1 I 없음(계약)
+      reservationNo: `K7Q2M9X${'ABCDEFGHJ'[index]}`, // 8자, 헷갈리는 0 O 1 I 없음(계약)
       startAt: startAt.toISOString(),
-      partySize: item.partySize,
+      partySize: changed.partySize ?? item.partySize,
+      pendingStartAt: pending ? new Date(`${date}T${pending.time}:00+09:00`).toISOString() : null,
+      pendingPartySize: pending ? pending.partySize : null,
+      expectedArrivalAt: null, // 지연 입력(D14)은 B9에서 목에 더한다
       status,
       cancelReason,
       requestedAt: new Date(startAt.getTime() - 26 * 3_600_000).toISOString(),
@@ -112,7 +120,7 @@ function findMockReservation(id) {
 
 /** 목록 항목 → 계약의 Reservation 응답 모양(D2). 손님 이름 · 회원 여부는 넣지 않는다. */
 function toReservation(item) {
-  const { customerType: _customerType, maskedName: _maskedName, ...rest } = item;
+  const { customerType: _customerType, maskedName: _maskedName, expectedArrivalAt: _expectedArrivalAt, ...rest } = item;
   return { ...rest, storeId: '3', courseRootId: null };
 }
 
@@ -124,7 +132,22 @@ function decideReservation(next) {
     const found = findMockReservation(info.params.id);
     if (!found) return errorResponse(404, 'not_found', '예약을 찾을 수 없어요.');
     if (found.status !== 'requested') return errorResponse(409, 'conflict', '신청 상태인 예약만 처리할 수 있어요.');
-    if (next.status === 'confirmed' && Date.parse(found.startAt) <= Date.now() + offsetMs) {
+    const nowMs = Date.now() + offsetMs;
+    if (found.pendingStartAt) {
+      // 변경 신청(D8): 원래 시각과 바뀐 시각 중 이른 쪽이 지났으면 변경만 자동 거절 대상
+      if (Math.min(Date.parse(found.startAt), Date.parse(found.pendingStartAt)) <= nowMs) {
+        return errorResponse(409, 'conflict', '변경 요청을 처리할 수 있는 시각이 지났어요. 변경은 자동 거절돼요.');
+      }
+      const approve = next.status === 'confirmed';
+      const pendingTime = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(found.pendingStartAt));
+      // 승인: 바꾼 값으로 확정(예약금 차액은 서버가 정산) · 거절: 원래 값으로 확정 유지(취소가 아님)
+      const change = approve
+        ? { status: 'confirmed', cancelReason: null, time: pendingTime, partySize: found.pendingPartySize, changeDecided: true }
+        : { status: 'confirmed', cancelReason: null, changeDecided: true };
+      decided.set(found.id, change);
+      return HttpResponse.json(toReservation(findMockReservation(found.id)));
+    }
+    if (next.status === 'confirmed' && Date.parse(found.startAt) <= nowMs) {
       return errorResponse(409, 'conflict', '예약 시각이 지나 승인할 수 없어요. 자동 거절돼요.');
     }
     decided.set(found.id, next);
