@@ -302,7 +302,9 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
   "fromRecommendation": false,
   "visitAmount": null,
   "visitedAt": null,
-  "refundAmount": null
+  "refundAmount": null,
+  "pendingStartAt": null,
+  "pendingPartySize": null
 }
 ```
 
@@ -313,6 +315,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 - `courseRootId`: '다음 코스로 예약하기'로 만든 예약만 기준 가게 예약 id(D12). 아니면 `null`.
 - `fromRecommendation`: 사장님 화면의 '추천으로 왔어요' 표시용. **보낸 가게 id · 이름은 어떤 응답에도 넣지 않는다**(FR-CUS-05).
 - `refundAmount`: 손님 취소(D6) 때 돌려준 예약금(원). 손님 취소가 아니면 `null`.
+- `pendingStartAt` · `pendingPartySize`: 변경 신청(D8) 중 바꿀 값. 변경 대기가 아니면 `null`. 대기 중에는 `status`가 `requested`이고 `startAt` · `partySize`는 원래 값이다.
 - `visitAmount` · `visitedAt`: 방문 처리(D11) 때 사장님이 넣은 결제 금액(쿠폰 할인 전, 원)과 처리 시각. 방문 전이면 `null`.
 - 응답에 손님 이름 · 전화번호는 넣지 않는다. 사장님용 목록(D4)은 가린 이름만 따로 정한다.
 
@@ -400,6 +403,27 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 - 환불은 상태 변경 이벤트를 받은 예약금 환불(D10)이 같은 트랜잭션에서 한다. 회원은 잔액으로, 비회원은 전화번호 기록으로. 쿠폰 적용 취소(E) · 알림(C)도 같은 이벤트로.
 - 실패: `not_found` · `conflict`(신청 · 확정이 아님, 마감 지남) · `unauthorized` · `forbidden_role` · `csrf_invalid`
 - **비회원 취소:** 비회원 예약 조회 세션(C13)이 생기면 같은 서비스 `ReservationStateService.cancelByCustomer(customerId, reservationId)`를 부른다(규칙 · 응답 같음).
+
+### 예약 변경 (D8)
+
+#### `POST /api/v1/reservations/{id}/change` — 회원 손님 예약 변경 (G-05, FR-RSV-07)
+
+- 역할: 회원 손님(내 예약). `X-XSRF-TOKEN` 필요. 비회원은 비회원 예약 조회 세션(C13)에서 같은 `ReservationStateService.requestChange`를 부른다.
+- 요청: `{ "startAt": "2026-11-29T10:00:00Z", "partySize": 3 }` — 둘 중 하나 이상(바뀐 값이 없으면 `invalid`).
+- `confirmed`만, **가게 취소 마감 전까지**(기획 11-27). 새 시각 · 인원은 예약 신청과 같은 규칙(영업시간 · 휴무일 · 기간 · 자리 · 한 팀 최대 인원).
+- 결과: `status: "requested"`, 원래 `startAt` · `partySize`는 그대로, `pendingStartAt` · `pendingPartySize`에 바꿀 값(#1). 돈은 움직이지 않는다. 응답 `200`: `Reservation`.
+- 인원이 늘어 회원이 더 내야 하면 지금 잔액을 확인한다(모자라면 `insufficient_balance`, 충전 안내).
+- 실패: `invalid` · `not_found`(남의 예약) · `conflict`(확정이 아님 · 이미 변경 대기 · 마감 지남) · `slot_unavailable` · `insufficient_balance` · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+#### 사장님 처리 (D3 API 그대로)
+
+| 동작 | 변경 건이면 |
+| --- | --- |
+| `POST /api/v1/owner/reservations/{id}/confirm` | 자리를 다시 확인하고 예약금 차액을 정산(늘면 더 냄 · 줄면 돌려받음, 회원은 잔액 · 비회원은 전화번호 기록), 바꾼 값으로 `confirmed`(#2). 회원 잔액이 모자라면 `409 insufficient_balance` — 변경은 대기 그대로 |
+| `POST /api/v1/owner/reservations/{id}/reject` | 원래 값으로 `confirmed` 유지, 돈은 그대로(#3). 취소가 아니다 |
+| 자동 거절(D7) | 원래 시각과 바뀐 시각 중 이른 쪽까지 승인이 없으면 변경만 거절, 원래 값 유지(#4) |
+
+같은 예약 ID라 적용된 쿠폰은 그대로다(05-policy).
 
 ### 내 예약 · 코스 묶음 (D13)
 
@@ -558,6 +582,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 | 메서드 | 대상 | 결과 |
 | --- | --- | --- |
 | `autoRejectDue()` | `requested`이고 `startAt` ≤ 지금 | `canceled` · `store_rejected` (FR-RSV-03 #3, 거절과 같은 결과) |
+| `autoRejectDue()` (변경 건) | 변경 대기이고 원래 시각과 바뀐 시각 중 이른 쪽 ≤ 지금 | 변경만 자동 거절, 원래 값으로 `confirmed`(FR-RSV-07 #4) |
 | `autoCancelDue()` | `confirmed`이고 예약일(운영 시간대) 다음 날이 끝남 = `startAt` < (오늘 − 1일) 00:00 | `canceled` · `auto_canceled` (FR-RSV-02 #1) |
 
 방문 처리된 예약은 바꾸지 않는다(FR-RSV-02 #2). 사장님 처리와 겹쳐도 행을 잠그고 상태를 다시 확인해 한 번만 바뀐다.
@@ -1406,7 +1431,7 @@ DB가 막지 않는 것(유형별 필수 칸, 확정 뒤 변경 금지, 중단�
 
 | # | 내용 | 정해지지 않은 동안 | 결정 주체 |
 | --- | --- | --- | --- |
-| A-1 | 상인회 쿠폰(E20)을 같은 목록 · 같은 `couponId`로 받을지, 응답에 쿠폰 종류 칸을 더할지 | 가게 쿠폰만 다룬다 | E20 (#172) · D24 (#159) |
+| A-1 | (닫힘) 상인회 쿠폰도 같은 목록 · 같은 `couponId`, 종류는 `issuerKind` → 3.10 | — | E20 (#172) |
 | A-2 | (닫힘) 늦은 방문 처리(11-25 (5)) 때 '적용 취소' → '예약에 적용됨' 되돌리기 → 3.6 「늦은 방문 처리」 | — | E14 (#45) · D23 (#170) |
 
 ### 3.6 쿠폰 상태 · 만료 · 사용 확인 (E14 #45 · 계약 #187)
@@ -1824,3 +1849,57 @@ DB가 막지 않는 것(유형별 필수 칸, 확정 뒤 변경 금지, 중단�
 | # | 내용 | 정해지지 않은 동안 | 결정 주체 |
 | --- | --- | --- | --- |
 | U-2 | 회원 쿠폰함 · 예약 화면의 쿠폰 목록에 상인회 쿠폰을 넣는 것(3.5 A-1) | E20에서 정한다 | E (#172) |
+
+### 3.10 상인회 쿠폰 적용 · 기금 부담 (E20 #172 · 계약 #257)
+
+> 상태: **계약.** 구현은 #172에서 한다. 3.5(쿠폰 적용) · 3.6(방문 할인 · 사용 확인)에 상인회 쿠폰을 더하는 절이다. 행사는 3.8, 받기는 3.9, 수수료는 2절 D15, 예산 돌려주기는 2절 D20.
+> 기준: 기획 저장소 `05-policy.md` 「상인회 쿠폰」, `03-requirements.md` FR-CPN-06 · 14 · FR-STL-02, 결정 기록 11-25 (5).
+
+상인회 쿠폰은 **행사가 정한 가게의 예약에만** 쓴다. 예약 한 건에는 가게 쿠폰과 상인회 쿠폰 중 **한 장만** 적용한다(FR-CPN-06 · 14). 할인은 **공동 기금**이 부담하고, 수수료는 가게 쿠폰과 같이 할인 후 금액 × 수수료율이다. 소개를 만들지 않고 추천 순위에 쓰지 않으며, 사용 확인은 방문 처리와 따로 사장님이 한다.
+
+#### Coupon에 더하는 칸 (3.4 · 3.5 · 3.9 공통)
+
+| 필드 | 뜻 |
+| --- | --- |
+| `issuerKind` | `store` 가게 쿠폰 · `association` 상인회 쿠폰(`CONTRACTS.md` 「3」 `coupon.issuerKind`) |
+| `associationCouponEventId` | 상인회 쿠폰이면 받은 행사 ID(3.8), 가게 쿠폰이면 `null` |
+
+- 가게 쿠폰은 지금처럼 `eventId` · `storeId`가 있고 `issuerKind: "store"`, `associationCouponEventId: null`이다.
+- 상인회 쿠폰은 `eventId` · `storeId` · `serviceName` · `conditions`가 `null`이다(3.9 받기 응답과 같은 모양). 쓸 수 있는 가게는 행사 카드(3.9 `GET`)의 `stores`.
+
+#### `GET /api/v1/coupons/usable?storeId=` (3.5)에 상인회 쿠폰을 더한다 — 3.5 미확정 A-1 닫음
+
+- 같은 목록 · 같은 `couponId`로 준다. 이 회원의 쿠폰 중 **그 가게에서 지금 쓸 수 있는** 것: 가게 쿠폰(3.5 그대로)과 아래 조건의 상인회 쿠폰.
+- 상인회 쿠폰을 그 가게에서 쓸 수 있음(3.8 「쓸 수 있는 가게 · 기간」):
+  - 상태 `downloaded`, 지금 < `expiresAt`(= 행사 `validEndAt`), **행사 `validStartAt` ≤ 지금**
+  - 쓸 수 있는 가게: `all`이면 그 가게가 행사 권역의 승인된 가게, `selected`면 행사가 고른 가게에 있음
+- 정렬: 종류와 상관없이 `expiresAt` 오름차순(같으면 `couponId` 순). 서버가 고르지 않는다(FR-CPN-06).
+
+#### 예약 신청 단계 60 · 90 (3.5)에 상인회 쿠폰을 더한다
+
+| 조건(위에서부터) | 실패 |
+| --- | --- |
+| 쿠폰이 없거나 이 회원의 쿠폰이 아님 | `404 not_found` |
+| 가게 쿠폰: 대상 가게가 신청한 가게가 아님 / 상인회 쿠폰: 신청한 가게가 쓸 수 있는 가게가 아님(FR-CPN-14 #2) | `409 conflict` |
+| 상태가 `downloaded`가 아님 | `409 conflict` |
+| 신청 시각 ≥ `expiresAt`, 상인회 쿠폰은 신청 시각 < 행사 `validStartAt`도 | `409 conflict` |
+
+- 쿠폰은 한 장만(`couponId` 하나, 배열이면 `400 invalid`) — 가게 쿠폰과 상인회 쿠폰을 같이 쓸 수 없다(FR-CPN-14 #1).
+- 적용 · 방문 전 취소 · 늦은 방문 되돌리기 · 만료는 가게 쿠폰과 같다(3.5 · 3.6). 만료는 `expiresAt`(= 행사 `validEndAt`)으로 E14 `expireDue`가 한다.
+- 예약 응답 · 사장님 예약 응답의 `coupon`(3.5 `AppliedCoupon`)도 상인회 쿠폰을 같은 모양으로 채운다(혜택은 행사 값, `serviceName: null`).
+
+#### 방문 할인 · 기금 부담 (3.6에 더함)
+
+- `CouponVisitService.discountFor(reservationId, visitAmount)`가 상인회 쿠폰도 준다: `VisitCouponDiscount(couponId, issuerKind = ASSOCIATION, discountAmount, couponCost = discountAmount)`. 할인액 계산은 3.2 「할인액」과 같다(정액은 방문 금액까지, 정률은 `max_discount_amount`까지, 1원 미만 버림).
+- 방문 처리 때 `recordDiscount`가 상인회 쿠폰에도 실제 할인액을 `discount_applied`에 남긴다. 상태는 '예약에 적용됨' 그대로이고 사용 확인(3.6 `coupon-use`)으로 '사용 완료'가 된다(FR-CPN-14 #4).
+- **수수료(D15)**: 계산 금액 = 방문 금액 − 상인회 쿠폰 할인. `referral_fee.coupon_cost`는 0(가게 부담 아님). 가게 잔액에서 쿠폰 비용을 빼지 않는다(FR-CPN-14 #3) — D15가 `issuerKind`로 이미 이렇게 한다.
+- **기금 부담 기록**: 할인액은 행사를 만들 때 잡은 기금 예산(3.8 `reservedBudget`)에서 쓰인 것으로 본다. 쿠폰의 `discount_applied`가 그 기록이고, 3.8 `usedBudget`과 2절 D20 `releaseDue`(쓰지 않은 예산 돌려주기)가 이 값을 읽는다. 따로 거래를 만들지 않는다(예산을 잡을 때 기금에서 이미 뺐다).
+
+#### 정책에 따라 정한 것 (3.10)
+
+| 항목 | 정한 것 | 근거 |
+| --- | --- | --- |
+| 목록 · ID | 가게 쿠폰과 같은 목록 · 같은 `couponId`, 종류는 `issuerKind` | FR-CPN-06 예약 화면은 회원이 한 장 고름 |
+| 쓸 수 있는 기간 시작 | 신청 시각 < 행사 `validStartAt`이면 쓸 수 없음 | 05-policy "기한은 예약 신청 시각으로 판단" |
+| 기금 부담 기록 | 쿠폰 `discount_applied`(새 거래 없음) | FR-CPN-12 예산은 만들 때 기금에서 미리 잡음 |
+| 가게 휴업 · 운영 중단 | 상인회 쿠폰은 바꾸지 않는다(다른 가게에서 쓸 수 있음). 그 가게 예약이 취소되면 3.5대로 적용 취소 | FR-CPN-07 #4는 대상 가게가 하나인 가게 쿠폰 규칙 |

@@ -107,6 +107,43 @@ public class Reservation {
         this.refundAmount = refund;
     }
 
+    /** 변경 신청 중에 바꿀 값(D8). 값이 있으면 변경 건이고, 원래 값(startAt · partySize)은 그대로다 */
+    @Column(name = "pending_start_at")
+    private Instant pendingStartAt;
+
+    @Column(name = "pending_party_size")
+    private Integer pendingPartySize;
+
+    /** 변경 대기 중인가(D8) */
+    public boolean hasPendingChange() {
+        return pendingStartAt != null;
+    }
+
+    /** 확정 → 신청(변경 건): 원래 값은 두고 바꿀 값만 남긴다(FR-RSV-07 #1) */
+    void requestChange(Instant newStart, int newParty) {
+        this.status = ReservationStatus.REQUESTED;
+        this.pendingStartAt = newStart;
+        this.pendingPartySize = newParty;
+    }
+
+    /** 변경 승인: 바꾼 값으로 확정(#2). 예약금은 부르는 쪽이 정산해 넘긴다 */
+    void approveChange(int newDeposit, Instant now) {
+        this.startAt = pendingStartAt;
+        this.partySize = pendingPartySize;
+        this.depositAmount = newDeposit;
+        this.pendingStartAt = null;
+        this.pendingPartySize = null;
+        this.status = ReservationStatus.CONFIRMED;
+        this.confirmedAt = now;
+    }
+
+    /** 변경 거절 · 자동 거절: 원래 값으로 확정 유지(#3 · #4) */
+    void revertChange() {
+        this.pendingStartAt = null;
+        this.pendingPartySize = null;
+        this.status = ReservationStatus.CONFIRMED;
+    }
+
     /** 신청 상태의 새 예약. 값 검사는 신청 단계들이 끝낸 뒤 부른다. */
     public static Reservation requested(String reservationNo, Long storeId, Long customerId, Instant startAt,
             int partySize, Instant requestedAt, int depositAmount, String requestNote,

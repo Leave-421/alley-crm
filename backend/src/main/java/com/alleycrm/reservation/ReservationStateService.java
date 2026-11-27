@@ -29,14 +29,19 @@ public class ReservationStateService {
     private final Clock clock;
     private final ApplicationEventPublisher events;
     private final com.alleycrm.setting.SettingService settings;
+    private final com.alleycrm.reservation.request.StoreSlotReader slots;
+    private final com.alleycrm.wallet.WalletService wallets;
 
     public ReservationStateService(ReservationRepository reservations, JdbcTemplate jdbc, Clock clock,
-            ApplicationEventPublisher events, com.alleycrm.setting.SettingService settings) {
+            ApplicationEventPublisher events, com.alleycrm.setting.SettingService settings,
+            com.alleycrm.reservation.request.StoreSlotReader slots, com.alleycrm.wallet.WalletService wallets) {
         this.reservations = reservations;
         this.jdbc = jdbc;
         this.clock = clock;
         this.events = events;
         this.settings = settings;
+        this.slots = slots;
+        this.wallets = wallets;
     }
 
     /** 사장님 승인: 신청 → 확정(FR-RSV-03 #1). 다른 가게 예약은 없는 것처럼 404 */
@@ -44,6 +49,9 @@ public class ReservationStateService {
     public Reservation confirm(long storeId, long reservationId) {
         Reservation r = lockOwn(storeId, reservationId);
         requireStatus(r, ReservationStatus.REQUESTED);
+        if (r.hasPendingChange()) {
+            return approveChange(r); // 변경 건(D8)
+        }
         if (!r.getStartAt().isAfter(now())) {
             // 예약 시각이 지난 신청은 자동 거절 대상이라 승인할 수 없다
             throw new ApiException(ErrorCode.CONFLICT);
@@ -111,6 +119,12 @@ public class ReservationStateService {
     public Reservation reject(long storeId, long reservationId) {
         Reservation r = lockOwn(storeId, reservationId);
         requireStatus(r, ReservationStatus.REQUESTED);
+        if (r.hasPendingChange()) {
+            // 변경 거절: 원래 예약으로 확정 유지(FR-RSV-07 #3), 돈은 그대로
+            r.revertChange();
+            publish(r, ReservationStatus.REQUESTED, false);
+            return r;
+        }
         r.cancel(CancelReason.STORE_REJECTED, now());
         publish(r, ReservationStatus.REQUESTED, false);
         return r;
@@ -147,13 +161,26 @@ public class ReservationStateService {
     public int autoRejectDue() {
         Instant now = now();
         List<Long> ids = jdbc.queryForList("""
-                SELECT id FROM reservation WHERE status = ? AND start_at <= ? ORDER BY id
-                """, Long.class, ReservationStatus.REQUESTED, utc(now));
+                SELECT id FROM reservation
+                WHERE status = ? AND (start_at <= ? OR pending_start_at <= ?) ORDER BY id
+                """, Long.class, ReservationStatus.REQUESTED, utc(now), utc(now));
         int n = 0;
         for (Long id : ids) {
             Reservation r = reservations.findForUpdate(id).orElseThrow();
             // 잠그는 사이에 사장님이 처리했으면 건너뛴다
-            if (ReservationStatus.REQUESTED.equals(r.getStatus())) {
+            if (!ReservationStatus.REQUESTED.equals(r.getStatus())) {
+                continue;
+            }
+            if (r.hasPendingChange()) {
+                // 변경만 자동 거절: 원래 시각과 바뀐 시각 중 이른 쪽까지 승인 없음 → 원래 예약 유지(FR-RSV-07 #4)
+                if (!changeDeadline(r).isAfter(now)) {
+                    r.revertChange();
+                    publish(r, ReservationStatus.REQUESTED, true);
+                    n++;
+                }
+                continue;
+            }
+            if (!r.getStartAt().isAfter(now)) {
                 r.cancel(CancelReason.STORE_REJECTED, now);
                 publish(r, ReservationStatus.REQUESTED, true);
                 n++;
@@ -187,6 +214,96 @@ public class ReservationStateService {
             }
         }
         return n;
+    }
+
+    /**
+     * 손님 예약 변경(D8, FR-RSV-07 #1, 기획 11-27): 확정 예약만, 가게 취소 마감 전까지. 날짜 · 인원 중 바뀐 값이 대기하고
+     * 상태는 '신청'이 된다(원래 값은 그대로). 새 시각은 예약 신청과 같은 규칙(영업시간 · 휴무일 · 기간 · 자리 · 최대 인원)으로 확인한다.
+     * 인원이 늘어 회원이 더 내야 하면 지금 잔액을 확인한다(모자라면 insufficient_balance). 돈은 승인 때 정산한다.
+     */
+    @Transactional
+    public Reservation requestChange(long customerId, long reservationId, Instant newStart, Integer newParty) {
+        Reservation r = reservations.findForUpdate(reservationId)
+                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND));
+        if (r.getCustomerId() != customerId) {
+            throw new ApiException(ErrorCode.NOT_FOUND);
+        }
+        if (!ReservationStatus.CONFIRMED.equals(r.getStatus()) || r.hasPendingChange()) {
+            throw new ApiException(ErrorCode.CONFLICT);
+        }
+        Instant now = now();
+        if (customerCancelRefund(r.getStoreId(), r.getStartAt(), r.getDepositAmount(), now) == null) {
+            throw new ApiException(ErrorCode.CONFLICT); // 가게 취소 마감이 지남(11-27)
+        }
+        Instant start = newStart == null ? r.getStartAt() : newStart;
+        int party = newParty == null ? r.getPartySize() : newParty;
+        if (party < 1 || (start.equals(r.getStartAt()) && party == r.getPartySize())) {
+            throw new ApiException(ErrorCode.INVALID); // 바뀐 값이 없음
+        }
+        com.alleycrm.reservation.request.StoreSnapshot store = checkSlot(r, start, party, now);
+        int extra = store.depositPerPerson() * party - r.getDepositAmount();
+        if (extra > 0 && isMember(r.getCustomerId())
+                && wallets.balance(com.alleycrm.wallet.WalletOwner.customer(r.getCustomerId())) < extra) {
+            throw new ApiException(ErrorCode.INSUFFICIENT_BALANCE);
+        }
+        r.requestChange(start, party);
+        publish(r, ReservationStatus.CONFIRMED, false);
+        return r;
+    }
+
+    /** 변경 승인(#2): 자리를 다시 확인하고 예약금 차액을 정산한 뒤 바꾼 값으로 확정 */
+    private Reservation approveChange(Reservation r) {
+        Instant now = now();
+        if (!changeDeadline(r).isAfter(now)) {
+            throw new ApiException(ErrorCode.CONFLICT); // 이미 자동 거절 대상
+        }
+        com.alleycrm.reservation.request.StoreSnapshot store = checkSlot(r, r.getPendingStartAt(), r.getPendingPartySize(), now);
+        int newDeposit = store.depositPerPerson() * r.getPendingPartySize();
+        int diff = newDeposit - r.getDepositAmount();
+        if (diff != 0) {
+            settleDeposit(r, diff);
+        }
+        r.approveChange(newDeposit, now);
+        publish(r, ReservationStatus.REQUESTED, false);
+        return r;
+    }
+
+    /** 원래 시각과 바뀐 시각 중 이른 쪽(이때까지 승인이 없으면 변경만 자동 거절) */
+    private static Instant changeDeadline(Reservation r) {
+        return r.getStartAt().isBefore(r.getPendingStartAt()) ? r.getStartAt() : r.getPendingStartAt();
+    }
+
+    /** 새 시각 · 인원이 예약 신청 규칙에 맞는지(D2 · D5와 같은 규칙). 자기 예약이 이미 그 시각이면 자리 계산에서 뺀다 */
+    private com.alleycrm.reservation.request.StoreSnapshot checkSlot(Reservation r, Instant start, int party, Instant now) {
+        com.alleycrm.reservation.request.StoreSnapshot store = slots.lock(r.getStoreId())
+                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND));
+        if (store.maxPartySize() != null && party > store.maxPartySize()) {
+            throw new ApiException(ErrorCode.INVALID);
+        }
+        LocalDate today = LocalDate.ofInstant(now, SERVICE_ZONE);
+        LocalDate day = LocalDate.ofInstant(start, SERVICE_ZONE);
+        boolean taken = slots.taken(store.id(), start) - (start.equals(r.getStartAt()) ? 1 : 0) >= store.capacityPerSlot();
+        if (!"open".equals(store.businessStatus()) || !store.reservationEnabled() || !start.isAfter(now)
+                || day.isAfter(today.plusDays(store.bookingWindowDays()))
+                || !com.alleycrm.reservation.request.SlotRules.isSlotStart(store, start) || taken) {
+            throw new ApiException(ErrorCode.SLOT_UNAVAILABLE);
+        }
+        return store;
+    }
+
+    /** 예약금 차액 정산(11-27): diff > 0이면 더 내고, < 0이면 돌려받는다 */
+    private void settleDeposit(Reservation r, int diff) {
+        String type = diff > 0 ? com.alleycrm.wallet.WalletTxType.DEPOSIT_PAID : com.alleycrm.wallet.WalletTxType.DEPOSIT_REFUNDED;
+        if (isMember(r.getCustomerId())) {
+            wallets.post(com.alleycrm.wallet.WalletOwner.customer(r.getCustomerId()), type, -diff, r.getId());
+        } else {
+            String phone = jdbc.queryForObject("SELECT phone FROM customer WHERE id = ?", String.class, r.getCustomerId());
+            wallets.recordGuest(phone, type, -diff, r.getId());
+        }
+    }
+
+    private boolean isMember(long customerId) {
+        return "member".equals(jdbc.queryForObject("SELECT type FROM customer WHERE id = ?", String.class, customerId));
     }
 
     private Reservation lockOwn(long storeId, long reservationId) {
