@@ -40,3 +40,29 @@ export function createCouponEvent(request) {
 export function stopCouponEvent(eventId) {
   return api.post(`/api/v1/coupon-events/${encodeURIComponent(eventId)}/stop`);
 }
+
+// ── 상인회 쿠폰 행사(E18, CONTRACTS_API.md 3.8) — 할인은 공동 기금이 부담한다. 권역은 로그인한 상인회 계정으로 정한다 ──
+
+/** 상인회 쿠폰 입력 범위(3.8 검사). 서버가 다시 검사하고, 화면은 미리 알려 주는 데만 쓴다. */
+export const ASSOCIATION_COUPON_LIMITS = Object.freeze({ titleMax: 50, percentMin: 1, percentMax: 50 });
+
+/** 쓸 수 있는 가게 범위(3.8 eligibleStoreScope) */
+export const ELIGIBLE_STORE_SCOPES = Object.freeze({ ALL: 'all', SELECTED: 'selected' });
+
+/** 그 권역 행사 전부, 최근에 만든 순. @returns {Promise<{ items: object[] }>} */
+export function getAssociationCouponEvents() {
+  return api.get('/api/v1/association/coupon-events');
+}
+
+/**
+ * 행사 만들기 = 확정. 같은 트랜잭션에서 '수량 × 한 장 최대 할인액'을 기금에서 잡는다.
+ * 기금이 모자라면 409 insufficient_balance이고 행사도 만들어지지 않는다. 응답은 만든 행사(201).
+ */
+export function createAssociationCouponEvent(request) {
+  return api.post('/api/v1/association/coupon-events', request);
+}
+
+/** 행사 중단: 새로 받기만 멈춘다. 받은 쿠폰은 유효기간까지, 예산은 유효기간이 끝날 때 돌아간다. */
+export function stopAssociationCouponEvent(eventId) {
+  return api.post(`/api/v1/association/coupon-events/${encodeURIComponent(eventId)}/stop`);
+}

@@ -45,6 +45,7 @@ class OwnerReservationController {
     private static final String ITEM_COLUMNS = """
             SELECT r.id, r.reservation_no, r.start_at, r.party_size, r.status, r.cancel_reason, r.requested_at,
                    r.request_note, r.deposit_amount, r.course_proposal_id, r.visit_amount, r.visited_at,
+                   r.pending_start_at, r.pending_party_size, r.delay_eta,
                    c.type AS customer_type, c.name, f.fee_amount AS referral_fee
             FROM reservation r JOIN customer c ON c.id = r.customer_id
             LEFT JOIN referral_fee f ON f.reservation_id = r.id
@@ -169,7 +170,10 @@ class OwnerReservationController {
                 instant(rs.getObject("visited_at", LocalDateTime.class)),
                 couponApply.appliedCouponFor(id),
                 rs.getObject("referral_fee") != null,
-                (Integer) rs.getObject("referral_fee"));
+                (Integer) rs.getObject("referral_fee"),
+                instant(rs.getObject("pending_start_at", LocalDateTime.class)),
+                (Integer) rs.getObject("pending_party_size"),
+                instant(rs.getObject("delay_eta", LocalDateTime.class)));
     }
 
     /**
@@ -192,7 +196,10 @@ class OwnerReservationController {
             Instant visitedAt,
             AppliedCoupon coupon,
             boolean referralConfirmed,
-            Integer referralFee) {
+            Integer referralFee,
+            Instant pendingStartAt,
+            Integer pendingPartySize,
+            Instant expectedArrivalAt) {
     }
 
     private static LocalDateTime utc(Instant t) {

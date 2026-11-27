@@ -612,6 +612,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
       "status": "requested", "cancelReason": null, "requestedAt": "2026-11-27T07:40:00Z", "requestNote": null,
       "depositAmount": 10000, "customerType": "guest", "maskedName": "김*코", "fromRecommendation": true,
       "visitAmount": null, "visitedAt": null, "referralConfirmed": false, "referralFee": null,
+      "pendingStartAt": null, "pendingPartySize": null, "expectedArrivalAt": null,
       "coupon": { "couponId": "string", "benefitType": "fixed_discount", "discountAmount": 5000, "discountPercent": null, "maxDiscountAmount": null, "serviceName": null }
     }
   ]
@@ -625,6 +626,8 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
   - `coupon`: 적용 · 사용된 쿠폰(`Reservation.coupon`과 같은 모양, E14 `appliedCouponFor`). 없으면 `null`. 여기의 `discountAmount`는 **쿠폰 행사의 할인 금액**이고 실제로 깎은 금액이 아니다(방문 처리 응답의 `couponDiscountAmount`). O-01 '쿠폰 사용 확인' 버튼 표시에 쓴다.
   - `referralConfirmed` · `referralFee`: 이 예약이 소개로 확정됐는지(방문 처리 때 D15가 수수료를 만들면 `true`)와 확정된 수수료(원). 소개가 아니거나 방문 전이면 `false` · `null`. 보낸 가게는 넣지 않는다.
   - `referralFeeRate`: 소개 수수료율(설정값, NFR-04). 방문 처리 화면의 수수료 미리보기용. 상세에도 있다.
+  - `pendingStartAt` · `pendingPartySize`: 손님이 낸 변경 신청 값(D8, `Reservation`과 같은 뜻). 변경 신청이 없으면 `null`. `status`가 `requested`이고 이 값이 있으면 변경 신청이다(O-02 원래 일시 · 바뀐 일시).
+  - `expectedArrivalAt`: 손님이 입력한 지연 예상 도착 시각(D14 `delay_eta`). 입력이 없으면 `null`(O-01 'N분 늦어요', FR-RSV-10).
   - 손님 등급(FR-CUS-04)은 고객 카드(C)가 만든 뒤 더한다.
 - 실패: `invalid`(date 없음 · 형식) · `unauthorized` · `forbidden_role`
 

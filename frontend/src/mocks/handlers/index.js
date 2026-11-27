@@ -7,6 +7,7 @@ import { settlementHandlers } from './settlement.js'; // 2의 상인회 월 정�
 import { walletHandlers } from './wallet.js'; // 2의 가상 잔액 · 충전 · 소개 수수료 내역(D9 · D10 · D16)
 import { recommendationHandlers } from './recommendation.js';
 import { couponHandlers } from './coupon.js';
+import { associationCouponHandlers } from './associationCoupon.js'; // 3.8 상인회 쿠폰 행사(E18)
 import { reservationSettingsHandlers } from './reservationSettings.js'; // 2의 D5 예약 운영 설정
 
 // 목 핸들러는 CONTRACTS_API.md 절(담당)별 파일로 나눈다. 이 파일은 합치기만 한다.
@@ -22,5 +23,6 @@ export const handlers = [
   ...settlementHandlers,
   ...recommendationHandlers,
   ...couponHandlers,
+  ...associationCouponHandlers,
   ...reservationSettingsHandlers,
 ];

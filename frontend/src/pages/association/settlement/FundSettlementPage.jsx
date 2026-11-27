@@ -80,6 +80,7 @@ export default function FundSettlementPage() {
 
       <nav className={styles.links} aria-label="정산 바로가기">
         <Link to="/association/settlement/fund">공동 기금 적립 내역 ›</Link>
+        <Link to="/association/settlement/coupons">상인회 쿠폰 관리 ›</Link>
       </nav>
     </main>
   );
