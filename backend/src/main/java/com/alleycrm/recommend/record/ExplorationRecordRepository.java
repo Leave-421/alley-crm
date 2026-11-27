@@ -41,6 +41,19 @@ class ExplorationRecordRepository {
                 """, visitorId, type.code(), json, dayType.code(), timeBand.code(), createdAt);
     }
 
+    /** 이 노출에 같은 종류의 피드백(거절 · 리롤)이 이미 있는지. */
+    boolean feedbackExists(long exposureId, String type) {
+        Integer count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM recommendation_feedback WHERE exposure_id = ? AND type = ?", Integer.class,
+                exposureId, type);
+        return count != null && count > 0;
+    }
+
+    void insertFeedback(long exposureId, String type, LocalDateTime at) {
+        jdbc.update("INSERT INTO recommendation_feedback (exposure_id, type, created_at) VALUES (?, ?, ?)",
+                exposureId, type, at);
+    }
+
     void insertStoreClick(long visitorId, long storeId, LocalDateTime clickedAt) {
         jdbc.update("INSERT INTO store_click (visitor_id, store_id, clicked_at) VALUES (?, ?, ?)",
                 visitorId, storeId, clickedAt);
@@ -68,7 +81,7 @@ class ExplorationRecordRepository {
      * 노출이 이 브라우저의 방문자({@code browserVisitorId}, 없으면 null)나 이 손님에 이어진 방문자의 것일 때만 찾는다.
      * 다른 사람의 노출은 없는 것과 같다(IDOR).
      */
-    Optional<ExposureSource> findExposureOwnedBy(long exposureId, Long browserVisitorId, long customerId) {
+    Optional<ExposureSource> findExposureOwnedBy(long exposureId, Long browserVisitorId, Long customerId) {
         List<ExposureSource> rows = jdbc.query("""
                 SELECT e.id, e.base_store_id, e.recommended_store_id
                 FROM recommendation_exposure e
