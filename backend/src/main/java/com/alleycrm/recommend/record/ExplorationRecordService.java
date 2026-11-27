@@ -85,6 +85,28 @@ public class ExplorationRecordService {
     }
 
     /**
+     * 추천 거절 · 리롤 기록(E8, CONTRACTS_API 3.11, FR-CRS-06). 노출이 하나라도 이 요청자의 것(이 브라우저의 방문자 또는
+     * 이 회원에 이어진 방문자)이 아니면 404이고 아무것도 남기지 않는다. 같은 (노출, 종류)는 한 번만. 순위에는 쓰지 않는다.
+     *
+     * @param customerId 로그인한 회원의 손님 ID, 익명 · 회원이 아니면 null
+     */
+    @Transactional
+    public void recordFeedback(String type, List<Long> exposureIds, Long customerId) {
+        Long browserVisitorId = visitorService.knownCurrentVisitorId().orElse(null);
+        for (long exposureId : exposureIds) {
+            if (records.findExposureOwnedBy(exposureId, browserVisitorId, customerId).isEmpty()) {
+                throw new ApiException(ErrorCode.NOT_FOUND);
+            }
+        }
+        LocalDateTime at = now();
+        for (long exposureId : exposureIds) {
+            if (!records.feedbackExists(exposureId, type)) {
+                records.insertFeedback(exposureId, type, at);
+            }
+        }
+    }
+
+    /**
      * 이 요청자의 추천 노출(쿠폰 다운로드, CONTRACTS_API 3.4). 이 브라우저의 방문자나 이 손님에 이어진 방문자의
      * 노출만 찾고, 다른 사람의 노출 · 없는 노출은 비어 있다. 방문자를 새로 발급하지 않는다.
      */

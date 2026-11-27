@@ -35,7 +35,10 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import com.alleycrm.recommend.NextStoreRecommendedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -70,15 +73,18 @@ public class RecommendationService {
     private final ExplorationRecordService records;
     private final SettingService settings;
     private final Clock clock;
+    private final ApplicationEventPublisher publisher;
 
     public RecommendationService(RecommendationRepository repository, CandidateService candidates,
-            RecommendScoreService scores, ExplorationRecordService records, SettingService settings, Clock clock) {
+            RecommendScoreService scores, ExplorationRecordService records, SettingService settings, Clock clock,
+            ApplicationEventPublisher publisher) {
         this.repository = repository;
         this.candidates = candidates;
         this.scores = scores;
         this.records = records;
         this.settings = settings;
         this.clock = clock;
+        this.publisher = publisher;
     }
 
     /** 지도 추천 조회. 기준 가게가 손님에게 보이지 않으면 404. 아무것도 기록하지 않는다. */
@@ -89,6 +95,30 @@ public class RecommendationService {
         Page p = page(ranking, page);
         return new RecommendationsResponse(String.valueOf(baseStoreId), ranking.baseTime(), ranking.baseTimeSource(),
                 p.page(), p.pageCount(), p.cards(), p.publicData());
+    }
+
+    /**
+     * 다음 가게 추천 알림(E8, CONTRACTS_API 3.11, FR-CRS-02): 예약 신청 커밋 뒤 새 트랜잭션에서 그 예약의 추천을 3.1과 같게
+     * 계산하고(기준 가게 = 예약 가게, 기준 시각 = 예약 시각), 후보가 있으면 {@link NextStoreRecommendedEvent}를 내보낸다.
+     * 알림은 C14 리스너가 이 트랜잭션 커밋 뒤에 만든다. 예약 · 가게가 없거나 보이지 않으면 아무것도 하지 않는다.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void announceNextStores(long reservationId) {
+        Optional<RecommendationRepository.BaseReservation> reservation = repository.findReservation(reservationId);
+        if (reservation.isEmpty()) {
+            return;
+        }
+        RecommendationRepository.BaseReservation r = reservation.get();
+        Optional<StoreInfo> base = repository.findVisibleStore(r.storeId());
+        if (base.isEmpty()) {
+            return;
+        }
+        // 회원은 같은 날 예약 제외 · 성별 · 연령대까지(3.1). 비회원은 지금 계산에서 식별하지 않는다
+        Requester requester = repository.isMember(r.customerId()) ? new Requester(r.customerId()) : Requester.UNIDENTIFIED;
+        Ranking ranking = rankAt(base.get(), requester, r.startAt().toInstant(ZoneOffset.UTC), BASE_TIME_RESERVATION);
+        if (!ranking.all().isEmpty()) {
+            publisher.publishEvent(new NextStoreRecommendedEvent(r.id(), r.storeId(), r.customerId()));
+        }
     }
 
     /** 한 묶음: 설정값 recommend_count씩, page를 pageCount로 나눈 나머지(FR-CRS-06). 묶음에 지역 인기 가게가 있으면 공공데이터 출처. */
