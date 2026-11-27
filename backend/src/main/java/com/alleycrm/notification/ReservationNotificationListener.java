@@ -13,8 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
- * 예약 이벤트 → 알림. 커밋 뒤에만 돈다(롤백된 신청에는 알림이 없다).
- * 변경 요청 · 승인 · 거절, 지연 입력은 그 이벤트가 생길 때 여기에 더한다(C14).
+ * 예약 이벤트 → 알림. 커밋 뒤에만 돈다(롤백된 신청에는 알림이 없다). 지연 입력 알림은 D14 DelayNoticeListener가 만든다.
  */
 @Component
 class ReservationNotificationListener {
@@ -34,19 +33,34 @@ class ReservationNotificationListener {
     @TransactionalEventListener
     @Transactional(propagation = Propagation.REQUIRES_NEW) // 원래 트랜잭션은 이미 커밋돼 새 트랜잭션에서 저장한다
     void onRequested(ReservationRequestedEvent e) {
-        accountService.findOwnerAccountId(e.storeId()).ifPresent(ownerId ->
-                notifications.notifyAccount(ownerId, NotificationType.RESERVATION_REQUESTED,
-                        Map.of("reservationId", String.valueOf(e.reservationId()))));
+        notifyOwner(e.storeId(), NotificationType.RESERVATION_REQUESTED, Map.of("reservationId", String.valueOf(e.reservationId())));
     }
 
     /**
-     * 확정 · 거절 · 취소 → 예약한 손님(FR-NTF-03 #1). 손님이 스스로 취소한 것과 방문 처리는 남기지 않는다.
-     * 거절이면 그대로 남는 다음 코스 예약 ID를 함께 준다(FR-NTF-03 #2).
+     * 상태 변경 → 알림.
+     * <ul>
+     *   <li>예약 변경(D8): 요청 → 사장님 change_requested, 승인 · 거절(자동 거절 포함) → 손님 change_approved · change_rejected</li>
+     *   <li>확정 · 거절 · 자동 취소 → 예약한 손님(FR-NTF-03 #1). 거절이면 그대로 남는 다음 코스 예약 ID를 함께 준다(#2)</li>
+     *   <li>손님이 스스로 취소 → 사장님 reservation_canceled(FR-NTF-01 #2). 손님 본인에게는 남기지 않는다</li>
+     * </ul>
+     * 방문 처리는 남기지 않는다(방문 금액 알림은 D21).
      */
     @TransactionalEventListener
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     void onStatusChanged(ReservationStatusChangedEvent e) {
         String id = String.valueOf(e.reservationId());
+        if (e.change() != null) {
+            switch (e.change()) {
+                case ReservationStatusChangedEvent.CHANGE_REQUESTED ->
+                        notifyOwner(e.storeId(), NotificationType.CHANGE_REQUESTED, Map.of("reservationId", id));
+                case ReservationStatusChangedEvent.CHANGE_APPROVED ->
+                        notifyCustomer(e, NotificationType.CHANGE_APPROVED, Map.of("reservationId", id));
+                case ReservationStatusChangedEvent.CHANGE_REJECTED ->
+                        notifyCustomer(e, NotificationType.CHANGE_REJECTED, Map.of("reservationId", id));
+                default -> throw new IllegalStateException("알 수 없는 예약 변경 값: " + e.change());
+            }
+            return;
+        }
         if (ReservationStatus.CONFIRMED.equals(e.toStatus())) {
             notifyCustomer(e, NotificationType.RESERVATION_CONFIRMED, Map.of("reservationId", id));
         } else if (ReservationStatus.CANCELED.equals(e.toStatus())) {
@@ -55,8 +69,15 @@ class ReservationNotificationListener {
                         "nextCourseReservationIds", reservations.liveNextCourseIds(e.reservationId())));
             } else if (CancelReason.AUTO_CANCELED.equals(e.cancelReason())) {
                 notifyCustomer(e, NotificationType.RESERVATION_CANCELED, Map.of("reservationId", id));
+            } else if (CancelReason.CUSTOMER_CANCELED.equals(e.cancelReason())) {
+                notifyOwner(e.storeId(), NotificationType.RESERVATION_CANCELED, Map.of("reservationId", id));
             }
         }
+    }
+
+    /** 사장님 계정이 아직 없는 가게면 남기지 않는다 */
+    private void notifyOwner(long storeId, String type, Map<String, Object> payload) {
+        accountService.findOwnerAccountId(storeId).ifPresent(ownerId -> notifications.notifyAccount(ownerId, type, payload));
     }
 
     private void notifyCustomer(ReservationStatusChangedEvent e, String type, Map<String, Object> payload) {
