@@ -51,11 +51,11 @@ public interface CouponRepository extends JpaRepository<Coupon, Long> {
     int changeStatusOfReservation(@Param("reservationId") Long reservationId,
             @Param("from") CouponStatus from, @Param("to") CouponStatus to);
 
-    /** 기한이 지난 '다운로드됨' 쿠폰을 '기간 만료'로. 바뀐 행 수. */
-    @Modifying(flushAutomatically = true)
-    @Query("UPDATE Coupon c SET c.status = :expired WHERE c.status = :downloaded AND c.expiresAt <= :now")
-    int expireDue(@Param("now") Instant now,
-            @Param("downloaded") CouponStatus downloaded, @Param("expired") CouponStatus expired);
+    /**
+     * 만료 대상(그 상태이고 만료 시각이 지금이거나 지남)을 잠그고 읽는다. 읽은 뒤 예약에 적용되는 쿠폰과 겹치지 않게 한다(3.6).
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    List<Coupon> findByStatusAndExpiresAtLessThanEqualOrderByIdAsc(CouponStatus status, Instant now);
 
     /** 가게가 대상인 쿠폰 중 그 상태들을 '적용 취소'로(운영 중단 · 탈퇴). 바뀐 행 수. */
     @Modifying(flushAutomatically = true)
