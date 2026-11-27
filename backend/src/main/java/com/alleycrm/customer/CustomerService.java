@@ -28,6 +28,12 @@ public class CustomerService {
                 .getId();
     }
 
+    /** 회원 계정의 손님 ID. 없으면 비어 있다(로그인 때 방문자 잇기처럼 없어도 계속해야 하는 곳에서 쓴다) */
+    @Transactional(readOnly = true)
+    public Optional<Long> findMemberCustomerId(long accountId) {
+        return customers.findByAccountId(accountId).map(Customer::getId);
+    }
+
     /**
      * 비회원 손님 식별(FR-CUS-02): 파기되지 않은 같은 전화번호의 비회원이 있으면 그 손님, 없으면 새로 만든다.
      * 가게를 넘어 같은 손님으로 방문 기록이 이어진다.
