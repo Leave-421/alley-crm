@@ -19,6 +19,7 @@ import com.alleycrm.coupon.service.CouponVisitService;
 import com.alleycrm.reservation.ReservationStateService;
 import com.alleycrm.reservation.ReservationStatusChangedEvent;
 import com.alleycrm.store.StoreBusinessStatusChangedEvent;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -247,6 +248,29 @@ class CouponStatusApiTest {
         mvc.perform(post(path).session(owner).contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error.code").value("csrf_invalid"));
+    }
+
+    // ---- 예약 변경(D8) ----
+
+    @Test
+    void 같은_예약_ID로_날짜만_바꾸면_승인돼도_거절돼도_쿠폰_적용이_유지된다_FR_CPN_07_2() {
+        // 예약은 12-03 15:00, 바꿀 날은 12-04 15:00(Asia/Seoul). 24시간 넘게 남아 변경 마감 전
+        long reservation = reservation(store, "confirmed");
+        jdbc.update("UPDATE reservation SET start_at = ? WHERE id = ?", NOW_UTC.plusDays(2).plusHours(5), reservation);
+        long coupon = coupon(fixedEvent, store, NOW_UTC.minusDays(1), "applied", reservation);
+        Instant nextDay = NOW.plus(Duration.ofDays(3).plusHours(5));
+
+        reservationStates.requestChange(customer, reservation, nextDay, null);
+        assertThat(statusOf(coupon)).isEqualTo("applied");
+        assertThat(reservationStates.reject(store, reservation).getStartAt()).isNotEqualTo(nextDay); // 변경 거절
+        assertThat(statusOf(coupon)).isEqualTo("applied");
+
+        reservationStates.requestChange(customer, reservation, nextDay, null);
+        assertThat(reservationStates.confirm(store, reservation).getStartAt()).isEqualTo(nextDay); // 변경 승인
+        assertThat(statusOf(coupon)).isEqualTo("applied");
+        assertThat(jdbc.queryForObject("SELECT reservation_id FROM coupon WHERE id = ?", Long.class, coupon))
+                .isEqualTo(reservation);
+        assertThat(applyService.appliedCouponFor(reservation).couponId()).isEqualTo(String.valueOf(coupon));
     }
 
     // ---- 만료 ----
