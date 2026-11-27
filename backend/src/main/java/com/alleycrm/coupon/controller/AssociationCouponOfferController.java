@@ -5,7 +5,7 @@ import com.alleycrm.account.AccountRole;
 import com.alleycrm.common.error.ApiException;
 import com.alleycrm.common.error.ErrorCode;
 import com.alleycrm.coupon.dto.AssociationCouponOfferResponse;
-import com.alleycrm.coupon.dto.AssociationCouponResponse;
+import com.alleycrm.coupon.dto.CouponResponse;
 import com.alleycrm.coupon.service.AssociationCouponOfferService;
 import com.alleycrm.customer.CustomerService;
 import org.springframework.http.HttpStatus;
@@ -41,7 +41,7 @@ class AssociationCouponOfferController {
 
     @PostMapping("/{eventId}/claim")
     @ResponseStatus(HttpStatus.CREATED)
-    AssociationCouponResponse claim(@AuthenticationPrincipal AccountPrincipal me, @PathVariable String eventId) {
+    CouponResponse claim(@AuthenticationPrincipal AccountPrincipal me, @PathVariable String eventId) {
         long customerId = member(me);
         return service.claim(parseEventId(eventId), customerId);
     }
