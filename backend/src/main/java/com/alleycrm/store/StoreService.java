@@ -36,12 +36,12 @@ public class StoreService {
         this.events = events;
     }
 
-    /** 사장님이 아니거나 가게가 승인 전 · 거절 · 탈퇴면 403 forbidden_role. 가게 ID는 세션 계정에서만 정한다. */
+    /** 사장님이 아니거나 가게가 참여 가게(승인 · 탈퇴 신청 중)가 아니면 403 forbidden_role. 가게 ID는 세션 계정에서만 정한다. */
     @Transactional(readOnly = true)
     public long requireApprovedOwnStore(AccountPrincipal me) {
         me.requireRole(AccountRole.OWNER);
         Store store = stores.findById(me.storeId()).orElseThrow(() -> new ApiException(ErrorCode.FORBIDDEN_ROLE));
-        if (!StoreJoinStatus.APPROVED.equals(store.getJoinStatus())) {
+        if (!StoreJoinStatus.isParticipating(store.getJoinStatus())) {
             throw new ApiException(ErrorCode.FORBIDDEN_ROLE);
         }
         return store.getId();

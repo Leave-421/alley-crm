@@ -2,6 +2,7 @@ package com.alleycrm.reservation.request;
 
 import com.alleycrm.common.error.ApiException;
 import com.alleycrm.common.error.ErrorCode;
+import com.alleycrm.store.StoreJoinStatus;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -34,7 +35,7 @@ class AvailableSlotsController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant after) {
         StoreSnapshot store = slots.read(storeId)
-                .filter(s -> "approved".equals(s.joinStatus()))
+                .filter(s -> StoreJoinStatus.isParticipating(s.joinStatus()))
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND));
         Instant now = Instant.now(clock);
         LocalDate today = LocalDate.ofInstant(now, SlotRules.SERVICE_ZONE);

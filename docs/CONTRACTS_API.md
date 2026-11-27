@@ -132,9 +132,28 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 - 응답 `200`: `StoreJoin`
 - 실패: `not_found` · `conflict`(신청 상태가 아님) · `unauthorized` · `forbidden_role` · `csrf_invalid`
 
+#### `POST /api/v1/owner/store/withdrawal` — 탈퇴 신청 (C7)
+
+- 역할: 사장님(내 가게). 손님 · 상인회는 `403 forbidden_role`. `X-XSRF-TOKEN` 필요. 요청 본문 없음.
+- `approved`인 가게만 `withdraw_requested`로 바꾼다. **미정산이 있으면 거절**한다(FR-STO-03 #1). 미정산 = 그 가게가 낸 소개 수수료(`referral_fee.receiving_store_id`)가 있는 달 중 그 권역 `settlement`가 `confirmed`가 아닌 달(05-policy 「정산」).
+- 상인회가 처리하기 전까지 가게는 **그대로 운영된다**(FR-STO-03 #3). 목록 · 지도 · 예약 · 추천 · 쿠폰 · 사장님 기능 모두 `withdraw_requested`를 `approved`와 같이 참여 가게로 본다(`StoreJoinStatus.isParticipating`). 철회 API는 없다.
+- 응답 `200`: `StoreJoin`(`joinStatus: "withdraw_requested"`)
+- 실패: `conflict`(승인된 가게가 아님 · 이미 신청함 · 미정산 있음) · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+#### `POST /api/v1/store-joins/{storeId}/withdraw` — 탈퇴 처리 (C7)
+
+- 역할: 상인회. 자기 권역 가게만(다른 권역 가게는 `404`). 사장님 · 손님은 `403 forbidden_role`. `X-XSRF-TOKEN` 필요. 요청 본문 없음. 신청 목록은 `GET /api/v1/store-joins?status=withdraw_requested`.
+- `withdraw_requested`인 가게만 `withdrawn`으로 바꾼다. 미정산을 **다시 확인**해 있으면 거절한다(FR-STO-03 #1).
+- 같은 트랜잭션에서:
+  - 그 가게 미사용 쿠폰을 `apply_canceled`로 바꾼다(`CouponStatusService.cancelUnusedForStore`, FR-CPN-07 #4).
+  - `store.business_status_changed_at`을 지금 시각으로 남겨 30일 제한을 푼다(3.4 「휴업 뒤 제한 해제」와 같은 칸).
+- 탈퇴한 가게는 목록 · 지도 · 예약 · 추천 후보에서 빠지고 사장님 기능은 `403`이다. 방문 이력 · 수수료 기록은 지우지 않는다(집계에만 남음, FR-STO-03 #2). 이미 받은 예약은 바꾸지 않는다.
+- 응답 `200`: `StoreJoin`(`joinStatus: "withdrawn"`)
+- 실패: `not_found` · `conflict`(탈퇴 신청 상태가 아님 · 미정산 있음) · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
 #### 서버 내부: 승인된 사장님 확인 (D · E가 씀)
 
-- 사장님 기능의 Controller는 `StoreService.requireApprovedOwnStore(me)`로 가게 ID를 얻는다. 사장님이 아니거나 가게가 `approved`가 아니면 `403 forbidden_role`(FR-AUTH-04 #1). 가게 ID는 세션 계정에서만 정하고 요청에서 받지 않는다.
+- 사장님 기능의 Controller는 `StoreService.requireApprovedOwnStore(me)`로 가게 ID를 얻는다. 사장님이 아니거나 가게가 참여 가게(`approved` · `withdraw_requested`)가 아니면 `403 forbidden_role`(FR-AUTH-04 #1, FR-STO-03 #3). 가게 ID는 세션 계정에서만 정하고 요청에서 받지 않는다.
 - 경로에 가게 ID가 있으면 `StoreService.requireApprovedOwnStore(me, storeId)` — 다른 가게면 `404 not_found`(IDOR).
 
 ### 가게 목록 · 위치 (C6)
@@ -182,7 +201,7 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 
 사장님이 자기 가게의 영업 상태 · 예약 받기(O-03)와 영업시간 · 휴무일(O-12)을 바꾼다(FR-STO-02). 가게는 세션 계정에서만 정하고 경로 · 요청에서 받지 않는다. 주소 · 지도 위치는 상인회만 바꾼다(위 `PUT /api/v1/stores/{storeId}/location`, FR-STO-02 #3).
 
-- 역할: 사장님, 가입 승인된 가게만(`StoreService.requireApprovedOwnStore`). 손님 · 상인회 · 승인 전 · 거절 가게의 사장님은 `403 forbidden_role`. `PUT`은 `X-XSRF-TOKEN` 필요.
+- 역할: 사장님, 참여 가게(승인 · 탈퇴 신청 중)만(`StoreService.requireApprovedOwnStore`). 손님 · 상인회 · 승인 전 · 거절 · 탈퇴 가게의 사장님은 `403 forbidden_role`. `PUT`은 `X-XSRF-TOKEN` 필요.
 - 응답 `200`: 세 API 모두 위 `Store`.
 
 #### `GET /api/v1/owner/store` — 내 가게
@@ -1416,7 +1435,7 @@ DB가 막지 않는 것(유형별 필수 칸, 확정 뒤 변경 금지, 중단�
 
 - `CouponStatusService.cancelUnusedForStore(long storeId)`: 그 가게가 대상인 `downloaded` · `applied` 쿠폰을 `apply_canceled`로 바꾼다(FR-CPN-07 #4). 30일 제한 해제는 `business_status_changed_at`으로 이미 처리된다(3.4).
 - **휴업 · 운영 중단**: C22(#116)가 영업 상태를 바꾼 트랜잭션 안에서 내보내는 `StoreBusinessStatusChangedEvent(storeId, businessStatus)`를 E14가 `@EventListener`로 받아, `businessStatus`가 `paused` · `closed`면 위 메서드를 부른다(FR-STO-02 #1). 예약 받기 '잠시 멈춤'(이벤트 없음)이나 쿠폰 행사 중단(FR-CPN-11)에는 바뀌지 않는다.
-- **탈퇴**: 탈퇴를 처리하는 곳(C)이 같은 트랜잭션에서 위 메서드를 부른다.
+- **탈퇴**: 상인회 탈퇴 처리(C7 `POST /api/v1/store-joins/{storeId}/withdraw`)가 같은 트랜잭션에서 위 메서드를 부르고, `business_status_changed_at`도 남긴다.
 
 ### 늦은 방문 처리 → 되돌리기 (서버 내부, 11-25 (5))
 
@@ -1435,7 +1454,6 @@ DB가 막지 않는 것(유형별 필수 칸, 확정 뒤 변경 금지, 중단�
 | # | 내용 | 정해지지 않은 동안 | 결정 주체 |
 | --- | --- | --- | --- |
 | S-1 | 사장님 예약 응답(D3 · D4 · D11 · O-13)의 `coupon` 칸 채우기 — E가 `CouponApplyService.appliedCouponFor(reservationId)`(3.5 모양)를 제공하고 D가 응답에 넣는다. 지금은 `null` | 사장님 화면은 사용 확인 API의 `conflict`로 판단 | D (#14 · #19) |
-| S-2 | (휴업 · 운영 중단은 닫힘 — E14 리스너 #230) 탈퇴 처리 때 `cancelUnusedForStore` 부르기 | 탈퇴는 그 기능이 생길 때 C가 부른다 | C (C7) |
 | S-3 | 만료 작업 실행 주기 | 메서드만 둔다 | D (D7 #103) |
 
 ### 3.7 오늘의 코스 (E10 #52 · 계약 #210)

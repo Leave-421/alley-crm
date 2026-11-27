@@ -2,6 +2,7 @@ package com.alleycrm.reservation.request;
 
 import com.alleycrm.common.error.ApiException;
 import com.alleycrm.common.error.ErrorCode;
+import com.alleycrm.store.StoreJoinStatus;
 import java.time.LocalDate;
 import org.springframework.stereotype.Component;
 
@@ -31,8 +32,8 @@ class AvailabilityStep implements ReservationRequestStep {
     public void apply(ReservationRequestContext ctx) {
         StoreSnapshot store = slots.lock(ctx.getStoreId())
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND));
-        // 승인되지 않은 가게는 손님에게 없는 가게다
-        if (!"approved".equals(store.joinStatus())) {
+        // 참여 가게(승인 · 탈퇴 신청 중)가 아니면 손님에게 없는 가게다
+        if (!StoreJoinStatus.isParticipating(store.joinStatus())) {
             throw new ApiException(ErrorCode.NOT_FOUND);
         }
         ctx.setStore(store);

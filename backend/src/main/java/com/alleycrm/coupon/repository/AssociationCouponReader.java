@@ -22,13 +22,13 @@ public class AssociationCouponReader {
         this.jdbc = jdbc;
     }
 
-    /** {@code ids} 중 그 권역의 승인된(참여) 가게. */
+    /** {@code ids} 중 그 권역의 참여 가게(승인 · 탈퇴 신청 중). */
     public Set<Long> approvedStoresInRegion(long regionId, Collection<Long> ids) {
         if (ids.isEmpty()) {
             return Set.of();
         }
         return new HashSet<>(jdbc.queryForList("""
-                SELECT id FROM store WHERE region_id = :regionId AND join_status = 'approved' AND id IN (:ids)
+                SELECT id FROM store WHERE region_id = :regionId AND join_status IN ('approved', 'withdraw_requested') AND id IN (:ids)
                 """, new MapSqlParameterSource("regionId", regionId).addValue("ids", ids), Long.class));
     }
 

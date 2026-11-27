@@ -28,7 +28,7 @@ class CandidateRepository {
                 FROM store s
                 JOIN store base ON base.id = ? AND s.region_id = base.region_id
                 WHERE s.id <> base.id
-                  AND s.join_status = 'approved'
+                  AND s.join_status IN ('approved', 'withdraw_requested')
                   AND s.business_status = 'open'
                   AND s.reservation_enabled = TRUE
                 ORDER BY s.id
