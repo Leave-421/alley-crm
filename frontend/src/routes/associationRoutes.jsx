@@ -4,6 +4,7 @@ import AppLayout from '@/layouts/AppLayout.jsx';
 import { ASSOCIATION_MENU } from '@/layouts/menus.js';
 import { Link } from 'react-router';
 import PlaceholderPage from '@/pages/PlaceholderPage.jsx';
+import AssociationCouponsPage from '@/pages/association/coupons/AssociationCouponsPage.jsx';
 import FundSettlementPage from '@/pages/association/settlement/FundSettlementPage.jsx';
 import StoreManagementPage from '@/pages/association/stores/StoreManagementPage.jsx';
 
@@ -32,6 +33,8 @@ export const associationRoutes = [
           { path: 'flow', element: <PlaceholderPage screenId="A-03" title="방문 흐름" /> },
           { path: 'settlement', handle: { title: '공동 기금 · 정산' }, element: <FundSettlementPage /> }, // A-04 B18
           // A-07 공동 기금 적립 내역(A28). A-04 '공동 기금 적립 내역'의 진입 주소. A가 element만 바꾼다
+          // A-10 상인회 쿠폰 관리(B27, 번호 임시). 기금이 부담해서 '정산' 탭 안, A-04에서 진입(배치는 B가 정함, 11-25 (5))
+          { path: 'settlement/coupons', handle: { title: '상인회 쿠폰' }, element: <AssociationCouponsPage /> },
           { path: 'settlement/fund', handle: { title: '공동 기금 적립 내역' }, element: <PlaceholderPage screenId="A-07" title="공동 기금 적립 내역" /> },
         ],
       },

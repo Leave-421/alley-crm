@@ -20,11 +20,13 @@ const wallets = {
   },
   // 목 권역 공동 기금: 소개 수수료가 들어온 내역(fund_deposited)
   fund: {
-    balance: 4200,
+    balance: 64200,
     transactions: [
       { id: 'f3', type: 'fund_deposited', amount: 1680, reservationId: 'r-103', createdAt: '2026-11-24T11:20:00Z' },
       { id: 'f2', type: 'fund_deposited', amount: 1520, reservationId: 'r-102', createdAt: '2026-11-18T10:05:00Z' },
       { id: 'f1', type: 'fund_deposited', amount: 1000, reservationId: 'r-091', createdAt: '2026-10-20T09:00:00Z' },
+      // 이전 달들에 모인 소개 수수료(목: 상인회 쿠폰 예산을 잡아 볼 수 있게)
+      { id: 'f0', type: 'fund_deposited', amount: 60000, reservationId: null, createdAt: '2026-09-30T09:00:00Z' },
     ],
   },
 };
@@ -111,3 +113,17 @@ export const walletHandlers = [
     return HttpResponse.json({ month, sentCount: month === null ? 5 : 3, receivedCount: received });
   }),
 ];
+
+/**
+ * 다른 목(상인회 쿠폰 행사 E18)이 공동 기금에서 예산을 잡을 때 쓴다(D20 fund_budget_reserved).
+ * 기금은 마이너스가 되지 않는다: 모자라면 false.
+ */
+export function reserveMockFundBudget(amount, associationEventId) {
+  if (wallets.fund.balance < amount) return false;
+  wallets.fund.balance -= amount;
+  wallets.fund.transactions = [
+    { id: `t${nextTxId++}`, type: 'fund_budget_reserved', amount: -amount, reservationId: null, associationEventId, createdAt: new Date().toISOString() },
+    ...wallets.fund.transactions,
+  ];
+  return true;
+}
