@@ -2,10 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import buttonStyles from '@/components/Button/Button.module.css';
 import { RECOMMENDATION_BADGE_LABELS, getRecommendations, recordRecommendationExposures } from '@/api/recommendations.js';
+import { getMyReservations } from '@/api/reservations.js';
+import { SESSION_STATUS, useSession } from '@/auth/session.js';
+import { nextCourseLink } from '@/pages/customer/reserve/recommendationCards.js';
+import { formatSlotTime } from '@/pages/customer/reserve/reserveTime.js';
 import { ALLEY_LABELS, CATEGORY_LABELS, formatClosedDays, formatHours } from './storeCatalog.js';
 import { buildingMetrics } from './alleyIllustrations.js';
 import BuildingFace from './BuildingFace.jsx';
+import SheetSlotPicker from './SheetSlotPicker.jsx';
 import styles from './StoreSheet.module.css';
+
+const ctaDate = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', weekday: 'short' });
 
 const SHEET_HEIGHT = 600;
 const PEEK = 390;
@@ -21,6 +28,10 @@ const RANKS = [1, 2, 3];
  * '다음 코스' 칩 · '다음에 많이 찾은 곳 3곳' 카드(A5, #22)는 지도 추천(3.1 GET /recommendations)으로 채우고,
  * 그린 뒤 탐색 노출을 한 번 기록한다(POST /recommendation-exposures). 기록이 부족한 가게는 '지역 인기 3곳(공공데이터 기반 추정)'.
  * 누르면 같은 골목 가게는 바로 그 가게를 열고, 다른 골목 가게는 그 골목으로 가서 연다(목업).
+ *
+ * '예약 시간'(A7, #27)에서 바로 날짜 · 시간을 고르면 예약하기 바가 그 시각으로 예약 화면(G-02)을 연다. 앞 일정은 다른 가게의
+ * 내 예약. 추천 카드의 '다음 코스로 예약하기'는 이 가게에 내 예약(신청 · 확정)이 있을 때만 열리고(G-03), 없으면 잠그고 이유를 보인다.
+ * G-01 카드는 탐색 노출만 기록해서(3.1 R-18) 정식 제안 ID 없이 간다 — 코스로는 묶이지만 소개 후보는 아니다.
  */
 const PHOTO_WIDTH = 358; // 시트 폭 390 - 좌우 16
 const PHOTO_HEIGHT = 150; // 목업 사진 높이
@@ -77,6 +88,39 @@ function useStoreRecommendations(storeId) {
   return current ? { ...current, exposureIds } : null;
 }
 
+/**
+ * 회원의 앞으로 갈 예약(신청 · 확정, 시작 전) — 가까운 것부터. '다음 코스로 예약하기'의 기준 가게 예약과
+ * 시트 '예약 시간'의 앞 일정을 여기서 찾는다(FR-RSV-11). 비회원 · 로그인 안 함은 알 수 없어 빈 목록.
+ */
+function useMyUpcomingReservations() {
+  const { status, role } = useSession();
+  const isMember = status === SESSION_STATUS.AUTHENTICATED && role === 'customer';
+  const [loaded, setLoaded] = useState(null); // { items } — 불러오지 못하면 빈 목록으로 둔다(시트는 그대로 쓸 수 있게)
+
+  useEffect(() => {
+    if (!isMember) return undefined;
+    let active = true;
+    getMyReservations()
+      .then((data) => {
+        const nowMs = Date.now();
+        const items = data.items
+          .flatMap((group) => group.reservations)
+          .filter((r) => (r.status === 'requested' || r.status === 'confirmed') && Date.parse(r.startAt) > nowMs)
+          .sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt));
+        if (active) setLoaded({ items });
+      })
+      .catch((error) => {
+        console.warn('내 예약을 불러오지 못해 다음 코스를 잠가 둬요.', error);
+        if (active) setLoaded({ items: [] });
+      });
+    return () => {
+      active = false;
+    };
+  }, [isMember]);
+
+  return isMember ? (loaded?.items ?? []) : [];
+}
+
 /** '예약 혜택' 카드 밑의 쿠폰 상세 진입(FR-CPN-02). 가게를 누를 때마다 팝업을 띄우지 않고, 손님이 이 줄을 눌렀을 때만 연다 */
 function couponLink(card, alley, baseStoreId, exposureId) {
   const query = new URLSearchParams({ store: card.store.id, base: baseStoreId });
@@ -106,6 +150,16 @@ export default function StoreSheet({ store, alley, alleyLabel, building, scale, 
   const thin = recItems.length > 0 && recItems.every((card) => card.badge === 'local_popular');
   const publicData = recommendation?.data?.publicData;
   const rankClass = (card) => (card.store.alley === alley ? styles.rankSame : styles.rankOther);
+
+  // 기준 가게 예약: 지금 연 가게의 내 예약(가장 가까운 것). 있으면 추천 카드의 '다음 코스로 예약하기'가 열린다(FR-RSV-11)
+  const upcoming = useMyUpcomingReservations();
+  const baseReservation = store ? upcoming.find((r) => r.storeId === store.id) : null;
+  // 앞 일정: 다른 가게의 가장 가까운 내 예약. '앞 일정 지우기'를 누르면 이 골목 화면에 있는 동안 앞 일정 없이 고른다(목업)
+  const [planCleared, setPlanCleared] = useState(false);
+  const priorPlan = store && !planCleared ? (upcoming.find((r) => r.storeId !== store.id) ?? null) : null;
+  const [pickedSlot, setPickedSlot] = useState(null); // { storeId, startAt } — 시트에서 고른 시각
+  const picked = pickedSlot?.storeId === store?.id ? pickedSlot.startAt : null;
+
   const [dragY, setDragY] = useState(null);
   const dragRef = useRef(null);
   const base = mode === 'full' ? 0 : PEEK;
@@ -201,10 +255,11 @@ export default function StoreSheet({ store, alley, alleyLabel, building, scale, 
         <div className={styles.ctaRow}>
           {store && (
             <Link
-              to={`/alleys/${alley}/reserve?store=${encodeURIComponent(store.id)}`}
+              to={`/alleys/${alley}/reserve?store=${encodeURIComponent(store.id)}${picked ? `&at=${encodeURIComponent(picked)}` : ''}`}
               className={`${buttonStyles.button} ${buttonStyles.primary} ${styles.cta}`}
             >
-              {store.name} 예약하기
+              {/* 목업: 시간을 고르면 '11. 29. (일) 19:30 예약하기' */}
+              {picked ? `${ctaDate.format(Date.parse(picked))} ${formatSlotTime(picked)} 예약하기` : `${store.name} 예약하기`}
             </Link>
           )}
         </div>
@@ -232,6 +287,15 @@ export default function StoreSheet({ store, alley, alleyLabel, building, scale, 
               </div>
             </dl>
 
+            <SheetSlotPicker
+              key={store.id}
+              store={store}
+              priorPlan={priorPlan}
+              onClearPlan={() => setPlanCleared(true)}
+              picked={picked}
+              onPick={(startAt) => setPickedSlot(startAt ? { storeId: store.id, startAt } : null)}
+            />
+
             <div className={styles.recTitle}>{thin ? '지역 인기 3곳 (공공데이터 기반 추정)' : '다음에 많이 찾은 곳 3곳'}</div>
             {thin && <div className={styles.cap}>이 가게는 아직 연계 방문 기록이 부족해서, 공공데이터로 추정한 지역 인기 가게를 보여드려요.</div>}
             {recItems.length > 0 && <div className={styles.cap}>누르면 그 가게 정면으로 바로 이동해요</div>}
@@ -247,9 +311,14 @@ export default function StoreSheet({ store, alley, alleyLabel, building, scale, 
               ))}
             {recommendation?.error && <div className={styles.cap}>추천을 불러오지 못했어요.</div>}
             {recommendation?.data && recItems.length === 0 && <div className={styles.cap}>지금은 추천할 가게가 없어요.</div>}
+            {recItems.length > 0 && !baseReservation && (
+              <div id="next-course-lock" className={styles.lockNote}>
+                {store.name} 예약을 신청하면 '다음 코스로 예약하기'가 열려요. 지금은 추천 가게를 새 기준 가게로 골라 따로 예약할 수 있어요.
+              </div>
+            )}
             {recItems.map((card) => (
               <div key={card.store.id} className={styles.recItem}>
-              <RecommendationTarget card={card} alley={alley} onOpenStore={onOpenStore} className={card.couponBenefit ? `${styles.recCard} ${styles.recCardWithCoupon}` : styles.recCard}>
+              <RecommendationTarget card={card} alley={alley} onOpenStore={onOpenStore} className={`${styles.recCard} ${styles.recCardTop}`}>
                 <span className={`${styles.recRank} ${rankClass(card)}`}>{card.rank}</span>
                 <span className={styles.recText}>
                   <span className={styles.recName}>{card.store.name}</span>
@@ -263,8 +332,19 @@ export default function StoreSheet({ store, alley, alleyLabel, building, scale, 
                   <span className={styles.recReason}>{card.reasonText}</span>
                 </span>
               </RecommendationTarget>
+              <div className={card.couponBenefit ? styles.recNext : `${styles.recNext} ${styles.recFooterLast}`}>
+                {baseReservation ? (
+                  <Link {...nextCourseLink(baseReservation, { ...card, proposalId: null })} className={styles.recNextButton}>
+                    다음 코스로 예약하기
+                  </Link>
+                ) : (
+                  <button type="button" className={styles.recNextButton} disabled aria-describedby="next-course-lock">
+                    다음 코스로 예약하기 · 잠김
+                  </button>
+                )}
+              </div>
               {card.couponBenefit && (
-                <Link to={couponLink(card, alley, store.id, recommendation.exposureIds[card.store.id])} className={styles.recCoupon}>
+                <Link to={couponLink(card, alley, store.id, recommendation.exposureIds[card.store.id])} className={`${styles.recCoupon} ${styles.recFooterLast}`}>
                   <span>{card.store.name} 예약 혜택 · 쿠폰 보기</span>
                   <span aria-hidden="true">›</span>
                 </Link>

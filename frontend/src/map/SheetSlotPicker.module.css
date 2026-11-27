@@ -1,0 +1,137 @@
+/* 가게 시트 '예약 시간' — 확정 목업 GuestAlley 시트 그대로 */
+.title {
+  margin: 18px 0 8px;
+  color: #130a0d;
+  font-size: 15px;
+  line-height: 21px;
+  font-weight: 800;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.course {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: #f2dce5;
+  color: #523344;
+  font-size: 12.5px;
+  line-height: 19px;
+  font-weight: 600;
+}
+
+.courseText {
+  flex: 1;
+}
+
+.clear {
+  flex: none;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #7a3a58;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.dates {
+  display: flex;
+  gap: 8px;
+  margin: 0 -16px;
+  padding: 2px 16px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.date {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  width: 56px;
+  height: 62px;
+  padding: 0;
+  border: 1.5px solid #e3d3dc;
+  border-radius: 16px;
+  background: #fff;
+  color: #130a0d;
+  font: inherit;
+  cursor: pointer;
+}
+
+.date b {
+  font-size: 18px;
+  line-height: 22px;
+}
+
+.dateOn {
+  border-color: #523344;
+  background: #523344;
+  color: #fff;
+}
+
+.dateSub {
+  color: #574050;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.dateOn .dateSub {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.sunday {
+  color: #9a4a3c;
+}
+
+.times {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.time {
+  height: 44px;
+  padding: 0;
+  border: 1.5px solid #e3d3dc;
+  border-radius: 14px;
+  background: #fff;
+  color: #130a0d;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.timeOn {
+  border-color: #523344;
+  background: #523344;
+  color: #fff;
+}
+
+.timeOff {
+  border-color: #efe6ea;
+  background: #f4eef1;
+  color: #a8949f;
+  text-decoration: line-through;
+  cursor: not-allowed;
+}
+
+.hint {
+  margin-top: 8px;
+  color: var(--color-ink-500);
+  font-size: 12px;
+  line-height: 18px;
+}
