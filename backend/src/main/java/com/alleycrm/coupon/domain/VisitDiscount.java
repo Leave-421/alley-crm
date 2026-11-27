@@ -11,22 +11,34 @@ package com.alleycrm.coupon.domain;
  */
 public record VisitDiscount(int discountAmount, int couponCost) {
 
+    /** 가게 쿠폰(3.2). */
     public static VisitDiscount of(CouponPolicy event, int visitAmount) {
+        return of(event.getBenefitType(), event.getDiscountAmount(), event.getDiscountPercent(),
+                event.getMaxDiscountAmount(), event.getServiceValue(), visitAmount);
+    }
+
+    /** 상인회 쿠폰(3.8 · 3.10). 정액 · 정률만 있고 쿠폰 비용 = 할인액(공동 기금 부담). */
+    public static VisitDiscount of(AssociationCouponEvent event, int visitAmount) {
+        return of(event.getBenefitType(), event.getDiscountAmount(), event.getDiscountPercent(),
+                event.getMaxDiscountAmount(), null, visitAmount);
+    }
+
+    private static VisitDiscount of(BenefitType type, Integer discountAmount, Integer discountPercent,
+            Integer maxDiscountAmount, Integer serviceValue, int visitAmount) {
         if (visitAmount < 0) {
             throw new IllegalArgumentException("방문 금액은 0 이상이다: " + visitAmount);
         }
-        return switch (event.getBenefitType()) {
+        return switch (type) {
             case FIXED_DISCOUNT -> {
-                int discount = Math.min(event.getDiscountAmount(), visitAmount);
+                int discount = Math.min(discountAmount, visitAmount);
                 yield new VisitDiscount(discount, discount);
             }
             case PERCENT_DISCOUNT -> {
-                long raw = (long) visitAmount * event.getDiscountPercent() / 100;
-                Integer max = event.getMaxDiscountAmount();
-                int discount = (int) (max == null ? raw : Math.min(raw, max));
+                long raw = (long) visitAmount * discountPercent / 100;
+                int discount = (int) (maxDiscountAmount == null ? raw : Math.min(raw, maxDiscountAmount));
                 yield new VisitDiscount(discount, discount);
             }
-            case SERVICE -> new VisitDiscount(0, event.getServiceValue() == null ? 0 : event.getServiceValue());
+            case SERVICE -> new VisitDiscount(0, serviceValue == null ? 0 : serviceValue);
         };
     }
 }
