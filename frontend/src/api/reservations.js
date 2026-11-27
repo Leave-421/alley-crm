@@ -2,6 +2,20 @@ import { api } from '@/api/client.js';
 
 // 손님 예약 신청 · 예약 가능 시간 — CONTRACTS_API.md 「2. 예약」(D2 · D5).
 
+/** 예약 상태 enum(CONTRACTS.md 「3」 reservation.status). 노쇼 상태는 없다 */
+export const RESERVATION_STATUS_LABELS = Object.freeze({ requested: '신청', confirmed: '확정', visited: '방문 완료', canceled: '취소' });
+
+/** 취소 사유 enum(CONTRACTS.md 「3」 reservation.cancelReason) */
+export const CANCEL_REASON_LABELS = Object.freeze({ customer_canceled: '내가 취소', store_rejected: '가게 거절', auto_canceled: '자동 취소' });
+
+/**
+ * 회원의 내 예약(D13). 묶음 목록 — 다음 코스 예약은 기준 예약과 한 묶음(courseRootId), 따로 한 예약은 혼자 한 묶음.
+ * @returns {Promise<{ items: { courseRootId: string | null, reservations: object[] }[] }>}
+ */
+export function getMyReservations() {
+  return api.get('/api/v1/reservations/mine');
+}
+
 /** 성별 enum(CONTRACTS.md 「3」 gender). 응답 안 함은 null */
 export const GENDER_LABELS = Object.freeze({ female: '여성', male: '남성' });
 

@@ -1,0 +1,264 @@
+/* 확정 목업 GuestTrips: 예정 · 지난 탭, 날짜별 묶음(코스면 '방문 코스 N곳'), 예약 카드, 그 가게 다음에 많이 찾은 곳 */
+.page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-2) var(--layout-gutter) 0;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.cap {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: 18px;
+}
+
+.cap a {
+  color: var(--color-ink-700);
+  font-weight: var(--weight-bold);
+}
+
+.empty {
+  margin: 0 0 6px;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+}
+
+/* 탭(목업 seg: 회색 바탕 위 흰 선택) */
+.tabs {
+  display: flex;
+  gap: 6px;
+  margin: var(--space-1) 0 var(--space-4);
+  padding: 4px;
+  border-radius: 16px;
+  background: #f3eef1;
+}
+
+.tab {
+  flex: 1;
+  min-height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--color-ink-500);
+  font-size: var(--text-md);
+  font-weight: var(--weight-heavy);
+  cursor: pointer;
+}
+
+.tabOn {
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(150, 120, 137, 0.14);
+  color: var(--color-ink-900);
+}
+
+.card {
+  padding: 14px var(--space-4);
+  border: 1px solid var(--color-surface-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+/* 묶음 */
+.group {
+  margin-bottom: 22px;
+}
+
+.groupHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: 10px;
+}
+
+.groupDate {
+  margin: 0;
+  color: var(--color-ink-800);
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: var(--weight-regular);
+  line-height: 26px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: var(--radius-badge);
+  background: #f2dce5;
+  color: #7a3a58;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  white-space: nowrap;
+}
+
+/* 코스 안 예약 사이 점선 */
+.connector {
+  width: 0;
+  height: 18px;
+  margin-left: 32px;
+  border-left: 2px dashed #c9a9c5;
+}
+
+.row {
+  display: flex;
+  gap: 14px;
+}
+
+.time {
+  flex: none;
+  min-width: 52px;
+  font-size: 20px;
+  font-weight: var(--weight-heavy);
+  line-height: 28px;
+}
+
+.main {
+  min-width: 0;
+  flex: 1;
+}
+
+.storeName {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-heavy);
+  line-height: 22px;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: 4px;
+  color: var(--color-text-muted);
+  font-size: var(--text-md);
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: var(--radius-badge);
+  background: #eee0ec;
+  color: var(--color-ink-700);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+}
+
+.statusVisited {
+  background: var(--color-ink-800);
+  color: var(--color-on-brand);
+}
+
+.statusCanceled {
+  background: #f3edf1;
+  color: #8a6a7c;
+}
+
+.note {
+  margin: 8px 0 0;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: #e6dae1;
+  color: var(--color-ink-600);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  line-height: 20px;
+}
+
+/* 그 가게 다음에 많이 찾은 곳 */
+.next {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e4d9df;
+}
+
+.nextHead {
+  margin-bottom: 8px;
+  font-size: var(--text-md);
+  font-weight: var(--weight-heavy);
+}
+
+.nextList {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nextCard {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow: inset 0 0 0 1px rgba(63, 36, 42, 0.1);
+}
+
+.rank {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--color-ink-700);
+  color: #fff;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-heavy);
+  line-height: 22px;
+  text-align: center;
+}
+
+.nextBody {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.nextName {
+  font-size: var(--text-base);
+  font-weight: var(--weight-heavy);
+}
+
+.nextLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: 4px;
+}
+
+.nextBook,
+.nextAlley {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+}
+
+.nextBook {
+  color: var(--color-ink-700);
+}
+
+.nextAlley {
+  color: var(--color-ink-600);
+}
+
+.showNext {
+  width: 100%;
+  min-height: 40px;
+  margin-top: 12px;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow: inset 0 0 0 1px rgba(63, 36, 42, 0.12);
+  color: var(--color-ink-800);
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  cursor: pointer;
+}
