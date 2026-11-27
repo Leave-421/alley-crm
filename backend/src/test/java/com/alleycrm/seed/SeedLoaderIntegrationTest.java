@@ -111,7 +111,9 @@ class SeedLoaderIntegrationTest {
 
         assertThat(count("account")).isZero();
         assertThat(countReal("customer")).isZero();
-        assertThat(count("visitor")).isZero();
+        // 시드도 가상 방문자(E17)를 넣으므로, 직접 넣은 방문자가 지워졌는지 본다
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM visitor WHERE anon_id = ?", Integer.class,
+                "00000000-0000-0000-0000-000000000001")).isZero();
         assertThat(count("setting")).isZero();
         assertThat(count("store")).isEqualTo(15);
         assertThat(second.clearedTables()).doesNotContain("flyway_schema_history");
@@ -142,7 +144,7 @@ class SeedLoaderIntegrationTest {
         loader.resetAndLoad(data);
 
         assertThat(countReal("reservation")).isZero();
-        assertThat(count("course_proposal")).isZero();
+        assertThat(countReal("course_proposal")).isZero(); // 시드의 정식 제안(E17)은 data_source = demo
         assertThat(countReal("customer")).isZero();
         assertThat(count("store")).isEqualTo(15);
     }
@@ -210,6 +212,60 @@ class SeedLoaderIntegrationTest {
         assertThat(jdbc.queryForObject("""
                 SELECT COUNT(*) FROM reservation r JOIN customer c ON c.id = r.customer_id
                 WHERE r.status = 'visited' AND (c.last_visit_at IS NULL OR c.last_visit_at < r.visited_at)
+                """, Integer.class)).isZero();
+    }
+
+    @Test
+    void 가상_데이터_2는_노출_코스_제안_소개_수수료_정산을_같은_원천에서_맞게_넣는다_NFR_08_4() {
+        SeedLoader.Result result = loader.resetAndLoad(data);
+        DemoCourseSeeder.Result course = result.demoCourses();
+
+        assertThat(count("visitor")).isEqualTo(course.visitors()).isPositive();
+        assertThat(count("recommendation_exposure")).isEqualTo(course.exposures()).isPositive();
+        assertThat(count("course_proposal")).isEqualTo(course.proposals());
+        assertThat(countReal("recommendation_exposure")).isZero();
+        assertThat(countReal("course_proposal")).isZero();
+        assertThat(countReal("referral_fee")).isZero();
+        // 제안은 기준 예약 신청 뒤에 표시했다
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM course_proposal p JOIN reservation b ON b.id = p.base_reservation_id
+                WHERE p.first_shown_at <= b.requested_at
+                """, Integer.class)).isZero();
+        // 소개 후보는 기준 예약 · 제안 · 보낸 가게가 함께 있고, 제안은 그 기준 예약 · 그 가게 것(D12)
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM reservation r
+                LEFT JOIN course_proposal p ON p.id = r.course_proposal_id
+                LEFT JOIN reservation b ON b.id = r.course_root_id
+                WHERE r.course_proposal_id IS NOT NULL
+                  AND (r.sender_store_id IS NULL OR p.base_reservation_id <> r.course_root_id
+                       OR p.recommended_store_id <> r.store_id OR b.store_id <> r.sender_store_id
+                       OR r.requested_at <= p.first_shown_at)
+                """, Integer.class)).isZero();
+        // 수수료는 방문 처리된 소개 예약마다 한 번, 원천 기록과 같은 값(NFR-08 #4)
+        assertThat(count("referral_fee")).isEqualTo(course.referralFees()).isEqualTo(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM reservation WHERE status = 'visited' AND sender_store_id IS NOT NULL", Integer.class));
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM referral_fee f JOIN reservation r ON r.id = f.reservation_id
+                WHERE f.visit_amount <> r.visit_amount OR f.fee_amount <> FLOOR(r.visit_amount * f.fee_rate)
+                   OR f.receiving_store_id <> r.store_id OR f.sender_store_id <> r.sender_store_id
+                """, Integer.class)).isZero();
+        long totalFee = jdbc.queryForObject("SELECT COALESCE(SUM(fee_amount), 0) FROM referral_fee", Long.class);
+        assertThat(totalFee).isEqualTo(course.totalFee());
+        assertThat(jdbc.queryForObject("SELECT COALESCE(SUM(balance), 0) FROM wallet WHERE owner_type = 'fund'", Long.class))
+                .isEqualTo(totalFee);
+        assertThat(jdbc.queryForObject("SELECT COALESCE(SUM(balance), 0) FROM wallet WHERE owner_type = 'store'", Long.class))
+                .isEqualTo(-totalFee);
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM wallet w
+                WHERE w.balance <> (SELECT COALESCE(SUM(t.amount), 0) FROM wallet_tx t WHERE t.wallet_id = w.id)
+                """, Integer.class)).isZero();
+        // 10월까지는 정산 확정, 11월은 집계 중(행 없음)
+        assertThat(count("settlement")).isEqualTo(course.confirmedSettlements());
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM settlement WHERE status <> 'confirmed' OR month > '2026-10'",
+                Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM referral_fee
+                WHERE (settlement_month <= '2026-10') <> (settlement_id IS NOT NULL)
                 """, Integer.class)).isZero();
     }
 

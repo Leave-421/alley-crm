@@ -8,6 +8,7 @@ import com.alleycrm.recommend.domain.TimeBand;
 import com.alleycrm.seed.DemoReservationPlanner.Plan;
 import com.alleycrm.seed.DemoReservationPlanner.Reservation;
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -197,6 +198,72 @@ class DemoReservationPlannerTest {
                     .count();
             assertThat(shown).as(cell + " 칸에서 첫 가게가 다른 5명 이상 동선 수").isGreaterThanOrEqualTo(1);
         }
+    }
+
+    // ---- 정식 코스 제안 · 코스 예약 · 재방문 (E17, 06-data 8 · 9단계) ----
+
+    @Test
+    void 코스_예약은_기준_예약_신청_뒤_제안을_보고_마감_안에_신청하면_소개_후보다_FR_STL_01() {
+        Map<String, Reservation> byNo = PLAN.reservations().stream()
+                .collect(Collectors.toMap(Reservation::reservationNo, Function.identity()));
+        Map<String, DemoReservationPlanner.Proposal> proposals = PLAN.proposals().stream()
+                .collect(Collectors.toMap(p -> p.baseReservationNo() + "/" + p.storeCode(), Function.identity()));
+        assertThat(proposals).hasSameSizeAs(PLAN.proposals()); // (기준 예약, 가게) 조합당 1건
+        assertThat(PLAN.proposals()).allSatisfy(p -> {
+            Reservation base = byNo.get(p.baseReservationNo());
+            assertThat(p.firstShownAt()).isAfter(base.requestedAt()).isBefore(DemoReservationPlanner.deadline(base));
+            assertThat(p.storeCode()).isNotEqualTo(base.storeCode());
+        });
+
+        List<DemoReservationPlanner.CourseLink> referrals = PLAN.courseLinks().stream()
+                .filter(DemoReservationPlanner.CourseLink::referral).toList();
+        assertThat(referrals).hasSizeGreaterThan(20);
+        assertThat(PLAN.courseLinks()).filteredOn(l -> !l.referral()).isNotEmpty();
+        for (DemoReservationPlanner.CourseLink link : PLAN.courseLinks()) {
+            Reservation course = byNo.get(link.reservationNo());
+            Reservation base = byNo.get(link.rootReservationNo());
+            assertThat(course.storeCode()).isNotEqualTo(base.storeCode());
+            assertThat(course.startAt()).isAfter(course.requestedAt().plus(Duration.ofMinutes(59)));
+            if (localDate(course).equals(localDate(base))) {
+                assertThat(course.startAt()).isAfter(base.startAt()); // 같은 날은 기준 예약보다 늦게(D12)
+            }
+            if (link.referral()) {
+                DemoReservationPlanner.Proposal used = proposals.get(base.reservationNo() + "/" + course.storeCode());
+                assertThat(used).isNotNull();
+                assertThat(link.proposalStoreCode()).isEqualTo(course.storeCode());
+                assertThat(link.senderStoreCode()).isEqualTo(base.storeCode());
+                assertThat(course.requestedAt()).isAfter(used.firstShownAt()).isBefore(DemoReservationPlanner.deadline(base));
+            } else {
+                assertThat(link.proposalStoreCode()).isNull();
+                assertThat(course.requestedAt()).isAfterOrEqualTo(DemoReservationPlanner.deadline(base)); // 코스 연결만
+            }
+        }
+    }
+
+    @Test
+    void 소개로_방문한_손님은_그_가게를_더_자주_다시_찾는다_NFR_08_패턴_3() {
+        Set<String> referralNos = PLAN.courseLinks().stream().filter(DemoReservationPlanner.CourseLink::referral)
+                .map(DemoReservationPlanner.CourseLink::reservationNo).collect(Collectors.toSet());
+        Map<String, List<Reservation>> visitsByCustomerStore = PLAN.reservations().stream()
+                .filter(r -> r.status().equals("visited"))
+                .collect(Collectors.groupingBy(r -> r.customerIndex() + "@" + r.storeCode()));
+        int[] course = new int[2]; // [방문 수, 60일 안 같은 가게 재방문 수]
+        int[] others = new int[2];
+        for (List<Reservation> visits : visitsByCustomerStore.values()) {
+            for (Reservation r : visits) {
+                boolean revisited = visits.stream().anyMatch(o -> o.startAt().isAfter(r.startAt())
+                        && !o.startAt().isAfter(r.startAt().plus(Duration.ofDays(60))));
+                int[] counts = referralNos.contains(r.reservationNo()) ? course : others;
+                counts[0]++;
+                if (revisited) {
+                    counts[1]++;
+                }
+            }
+        }
+        double courseRate = (double) course[1] / course[0];
+        double othersRate = (double) others[1] / others[0];
+
+        assertThat(courseRate).isGreaterThan(othersRate * 1.5).isGreaterThan(0.3);
     }
 
     /** 손님 · 운영 시간대 날짜별 방문 처리 예약(시작 시각 순). */

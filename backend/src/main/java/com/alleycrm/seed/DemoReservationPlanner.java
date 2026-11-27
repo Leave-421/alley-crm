@@ -33,7 +33,9 @@ import java.util.Set;
  *   <li>20대 카페 → 디저트(NFR-08 패턴 1): 카페 방문 뒤 같은 날 바로 다음 방문으로 디저트를 20대에게 훨씬 자주</li>
  *   <li>3곳 이어 방문: 오늘의 코스(FR-CRS-11)가 보이도록 평일 · 주말 × 점심 · 오후 · 저녁 칸마다 같은 동선을 5명 이상</li>
  * </ul>
- * 노출 · 코스 제안 · 소개(7 ~ 10단계)와 쿠폰 사례는 E17의 다음 Task가 더한다.
+ * 이어서 8 · 9단계(E17 #268): 회원의 방문한 예약에서 정식 코스 제안 → '다음 코스로 예약하기'(마감 안이면 소개 후보, 지나면
+ * 코스 연결만) → 소개로 방문한 손님의 재방문(NFR-08 패턴 3). 노출 · 수수료 · 정산은 적재기가 이 결과로 만든다.
+ * 쿠폰 사례는 E17의 다음 Task가 더한다.
  */
 public final class DemoReservationPlanner {
 
@@ -69,7 +71,12 @@ public final class DemoReservationPlanner {
             int depositAmount) {
     }
 
-    public record Plan(List<Customer> customers, List<Reservation> reservations) {
+    /**
+     * @param proposals 정식 코스 제안(E17)
+     * @param courseLinks '다음 코스로 예약하기'로 만든 예약의 연결(E17)
+     */
+    public record Plan(List<Customer> customers, List<Reservation> reservations, List<Proposal> proposals,
+            List<CourseLink> courseLinks) {
     }
 
     private final List<SeedRegionData.Store> stores;
@@ -105,7 +112,10 @@ public final class DemoReservationPlanner {
             }
         }
         new SameDayVisits(customers, reservations, teamsPerSlot, reservationNos).add();
-        return new Plan(customers, reservations);
+        List<Proposal> proposals = new ArrayList<>();
+        List<CourseLink> links = new ArrayList<>();
+        new CourseFlows(customers, reservations, teamsPerSlot, reservationNos, proposals, links).add();
+        return new Plan(customers, reservations, proposals, links);
     }
 
     // ---- 손님 ----
@@ -248,6 +258,12 @@ public final class DemoReservationPlanner {
         // 신청은 예약 시각 1시간 ~ 예약 가능 기간(최대 7일) 전
         long maxLeadMinutes = Duration.ofDays(Math.min(7, store.bookingWindowDays())).toMinutes();
         Instant requestedAt = startAt.minus(between(60, maxLeadMinutes), ChronoUnit.MINUTES);
+        return outcome(customer, store, startAt, party, no, requestedAt);
+    }
+
+    /** 신청 시각이 정해진 예약의 결과(가게 거절 · 손님 취소 · 방문). 코스 예약은 제안을 본 뒤 신청 시각을 정한다(E17). */
+    private Reservation outcome(Customer customer, SeedRegionData.Store store, Instant startAt, int party, String no,
+            Instant requestedAt) {
         int deposit = store.depositPerPerson() * party;
         double roll = random.nextDouble();
 
@@ -531,6 +547,200 @@ public final class DemoReservationPlanner {
             t = t.plusMinutes(store.slotMinutes());
         }
         return starts;
+    }
+
+    // ---- 정식 코스 제안 · 코스 예약 · 재방문 (E17, 06-data 「가상 데이터 생성」 8 · 9단계, NFR-08 패턴 3) ----
+
+    /** 회원의 방문한 예약 중 정식 코스 제안을 본 비율. */
+    static final double COURSE_PROPOSAL_RATE = 0.15;
+    /** 제안을 본 회원이 '다음 코스로 예약하기'로 예약한 비율. */
+    static final double COURSE_BOOKING_RATE = 0.55;
+    /** 코스 예약 중 기준 예약일 당일이 지나 신청한 비율(소개 아님, 코스 연결만 — D12). */
+    static final double LATE_COURSE_REQUEST_RATE = 0.12;
+    /** 코스 예약을 기준 예약과 같은 날로 잡는 비율(나머지는 1 ~ 4일 뒤). */
+    static final double SAME_DAY_COURSE_RATE = 0.6;
+    /** NFR-08 패턴 3: 소개로 방문한 손님이 그 가게를 다시 찾는 비율(시뮬레이션). */
+    static final double COURSE_REVISIT_RATE = 0.6;
+    /** 한 번에 보여 주는 제안 수(추천 개수 3). */
+    static final int PROPOSALS_PER_PAGE = 3;
+
+    /** 정식 코스 제안 한 건. (기준 예약, 추천 가게) 조합당 1건(uk_course_proposal). */
+    public record Proposal(String baseReservationNo, String storeCode, Instant firstShownAt) {
+    }
+
+    /**
+     * '다음 코스로 예약하기'로 만든 예약의 연결. 마감 안이면 제안 · 보낸 가게가 있고(소개 후보), 지나면 둘 다 null(코스 연결만).
+     */
+    public record CourseLink(String reservationNo, String rootReservationNo, String proposalStoreCode,
+            String senderStoreCode) {
+
+        public boolean referral() {
+            return senderStoreCode != null;
+        }
+    }
+
+    /**
+     * 가게마다 같은 날 바로 다음에 많이 간 가게 순위(06-data 7 · 8단계). 05-policy 「다음 방문 추천」의 실제 기록 근거
+     * (n_AB)를 근사한 것이고, 시드의 제안 · 노출 가게를 고르는 데만 쓴다. 기록이 모자라면 나머지 가게를 코드 순으로 채운다.
+     */
+    static Map<String, List<String>> nextStoreRanking(List<Customer> customers, List<Reservation> reservations,
+            List<SeedRegionData.Store> stores) {
+        Map<String, Map<String, Set<Integer>>> pairs = transitionCustomers(reservations);
+        Map<String, List<String>> ranking = new HashMap<>();
+        for (SeedRegionData.Store a : stores) {
+            Map<String, Set<Integer>> next = pairs.getOrDefault(a.code(), Map.of());
+            ranking.put(a.code(), stores.stream()
+                    .map(SeedRegionData.Store::code)
+                    .filter(code -> !code.equals(a.code()))
+                    .sorted(java.util.Comparator.<String>comparingInt(code -> next.getOrDefault(code, Set.of()).size())
+                            .reversed().thenComparing(code -> code))
+                    .toList());
+        }
+        return ranking;
+    }
+
+    /** 가게 A → 같은 날 바로 다음에 간 가게 B → 그 손님들(방문 처리 예약, 운영 시간대 날짜). 05-policy n_AB의 원천. */
+    static Map<String, Map<String, Set<Integer>>> transitionCustomers(List<Reservation> reservations) {
+        Map<String, Map<String, Set<Integer>>> pairs = new HashMap<>();
+        Map<String, List<Reservation>> days = new HashMap<>();
+        reservations.stream()
+                .filter(r -> "visited".equals(r.status()))
+                .sorted(java.util.Comparator.comparing(Reservation::startAt))
+                .forEach(r -> days.computeIfAbsent(r.customerIndex() + "@"
+                        + LocalDateTime.ofInstant(r.startAt(), SERVICE_ZONE).toLocalDate(), k -> new ArrayList<>()).add(r));
+        for (List<Reservation> day : days.values()) {
+            for (int i = 0; i + 1 < day.size(); i++) {
+                if (!day.get(i).storeCode().equals(day.get(i + 1).storeCode())) {
+                    pairs.computeIfAbsent(day.get(i).storeCode(), k -> new HashMap<>())
+                            .computeIfAbsent(day.get(i + 1).storeCode(), k -> new HashSet<>())
+                            .add(day.get(i).customerIndex());
+                }
+            }
+        }
+        return pairs;
+    }
+
+    /** 방문한 회원 예약에서 정식 코스 제안 → 코스 예약 → (소개로 방문하면) 재방문을 더한다. */
+    private final class CourseFlows {
+
+        private final List<Customer> customers;
+        private final List<Reservation> reservations;
+        private final Map<String, Integer> teamsPerSlot;
+        private final Set<String> reservationNos;
+        private final List<Proposal> proposals;
+        private final List<CourseLink> links;
+        private final Map<String, SeedRegionData.Store> byCode = new HashMap<>();
+
+        CourseFlows(List<Customer> customers, List<Reservation> reservations, Map<String, Integer> teamsPerSlot,
+                Set<String> reservationNos, List<Proposal> proposals, List<CourseLink> links) {
+            this.customers = customers;
+            this.reservations = reservations;
+            this.teamsPerSlot = teamsPerSlot;
+            this.reservationNos = reservationNos;
+            this.proposals = proposals;
+            this.links = links;
+            stores.forEach(s -> byCode.put(s.code(), s));
+        }
+
+        void add() {
+            Map<String, List<String>> ranking = nextStoreRanking(customers, reservations, stores);
+            for (Reservation base : List.copyOf(reservations)) {
+                Customer customer = customers.get(base.customerIndex());
+                if (!"visited".equals(base.status()) || !"member".equals(customer.type())
+                        || random.nextDouble() >= COURSE_PROPOSAL_RATE) {
+                    continue;
+                }
+                Instant deadline = deadline(base);
+                // 제안은 기준 예약 신청 뒤에 표시한다(06-data 9단계)
+                Instant shownAt = base.requestedAt().plus(between(1, 90), ChronoUnit.MINUTES);
+                if (!shownAt.isBefore(deadline)) {
+                    continue;
+                }
+                List<String> shown = ranking.get(base.storeCode()).subList(0, PROPOSALS_PER_PAGE);
+                shown.forEach(code -> proposals.add(new Proposal(base.reservationNo(), code, shownAt)));
+                if (random.nextDouble() >= COURSE_BOOKING_RATE) {
+                    continue;
+                }
+                String chosen = shown.get(pickIndex(new double[] {0.5, 0.3, 0.2}));
+                boolean late = random.nextDouble() < LATE_COURSE_REQUEST_RATE;
+                Reservation course = book(customer, byCode.get(chosen), base, shownAt, deadline, late);
+                if (course == null) {
+                    continue;
+                }
+                CourseLink link = late
+                        ? new CourseLink(course.reservationNo(), base.reservationNo(), null, null)
+                        : new CourseLink(course.reservationNo(), base.reservationNo(), chosen, base.storeCode());
+                links.add(link);
+                if (link.referral() && "visited".equals(course.status()) && random.nextDouble() < COURSE_REVISIT_RATE) {
+                    revisit(customer, byCode.get(chosen), course);
+                }
+            }
+        }
+
+        /**
+         * 코스 예약. 신청 시각은 제안 표시 뒤 · 마감 전(소개 후보), late면 마감 뒤 1 ~ 48시간. 예약 시각은 기준 예약과 같은 날이면
+         * 기준 시각보다 늦게(D12), 아니면 1 ~ 4일 뒤. 가게 규칙(휴무일 · 슬롯 · 팀 수 · 예약 가능 기간)을 지킨다. 못 잡으면 null.
+         */
+        private Reservation book(Customer customer, SeedRegionData.Store store, Reservation base, Instant shownAt,
+                Instant deadline, boolean late) {
+            Instant requestedAt = late
+                    ? deadline.plus(between(60, 48 * 60), ChronoUnit.MINUTES)
+                    : shownAt.plus(between(1, (int) Math.max(1, Math.min(240, Duration.between(shownAt, deadline).toMinutes() - 1))),
+                            ChronoUnit.MINUTES);
+            if (!late && !requestedAt.isBefore(deadline)) {
+                return null;
+            }
+            LocalDate baseDay = LocalDateTime.ofInstant(base.startAt(), SERVICE_ZONE).toLocalDate();
+            boolean sameDay = !late && random.nextDouble() < SAME_DAY_COURSE_RATE;
+            LocalDate day = sameDay ? baseDay : baseDay.plusDays(between(1, 4));
+            if (day.isAfter(PERIOD_END) || store.closedDays().contains(dayCode(day.getDayOfWeek()))) {
+                return null;
+            }
+            Instant earliest = sameDay ? base.startAt().plus(Duration.ofMinutes(1)) : requestedAt.plus(Duration.ofHours(1));
+            Instant latest = requestedAt.plus(Duration.ofDays(Math.min(7, store.bookingWindowDays())));
+            List<LocalTime> free = slotStarts(store).stream()
+                    .filter(t -> {
+                        Instant at = LocalDateTime.of(day, t).atZone(SERVICE_ZONE).toInstant();
+                        return at.isAfter(earliest) && at.isAfter(requestedAt.plus(Duration.ofHours(1)))
+                                && !at.isAfter(latest) && hasRoom(store, LocalDateTime.of(day, t));
+                    })
+                    .toList();
+            if (free.isEmpty()) {
+                return null;
+            }
+            LocalDateTime start = LocalDateTime.of(day, free.get(random.nextInt(Math.min(2, free.size()))));
+            teamsPerSlot.merge(slotKey(store, start), 1, Integer::sum);
+            Reservation r = outcome(customer, store, start.atZone(SERVICE_ZONE).toInstant(), partySize(store),
+                    reservationNo(reservationNos), requestedAt);
+            reservations.add(r);
+            return r;
+        }
+
+        /** NFR-08 패턴 3: 소개로 방문한 가게를 10 ~ 45일 안에 다시 예약(기간 안일 때만). */
+        private void revisit(Customer customer, SeedRegionData.Store store, Reservation course) {
+            LocalDate day = LocalDateTime.ofInstant(course.startAt(), SERVICE_ZONE).toLocalDate().plusDays(between(10, 45));
+            if (day.isAfter(PERIOD_END) || store.closedDays().contains(dayCode(day.getDayOfWeek()))) {
+                return;
+            }
+            List<LocalTime> free = slotStarts(store).stream().filter(t -> hasRoom(store, LocalDateTime.of(day, t))).toList();
+            if (free.isEmpty()) {
+                return;
+            }
+            LocalDateTime start = LocalDateTime.of(day, free.get(random.nextInt(free.size())));
+            teamsPerSlot.merge(slotKey(store, start), 1, Integer::sum);
+            reservations.add(outcome(customer, store, start.atZone(SERVICE_ZONE).toInstant(), partySize(store),
+                    reservationNo(reservationNos)));
+        }
+
+        private boolean hasRoom(SeedRegionData.Store store, LocalDateTime start) {
+            return teamsPerSlot.getOrDefault(slotKey(store, start), 0) < store.capacityPerSlot();
+        }
+    }
+
+    /** 소개 예약 신청 마감: 기준 예약일(운영 시간대) 다음 날 00:00(05-policy 「소개 판정」). */
+    static Instant deadline(Reservation base) {
+        return LocalDateTime.ofInstant(base.startAt(), SERVICE_ZONE).toLocalDate().plusDays(1)
+                .atStartOfDay(SERVICE_ZONE).toInstant();
     }
 
     // ---- 도우미 ----
