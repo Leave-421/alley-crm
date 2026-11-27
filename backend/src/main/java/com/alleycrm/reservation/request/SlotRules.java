@@ -1,5 +1,6 @@
 package com.alleycrm.reservation.request;
 
+import com.alleycrm.common.time.ServiceTime;
 import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -26,7 +27,7 @@ import java.util.stream.Collectors;
 public final class SlotRules {
 
     /** 서비스 운영 시간대(05-policy) */
-    public static final ZoneId SERVICE_ZONE = ZoneId.of("Asia/Seoul");
+    public static final ZoneId SERVICE_ZONE = ServiceTime.ZONE;
 
     private SlotRules() {
     }

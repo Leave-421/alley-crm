@@ -1,13 +1,17 @@
 package com.alleycrm.reservation.owner;
 
+import static com.alleycrm.common.time.ServiceTime.instant;
+import static com.alleycrm.common.time.ServiceTime.utc;
+
 import com.alleycrm.common.error.ApiException;
 import com.alleycrm.common.error.ErrorCode;
+import com.alleycrm.common.time.ServiceTime;
 import com.alleycrm.coupon.dto.VisitCouponDiscount;
 import com.alleycrm.coupon.service.CouponApplyService;
 import com.alleycrm.coupon.service.CouponVisitService;
 import com.alleycrm.reservation.Reservation;
-import com.alleycrm.reservation.ReservationResponse;
 import com.alleycrm.reservation.ReservationResponse.AppliedCoupon;
+import com.alleycrm.reservation.ReservationResponse;
 import com.alleycrm.reservation.ReservationStateService;
 import com.alleycrm.setting.SettingKey;
 import com.alleycrm.setting.SettingService;
@@ -17,8 +21,6 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,8 +41,6 @@ import tools.jackson.databind.ObjectMapper;
  */
 @RestController
 class OwnerReservationController {
-
-    static final ZoneId SERVICE_ZONE = ZoneId.of("Asia/Seoul");
 
     private static final String ITEM_COLUMNS = """
             SELECT r.id, r.reservation_no, r.start_at, r.party_size, r.status, r.cancel_reason, r.requested_at,
@@ -109,8 +109,8 @@ class OwnerReservationController {
     Map<String, Object> byDate(@RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
             Authentication auth) {
         long storeId = owners.storeIdOf(auth);
-        LocalDateTime from = utc(date.atStartOfDay(SERVICE_ZONE).toInstant());
-        LocalDateTime to = utc(date.plusDays(1).atStartOfDay(SERVICE_ZONE).toInstant());
+        LocalDateTime from = utc(date.atStartOfDay(ServiceTime.ZONE).toInstant());
+        LocalDateTime to = utc(date.plusDays(1).atStartOfDay(ServiceTime.ZONE).toInstant());
         List<OwnerReservationItem> items = jdbc.query(ITEM_COLUMNS + """
                 WHERE r.store_id = ? AND r.start_at >= ? AND r.start_at < ?
                 ORDER BY r.start_at, r.id
@@ -193,13 +193,5 @@ class OwnerReservationController {
             AppliedCoupon coupon,
             boolean referralConfirmed,
             Integer referralFee) {
-    }
-
-    private static LocalDateTime utc(Instant t) {
-        return LocalDateTime.ofInstant(t, ZoneOffset.UTC);
-    }
-
-    private static Instant instant(LocalDateTime t) {
-        return t == null ? null : t.toInstant(ZoneOffset.UTC);
     }
 }

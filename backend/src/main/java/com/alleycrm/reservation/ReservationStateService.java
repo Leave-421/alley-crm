@@ -1,14 +1,27 @@
 package com.alleycrm.reservation;
 
+import static com.alleycrm.common.time.ServiceTime.utc;
+
 import com.alleycrm.common.error.ApiException;
 import com.alleycrm.common.error.ErrorCode;
+import com.alleycrm.common.time.ServiceTime;
+import com.alleycrm.reservation.request.SlotRules;
+import com.alleycrm.reservation.request.StoreSlotReader;
+import com.alleycrm.reservation.request.StoreSnapshot;
+import com.alleycrm.setting.SettingKey;
+import com.alleycrm.setting.SettingService;
+import com.alleycrm.wallet.WalletOwner;
+import com.alleycrm.wallet.WalletService;
+import com.alleycrm.wallet.WalletTxType;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -21,20 +34,17 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ReservationStateService {
 
-    /** 서비스 운영 시간대(05-policy). '예약일 다음 날'을 정한다 */
-    static final ZoneId SERVICE_ZONE = ZoneId.of("Asia/Seoul");
-
     private final ReservationRepository reservations;
     private final JdbcTemplate jdbc;
     private final Clock clock;
     private final ApplicationEventPublisher events;
-    private final com.alleycrm.setting.SettingService settings;
-    private final com.alleycrm.reservation.request.StoreSlotReader slots;
-    private final com.alleycrm.wallet.WalletService wallets;
+    private final SettingService settings;
+    private final StoreSlotReader slots;
+    private final WalletService wallets;
 
     public ReservationStateService(ReservationRepository reservations, JdbcTemplate jdbc, Clock clock,
-            ApplicationEventPublisher events, com.alleycrm.setting.SettingService settings,
-            com.alleycrm.reservation.request.StoreSlotReader slots, com.alleycrm.wallet.WalletService wallets) {
+            ApplicationEventPublisher events, SettingService settings,
+            StoreSlotReader slots, WalletService wallets) {
         this.reservations = reservations;
         this.jdbc = jdbc;
         this.clock = clock;
@@ -97,21 +107,21 @@ public class ReservationStateService {
      * 내 예약 목록(D13)이 '취소할 때 환불 금액' 안내에 같이 쓴다. 상태는 보지 않는다(부르는 쪽이 신청 · 확정만).
      */
     public Integer customerCancelRefund(long storeId, Instant startAt, int depositAmount, Instant now) {
-        if (!now.isAfter(startAt.minus(java.time.Duration.ofHours(24)))) {
+        if (!now.isAfter(startAt.minus(Duration.ofHours(24)))) {
             return depositAmount;
         }
-        java.util.Map<String, Object> s = jdbc.queryForMap(
+        Map<String, Object> s = jdbc.queryForMap(
                 "SELECT region_id, cancel_deadline_hours, late_cancel_refund_rate FROM store WHERE id = ?", storeId);
-        Instant deadline = startAt.minus(java.time.Duration.ofHours(((Number) s.get("cancel_deadline_hours")).longValue()));
+        Instant deadline = startAt.minus(Duration.ofHours(((Number) s.get("cancel_deadline_hours")).longValue()));
         if (!now.isBefore(deadline)) {
             return null;
         }
-        java.math.BigDecimal rate = s.get("late_cancel_refund_rate") != null
-                ? (java.math.BigDecimal) s.get("late_cancel_refund_rate")
+        BigDecimal rate = s.get("late_cancel_refund_rate") != null
+                ? (BigDecimal) s.get("late_cancel_refund_rate")
                 : settings.getDecimal(((Number) s.get("region_id")).longValue(),
-                        com.alleycrm.setting.SettingKey.LATE_CANCEL_REFUND_RATE);
-        return rate.multiply(java.math.BigDecimal.valueOf(depositAmount))
-                .setScale(0, java.math.RoundingMode.DOWN).intValueExact();
+                        SettingKey.LATE_CANCEL_REFUND_RATE);
+        return rate.multiply(BigDecimal.valueOf(depositAmount))
+                .setScale(0, RoundingMode.DOWN).intValueExact();
     }
 
     /** 사장님 거절: 신청 → 취소(가게 거절)(FR-RSV-03 #2). 환불 · 쿠폰은 이벤트를 받는 쪽이 한다 */
@@ -199,8 +209,8 @@ public class ReservationStateService {
     public int autoCancelDue() {
         Instant now = now();
         // start_at < (오늘 - 1일) 00:00 → 예약일이 그저께 이전 = 예약일 다음 날(어제)이 이미 끝남
-        LocalDate today = LocalDate.ofInstant(now, SERVICE_ZONE);
-        Instant cutoff = today.minusDays(1).atStartOfDay(SERVICE_ZONE).toInstant();
+        LocalDate today = LocalDate.ofInstant(now, ServiceTime.ZONE);
+        Instant cutoff = today.minusDays(1).atStartOfDay(ServiceTime.ZONE).toInstant();
         List<Long> ids = jdbc.queryForList("""
                 SELECT id FROM reservation WHERE status = ? AND start_at < ? ORDER BY id
                 """, Long.class, ReservationStatus.CONFIRMED, utc(cutoff));
@@ -240,10 +250,10 @@ public class ReservationStateService {
         if (party < 1 || (start.equals(r.getStartAt()) && party == r.getPartySize())) {
             throw new ApiException(ErrorCode.INVALID); // 바뀐 값이 없음
         }
-        com.alleycrm.reservation.request.StoreSnapshot store = checkSlot(r, start, party, now);
+        StoreSnapshot store = checkSlot(r, start, party, now);
         int extra = store.depositPerPerson() * party - r.getDepositAmount();
         if (extra > 0 && isMember(r.getCustomerId())
-                && wallets.balance(com.alleycrm.wallet.WalletOwner.customer(r.getCustomerId())) < extra) {
+                && wallets.balance(WalletOwner.customer(r.getCustomerId())) < extra) {
             throw new ApiException(ErrorCode.INSUFFICIENT_BALANCE);
         }
         r.requestChange(start, party);
@@ -257,7 +267,7 @@ public class ReservationStateService {
         if (!changeDeadline(r).isAfter(now)) {
             throw new ApiException(ErrorCode.CONFLICT); // 이미 자동 거절 대상
         }
-        com.alleycrm.reservation.request.StoreSnapshot store = checkSlot(r, r.getPendingStartAt(), r.getPendingPartySize(), now);
+        StoreSnapshot store = checkSlot(r, r.getPendingStartAt(), r.getPendingPartySize(), now);
         int newDeposit = store.depositPerPerson() * r.getPendingPartySize();
         int diff = newDeposit - r.getDepositAmount();
         if (diff != 0) {
@@ -274,18 +284,18 @@ public class ReservationStateService {
     }
 
     /** 새 시각 · 인원이 예약 신청 규칙에 맞는지(D2 · D5와 같은 규칙). 자기 예약이 이미 그 시각이면 자리 계산에서 뺀다 */
-    private com.alleycrm.reservation.request.StoreSnapshot checkSlot(Reservation r, Instant start, int party, Instant now) {
-        com.alleycrm.reservation.request.StoreSnapshot store = slots.lock(r.getStoreId())
+    private StoreSnapshot checkSlot(Reservation r, Instant start, int party, Instant now) {
+        StoreSnapshot store = slots.lock(r.getStoreId())
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND));
         if (store.maxPartySize() != null && party > store.maxPartySize()) {
             throw new ApiException(ErrorCode.INVALID);
         }
-        LocalDate today = LocalDate.ofInstant(now, SERVICE_ZONE);
-        LocalDate day = LocalDate.ofInstant(start, SERVICE_ZONE);
+        LocalDate today = LocalDate.ofInstant(now, ServiceTime.ZONE);
+        LocalDate day = LocalDate.ofInstant(start, ServiceTime.ZONE);
         boolean taken = slots.taken(store.id(), start) - (start.equals(r.getStartAt()) ? 1 : 0) >= store.capacityPerSlot();
         if (!"open".equals(store.businessStatus()) || !store.reservationEnabled() || !start.isAfter(now)
                 || day.isAfter(today.plusDays(store.bookingWindowDays()))
-                || !com.alleycrm.reservation.request.SlotRules.isSlotStart(store, start) || taken) {
+                || !SlotRules.isSlotStart(store, start) || taken) {
             throw new ApiException(ErrorCode.SLOT_UNAVAILABLE);
         }
         return store;
@@ -293,9 +303,9 @@ public class ReservationStateService {
 
     /** 예약금 차액 정산(11-27): diff > 0이면 더 내고, < 0이면 돌려받는다 */
     private void settleDeposit(Reservation r, int diff) {
-        String type = diff > 0 ? com.alleycrm.wallet.WalletTxType.DEPOSIT_PAID : com.alleycrm.wallet.WalletTxType.DEPOSIT_REFUNDED;
+        String type = diff > 0 ? WalletTxType.DEPOSIT_PAID : WalletTxType.DEPOSIT_REFUNDED;
         if (isMember(r.getCustomerId())) {
-            wallets.post(com.alleycrm.wallet.WalletOwner.customer(r.getCustomerId()), type, -diff, r.getId());
+            wallets.post(WalletOwner.customer(r.getCustomerId()), type, -diff, r.getId());
         } else {
             String phone = jdbc.queryForObject("SELECT phone FROM customer WHERE id = ?", String.class, r.getCustomerId());
             wallets.recordGuest(phone, type, -diff, r.getId());
@@ -330,8 +340,4 @@ public class ReservationStateService {
         return Instant.now(clock);
     }
 
-    /** DB 시각은 UTC 벽시계(hibernate.jdbc.time_zone=UTC) */
-    private static LocalDateTime utc(Instant t) {
-        return LocalDateTime.ofInstant(t, ZoneOffset.UTC);
-    }
-}
+    /** DB 시각은 UTC 벽시계(hibernate.jdbc.time_zone=UTC) */}

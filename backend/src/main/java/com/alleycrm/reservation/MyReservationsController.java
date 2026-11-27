@@ -1,13 +1,12 @@
 package com.alleycrm.reservation;
 
-import com.alleycrm.common.error.ApiException;
-import com.alleycrm.common.error.ErrorCode;
+import static com.alleycrm.common.time.ServiceTime.instant;
+
 import com.alleycrm.coupon.service.CouponApplyService;
 import com.alleycrm.reservation.ReservationResponse.AppliedCoupon;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -31,9 +30,11 @@ class MyReservationsController {
     private final com.alleycrm.coupon.service.CouponVisitService couponVisit;
     private final ReservationStateService states;
     private final Clock clock;
+    private final MemberCustomerResolver members;
 
     MyReservationsController(JdbcTemplate jdbc, CouponApplyService couponApply, ReservationStateService states, Clock clock,
-            com.alleycrm.coupon.service.CouponVisitService couponVisit) {
+            com.alleycrm.coupon.service.CouponVisitService couponVisit, MemberCustomerResolver members) {
+        this.members = members;
         this.couponVisit = couponVisit;
         this.jdbc = jdbc;
         this.couponApply = couponApply;
@@ -43,7 +44,7 @@ class MyReservationsController {
 
     @GetMapping("/api/v1/reservations/mine")
     Map<String, Object> mine(Authentication auth) {
-        long customerId = memberCustomerId(auth);
+        long customerId = members.customerId(auth);
         Instant now = Instant.now(clock);
         List<MyReservation> rows = jdbc.query("""
                 SELECT r.id, r.reservation_no, r.store_id, s.name AS store_name, r.start_at, r.party_size, r.status,
@@ -135,18 +136,4 @@ class MyReservationsController {
             Integer refundIfCanceled) {
     }
 
-    private long memberCustomerId(Authentication auth) {
-        List<Long> ids = jdbc.queryForList("""
-                SELECT c.id FROM account a JOIN customer c ON c.account_id = a.id
-                WHERE a.login_id = ? AND a.role = 'customer'
-                """, Long.class, auth.getName());
-        if (ids.isEmpty()) {
-            throw new ApiException(ErrorCode.FORBIDDEN_ROLE);
-        }
-        return ids.get(0);
-    }
-
-    private static Instant instant(LocalDateTime t) {
-        return t == null ? null : t.toInstant(ZoneOffset.UTC);
-    }
 }

@@ -1,5 +1,7 @@
 package com.alleycrm.settlement;
 
+import static com.alleycrm.common.time.ServiceTime.instant;
+
 import com.alleycrm.common.error.ApiException;
 import com.alleycrm.common.error.ErrorCode;
 import com.alleycrm.reservation.owner.NameMask;
@@ -10,7 +12,6 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
-import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -119,9 +120,5 @@ class OwnerReferralController {
         } catch (DateTimeParseException e) {
             throw new ApiException(ErrorCode.INVALID);
         }
-    }
-
-    private static Instant instant(LocalDateTime t) {
-        return t == null ? null : t.toInstant(ZoneOffset.UTC);
     }
 }
