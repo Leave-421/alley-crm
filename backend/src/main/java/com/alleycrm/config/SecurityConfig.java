@@ -52,6 +52,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/recommendations", "/api/v1/today-courses",
                                 "/api/v1/coupon-offers/*").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/recommendation-exposures", "/api/v1/store-clicks").permitAll()
+                        // 추천 거절 · 리롤 기록(#298, 3.11 N-2), 오늘의 코스 노출 · 클릭(3.3 V-2)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/recommendation-feedback", "/api/v1/course-previews").permitAll()
                         // 비회원 예약 조회(C13): 맞으면 그 전화번호의 예약만 다루는 제한 세션을 받는다
                         .requestMatchers(HttpMethod.POST, "/api/v1/guest/lookup").permitAll()
                         .requestMatchers("/api/v1/guest/**").hasRole(GuestPrincipal.ROLE)

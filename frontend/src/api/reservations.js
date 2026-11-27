@@ -16,6 +16,25 @@ export function getMyReservations() {
   return api.get('/api/v1/reservations/mine');
 }
 
+/**
+ * 회원 손님 취소(D6). 24시간 전까지 100%, 그 뒤 가게 취소 마감 전까지 가게 비율 환불, 마감 뒤는 409 conflict.
+ * 응답은 Reservation(canceled · customer_canceled · refundAmount).
+ */
+export function cancelReservation(reservationId) {
+  return api.post(`/api/v1/reservations/${encodeURIComponent(reservationId)}/cancel`);
+}
+
+/**
+ * 회원 손님 예약 변경(D8). 확정 예약만, 가게 취소 마감 전까지. 바뀐 값만 보낸다(둘 중 하나 이상).
+ * 결과는 status 'requested' + pendingStartAt · pendingPartySize(사장님 승인 대기, 돈은 그대로).
+ */
+export function changeReservation(reservationId, { startAt, partySize }) {
+  return api.post(`/api/v1/reservations/${encodeURIComponent(reservationId)}/change`, {
+    ...(startAt ? { startAt } : {}),
+    ...(partySize ? { partySize } : {}),
+  });
+}
+
 /** 성별 enum(CONTRACTS.md 「3」 gender). 응답 안 함은 null */
 export const GENDER_LABELS = Object.freeze({ female: '여성', male: '남성' });
 

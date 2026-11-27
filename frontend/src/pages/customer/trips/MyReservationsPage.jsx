@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { ApiError } from '@/api/client.js';
 import { RECOMMENDATION_BADGE_LABELS } from '@/api/recommendations.js';
-import { CANCEL_REASON_LABELS, RESERVATION_STATUS_LABELS, getMyReservations } from '@/api/reservations.js';
+import { CANCEL_REASON_LABELS, RESERVATION_STATUS_LABELS, cancelReservation, getMyReservations } from '@/api/reservations.js';
 import { SESSION_STATUS, useSession } from '@/auth/session.js';
 import { ALLEY_LABELS, CATEGORY_LABELS, MOCK_STORES } from '@/map/storeCatalog.js';
 import { loadRecommendationCards, nextCourseLink } from '../reserve/recommendationCards.js';
@@ -30,6 +30,8 @@ export default function MyReservationsPage() {
   const [tab, setTab] = useState('upcoming');
   const [mine, setMine] = useState(null); // { data } | { error }
   const [nowMs] = useState(() => Date.now());
+  const [reloadCount, setReloadCount] = useState(0);
+  const reload = () => setReloadCount((count) => count + 1);
 
   useEffect(() => {
     if (!isMember) return undefined;
@@ -40,7 +42,7 @@ export default function MyReservationsPage() {
     return () => {
       active = false;
     };
-  }, [isMember]);
+  }, [isMember, reloadCount]);
 
   if (status === SESSION_STATUS.LOADING) return <main className={styles.page} />;
   if (!isMember) {
@@ -97,14 +99,14 @@ export default function MyReservationsPage() {
       )}
 
       {shown.map((group) => (
-        <ReservationGroup key={group.courseRootId ?? group.reservations[0].id} group={group} nowMs={nowMs} />
+        <ReservationGroup key={group.courseRootId ?? group.reservations[0].id} group={group} nowMs={nowMs} onChanged={reload} />
       ))}
     </main>
   );
 }
 
 /** 한 묶음: 날짜 머리 + (코스면 '방문 코스 N곳') + 시간순 예약 */
-function ReservationGroup({ group, nowMs }) {
+function ReservationGroup({ group, nowMs, onChanged }) {
   const first = group.reservations[0];
   const isCourse = Boolean(group.courseRootId);
   const root = isCourse ? group.reservations.find((r) => r.id === group.courseRootId) : null;
@@ -118,7 +120,13 @@ function ReservationGroup({ group, nowMs }) {
       {group.reservations.map((reservation, index) => (
         <div key={reservation.id}>
           {index > 0 && <div className={styles.connector} aria-hidden="true" />}
-          <ReservationCard reservation={reservation} isRoot={reservation.id === group.courseRootId} nowMs={nowMs} />
+          <ReservationCard
+            reservation={reservation}
+            isRoot={reservation.id === group.courseRootId}
+            hasNextCourse={reservation.id === group.courseRootId && group.reservations.length > 1}
+            nowMs={nowMs}
+            onChanged={onChanged}
+          />
           {reservation.id === group.courseRootId && rootCanceled && group.reservations.length > 1 && (
             <p className={styles.note}>{reservation.storeName} 예약이 취소돼도 다음 코스 예약은 그대로예요.</p>
           )}
@@ -128,7 +136,11 @@ function ReservationGroup({ group, nowMs }) {
   );
 }
 
+const isChangePending = (reservation) => Boolean(reservation.pendingStartAt || reservation.pendingPartySize);
+const won = (amount) => `${amount.toLocaleString('ko-KR')}원`;
+
 function statusText(reservation, isRoot) {
+  if (isChangePending(reservation)) return '변경 승인 대기';
   if (reservation.status !== 'canceled') return RESERVATION_STATUS_LABELS[reservation.status] ?? reservation.status;
   const reason = CANCEL_REASON_LABELS[reservation.cancelReason];
   // 코스의 기준 가게 예약은 '취소됨'으로 표시(FR-RSV-12)
@@ -136,7 +148,7 @@ function statusText(reservation, isRoot) {
 }
 
 /** 예약 한 건: 시각 · 가게 · 업종 · 인원 · 상태, 그리고 그 가게 다음에 많이 찾은 곳 */
-function ReservationCard({ reservation, isRoot, nowMs }) {
+function ReservationCard({ reservation, isRoot, hasNextCourse, nowMs, onChanged }) {
   const store = MOCK_STORES.find((item) => item.id === reservation.storeId);
   const upcoming = isUpcoming(reservation, nowMs);
   const badgeClass = [styles.status, reservation.status === 'canceled' && styles.statusCanceled, reservation.status === 'visited' && styles.statusVisited]
@@ -158,8 +170,88 @@ function ReservationCard({ reservation, isRoot, nowMs }) {
           {reservation.coupon && <div className={styles.cap}>쿠폰 · 예약에 적용됨</div>}
         </div>
       </div>
+      {isChangePending(reservation) && (
+        <p className={styles.note}>
+          변경 요청 중 · 원래 {formatSlotTime(reservation.startAt)} {reservation.partySize}명 → 바꾼{' '}
+          {formatDateKey(serviceDateKey(Date.parse(reservation.pendingStartAt ?? reservation.startAt)))} {formatSlotTime(reservation.pendingStartAt ?? reservation.startAt)}{' '}
+          {reservation.pendingPartySize ?? reservation.partySize}명 · 사장님 승인을 기다려요. 거절되면 원래 예약이 유지돼요.
+        </p>
+      )}
+      {upcoming && <ReservationActions reservation={reservation} hasNextCourse={hasNextCourse} onChanged={onChanged} />}
       <NextPlaces reservation={reservation} storeName={reservation.storeName || store?.name} autoLoad={upcoming} canBookNext={upcoming} />
     </article>
+  );
+}
+
+/** 지금 취소하면 받는 환불 안내(D13 cancelable · refundIfCanceled): 100% · 일부 · 예약금 없음 · 마감 뒤 불가 */
+function refundText(reservation) {
+  if (!reservation.cancelable) return '가게 취소 마감이 지나 취소 · 변경할 수 없어요.';
+  const refund = reservation.refundIfCanceled ?? 0;
+  if (!reservation.depositAmount) return '예약금이 없는 예약이라 바로 취소돼요.';
+  if (refund >= reservation.depositAmount) return `지금 취소하면 예약금 ${won(refund)}을 전부 돌려받아요.`;
+  if (refund > 0) return `지금 취소하면 예약금 ${won(reservation.depositAmount)} 중 ${won(refund)}만 돌려받아요(일부 환불).`;
+  return `지금 취소하면 예약금 ${won(reservation.depositAmount)}은 돌려받지 못해요.`;
+}
+
+/** 앞으로 갈 예약의 변경 · 취소(G-04). 변경은 확정 · 마감 전 · 변경 대기 아님(D8), 취소는 마감 전(D6) */
+function ReservationActions({ reservation, hasNextCourse, onChanged }) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const changeable = reservation.status === 'confirmed' && reservation.cancelable && !isChangePending(reservation);
+
+  async function cancel() {
+    setBusy(true);
+    setError(null);
+    try {
+      await cancelReservation(reservation.id);
+      onChanged();
+    } catch (cancelError) {
+      setError(cancelError instanceof ApiError && cancelError.code === 'conflict' ? '가게 취소 마감이 지나 취소할 수 없어요.' : '취소하지 못했어요. 잠시 뒤 다시 시도해 주세요.');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className={styles.actions}>
+      <p className={styles.cap}>{refundText(reservation)}</p>
+      {reservation.status === 'requested' && !isChangePending(reservation) && reservation.cancelable && <p className={styles.cap}>변경은 가게가 확정한 뒤에 할 수 있어요.</p>}
+      {confirming ? (
+        <div className={styles.confirm} role="alertdialog" aria-label="예약 취소 확인">
+          <p className={styles.confirmText}>
+            {reservation.storeName} 예약을 취소할까요?{hasNextCourse ? ' 다음 코스 예약은 그대로 남아요.' : ''}
+          </p>
+          <div className={styles.actionButtons}>
+            <button type="button" className={`${styles.actionButton} ${styles.danger}`} disabled={busy} onClick={cancel}>
+              {busy ? '취소하는 중…' : '예약 취소하기'}
+            </button>
+            <button type="button" className={styles.actionButton} disabled={busy} onClick={() => setConfirming(false)}>
+              그대로 두기
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className={styles.actionButtons}>
+          {changeable ? (
+            <Link to={`/reservations/${encodeURIComponent(reservation.id)}/change`} className={styles.actionButton}>
+              변경
+            </Link>
+          ) : (
+            <button type="button" className={styles.actionButton} disabled>
+              변경
+            </button>
+          )}
+          <button type="button" className={styles.actionButton} disabled={!reservation.cancelable} onClick={() => setConfirming(true)}>
+            취소
+          </button>
+        </div>
+      )}
+      {error && (
+        <p className={styles.cap} role="alert">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }
 
