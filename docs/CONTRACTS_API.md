@@ -302,7 +302,9 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
   "fromRecommendation": false,
   "visitAmount": null,
   "visitedAt": null,
-  "refundAmount": null
+  "refundAmount": null,
+  "pendingStartAt": null,
+  "pendingPartySize": null
 }
 ```
 
@@ -313,6 +315,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 - `courseRootId`: '다음 코스로 예약하기'로 만든 예약만 기준 가게 예약 id(D12). 아니면 `null`.
 - `fromRecommendation`: 사장님 화면의 '추천으로 왔어요' 표시용. **보낸 가게 id · 이름은 어떤 응답에도 넣지 않는다**(FR-CUS-05).
 - `refundAmount`: 손님 취소(D6) 때 돌려준 예약금(원). 손님 취소가 아니면 `null`.
+- `pendingStartAt` · `pendingPartySize`: 변경 신청(D8) 중 바꿀 값. 변경 대기가 아니면 `null`. 대기 중에는 `status`가 `requested`이고 `startAt` · `partySize`는 원래 값이다.
 - `visitAmount` · `visitedAt`: 방문 처리(D11) 때 사장님이 넣은 결제 금액(쿠폰 할인 전, 원)과 처리 시각. 방문 전이면 `null`.
 - 응답에 손님 이름 · 전화번호는 넣지 않는다. 사장님용 목록(D4)은 가린 이름만 따로 정한다.
 
@@ -400,6 +403,27 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 - 환불은 상태 변경 이벤트를 받은 예약금 환불(D10)이 같은 트랜잭션에서 한다. 회원은 잔액으로, 비회원은 전화번호 기록으로. 쿠폰 적용 취소(E) · 알림(C)도 같은 이벤트로.
 - 실패: `not_found` · `conflict`(신청 · 확정이 아님, 마감 지남) · `unauthorized` · `forbidden_role` · `csrf_invalid`
 - **비회원 취소:** 비회원 예약 조회 세션(C13)이 생기면 같은 서비스 `ReservationStateService.cancelByCustomer(customerId, reservationId)`를 부른다(규칙 · 응답 같음).
+
+### 예약 변경 (D8)
+
+#### `POST /api/v1/reservations/{id}/change` — 회원 손님 예약 변경 (G-05, FR-RSV-07)
+
+- 역할: 회원 손님(내 예약). `X-XSRF-TOKEN` 필요. 비회원은 비회원 예약 조회 세션(C13)에서 같은 `ReservationStateService.requestChange`를 부른다.
+- 요청: `{ "startAt": "2026-11-29T10:00:00Z", "partySize": 3 }` — 둘 중 하나 이상(바뀐 값이 없으면 `invalid`).
+- `confirmed`만, **가게 취소 마감 전까지**(기획 11-27). 새 시각 · 인원은 예약 신청과 같은 규칙(영업시간 · 휴무일 · 기간 · 자리 · 한 팀 최대 인원).
+- 결과: `status: "requested"`, 원래 `startAt` · `partySize`는 그대로, `pendingStartAt` · `pendingPartySize`에 바꿀 값(#1). 돈은 움직이지 않는다. 응답 `200`: `Reservation`.
+- 인원이 늘어 회원이 더 내야 하면 지금 잔액을 확인한다(모자라면 `insufficient_balance`, 충전 안내).
+- 실패: `invalid` · `not_found`(남의 예약) · `conflict`(확정이 아님 · 이미 변경 대기 · 마감 지남) · `slot_unavailable` · `insufficient_balance` · `unauthorized` · `forbidden_role` · `csrf_invalid`
+
+#### 사장님 처리 (D3 API 그대로)
+
+| 동작 | 변경 건이면 |
+| --- | --- |
+| `POST /api/v1/owner/reservations/{id}/confirm` | 자리를 다시 확인하고 예약금 차액을 정산(늘면 더 냄 · 줄면 돌려받음, 회원은 잔액 · 비회원은 전화번호 기록), 바꾼 값으로 `confirmed`(#2). 회원 잔액이 모자라면 `409 insufficient_balance` — 변경은 대기 그대로 |
+| `POST /api/v1/owner/reservations/{id}/reject` | 원래 값으로 `confirmed` 유지, 돈은 그대로(#3). 취소가 아니다 |
+| 자동 거절(D7) | 원래 시각과 바뀐 시각 중 이른 쪽까지 승인이 없으면 변경만 거절, 원래 값 유지(#4) |
+
+같은 예약 ID라 적용된 쿠폰은 그대로다(05-policy).
 
 ### 내 예약 · 코스 묶음 (D13)
 
@@ -557,6 +581,7 @@ D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약
 | 메서드 | 대상 | 결과 |
 | --- | --- | --- |
 | `autoRejectDue()` | `requested`이고 `startAt` ≤ 지금 | `canceled` · `store_rejected` (FR-RSV-03 #3, 거절과 같은 결과) |
+| `autoRejectDue()` (변경 건) | 변경 대기이고 원래 시각과 바뀐 시각 중 이른 쪽 ≤ 지금 | 변경만 자동 거절, 원래 값으로 `confirmed`(FR-RSV-07 #4) |
 | `autoCancelDue()` | `confirmed`이고 예약일(운영 시간대) 다음 날이 끝남 = `startAt` < (오늘 − 1일) 00:00 | `canceled` · `auto_canceled` (FR-RSV-02 #1) |
 
 방문 처리된 예약은 바꾸지 않는다(FR-RSV-02 #2). 사장님 처리와 겹쳐도 행을 잠그고 상태를 다시 확인해 한 번만 바뀐다.
