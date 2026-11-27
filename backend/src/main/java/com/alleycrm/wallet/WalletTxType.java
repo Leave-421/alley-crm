@@ -14,6 +14,9 @@ public final class WalletTxType {
     /** 방문 금액 정정의 수수료 차액(D22, 11-25 (5)) */
     public static final String FEE_DIFFERENCE_CHARGED = "fee_difference_charged";
     public static final String FEE_DIFFERENCE_DEPOSITED = "fee_difference_deposited";
+    /** 정정으로 수수료가 줄어 기금이 가게에 돌려준 차액(D22, 11-27 (2)): 기금 쪽 · 가게 쪽 */
+    public static final String FEE_DIFFERENCE_WITHDRAWN = "fee_difference_withdrawn";
+    public static final String FEE_DIFFERENCE_REFUNDED = "fee_difference_refunded";
 
     private WalletTxType() {
     }

@@ -44,8 +44,10 @@ class AssociationSettlementController {
         String m = month(month);
         List<StoreRow> stores = jdbc.query("""
                 SELECT s.id, s.name, COUNT(*) AS cnt, SUM(f.fee_amount) AS fee, ROUND(AVG(f.fee_base)) AS avg_base,
-                       SUM(f.coupon_cost) AS coupon_cost
+                       SUM(f.coupon_cost) AS coupon_cost, COALESCE(SUM(d.diff), 0) AS fee_difference
                 FROM referral_fee f JOIN store s ON s.id = f.receiving_store_id
+                LEFT JOIN (SELECT reservation_id, SUM(fee_difference) AS diff FROM visit_amount_correction
+                           GROUP BY reservation_id) d ON d.reservation_id = f.reservation_id
                 WHERE s.region_id = ? AND f.settlement_month = ?
                 GROUP BY s.id, s.name
                 ORDER BY s.name, s.id
@@ -53,7 +55,8 @@ class AssociationSettlementController {
                 String.valueOf(rs.getLong("id")),
                 rs.getString("name"),
                 rs.getInt("cnt"),
-                rs.getLong("fee"),
+                rs.getLong("fee") + rs.getLong("fee_difference"),
+                rs.getLong("fee_difference"),
                 rs.getLong("avg_base"),
                 rs.getLong("coupon_cost")), regionId, m);
         List<Map<String, Object>> row = jdbc.queryForList(
@@ -134,7 +137,8 @@ class AssociationSettlementController {
     }
 
     /** 가게별 정산 한 줄. avgVisitAmount = 소개 건 평균 방문 금액(쿠폰 할인 후, 원 단위 반올림). 낮은지 판단하지 않는다 */
-    record StoreRow(String storeId, String storeName, int count, long totalFee, long avgVisitAmount, long couponCost) {
+    record StoreRow(String storeId, String storeName, int count, long totalFee, long feeDifference, long avgVisitAmount,
+            long couponCost) {
     }
 
     private static String month(String value) {

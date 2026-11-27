@@ -89,7 +89,16 @@ class OwnerReservationController {
      */
     @PostMapping("/api/v1/owner/reservations/{id}/visit")
     Map<String, Object> visit(@PathVariable long id, @RequestBody VisitRequest body, Authentication auth) {
-        Reservation r = states.visit(owners.storeIdOf(auth), id, body == null ? null : body.visitAmount());
+        return visitResult(states.visit(owners.storeIdOf(auth), id, body == null ? null : body.visitAmount()));
+    }
+
+    /** 늦은 방문 처리(D23): 응답은 방문 처리와 같다 */
+    @PostMapping("/api/v1/owner/reservations/{id}/late-visit")
+    Map<String, Object> lateVisit(@PathVariable long id, @RequestBody VisitRequest body, Authentication auth) {
+        return visitResult(states.lateVisit(owners.storeIdOf(auth), id, body == null ? null : body.visitAmount()));
+    }
+
+    private Map<String, Object> visitResult(Reservation r) {
         @SuppressWarnings("unchecked")
         Map<String, Object> out = new LinkedHashMap<>(json.convertValue(
                 ReservationResponse.of(r, couponApply.appliedCouponFor(r.getId())), Map.class));
