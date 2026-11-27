@@ -1,5 +1,6 @@
 package com.alleycrm.account;
 
+import com.alleycrm.reservation.GuestReservationItem;
 import com.alleycrm.reservation.ReservationResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -31,7 +32,7 @@ class GuestController {
     }
 
     @GetMapping("/api/v1/guest/reservations")
-    Map<String, List<ReservationResponse>> reservations(@AuthenticationPrincipal GuestPrincipal guest) {
+    Map<String, List<GuestReservationItem>> reservations(@AuthenticationPrincipal GuestPrincipal guest) {
         return Map.of("items", guests.reservations(guest));
     }
 }

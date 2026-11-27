@@ -1,6 +1,8 @@
 package com.alleycrm.reservation;
 
 import jakarta.persistence.EntityManager;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -15,22 +17,33 @@ import org.springframework.transaction.annotation.Transactional;
 public class GuestReservationReader {
 
     private final EntityManager em;
+    private final ReservationStateService states;
+    private final Clock clock;
 
-    GuestReservationReader(EntityManager em) {
+    GuestReservationReader(EntityManager em, ReservationStateService states, Clock clock) {
         this.em = em;
+        this.states = states;
+        this.clock = clock;
     }
 
-    /** 그 손님들의 예약, 방문 일시가 늦은 것부터. */
+    /** 그 손님들의 예약, 방문 일시가 늦은 것부터. 취소 안내(cancelable · refundIfCanceled)는 회원 내 예약(D13)과 같은 D6 규칙 */
     @Transactional(readOnly = true)
-    public List<ReservationResponse> listForCustomers(Collection<Long> customerIds) {
+    public List<GuestReservationItem> listForCustomers(Collection<Long> customerIds) {
         if (customerIds.isEmpty()) {
             return List.of();
         }
+        Instant now = Instant.now(clock);
         return em.createQuery("""
                         SELECT r FROM Reservation r WHERE r.customerId IN :ids ORDER BY r.startAt DESC, r.id DESC""",
                         Reservation.class)
                 .setParameter("ids", customerIds)
-                .getResultStream().map(r -> ReservationResponse.of(r, null)).toList();
+                .getResultStream().map(r -> item(r, now)).toList();
+    }
+
+    private GuestReservationItem item(Reservation r, Instant now) {
+        boolean open = ReservationStatus.REQUESTED.equals(r.getStatus()) || ReservationStatus.CONFIRMED.equals(r.getStatus());
+        Integer refund = open ? states.customerCancelRefund(r.getStoreId(), r.getStartAt(), r.getDepositAmount(), now) : null;
+        return new GuestReservationItem(ReservationResponse.of(r, null), refund != null, refund);
     }
 
     /** 예약번호가 그 손님들의 예약이면 그 예약. 아니면 비어 있다(남의 예약인지 구분하지 않음). */

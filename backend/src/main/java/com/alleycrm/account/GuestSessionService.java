@@ -3,6 +3,7 @@ package com.alleycrm.account;
 import com.alleycrm.common.error.ApiException;
 import com.alleycrm.common.error.ErrorCode;
 import com.alleycrm.customer.CustomerService;
+import com.alleycrm.reservation.GuestReservationItem;
 import com.alleycrm.reservation.GuestReservationReader;
 import com.alleycrm.reservation.ReservationResponse;
 import java.util.List;
@@ -33,7 +34,7 @@ public class GuestSessionService {
 
     /** 제한 세션의 예약, 방문 일시가 늦은 것부터. */
     @Transactional(readOnly = true)
-    public List<ReservationResponse> reservations(GuestPrincipal guest) {
+    public List<GuestReservationItem> reservations(GuestPrincipal guest) {
         return reservations.listForCustomers(customers.guestIdsByPhone(guest.phone()));
     }
 
