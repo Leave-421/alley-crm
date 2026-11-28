@@ -119,7 +119,8 @@ class CustomerCardApiTest {
                 .andExpect(jsonPath("$.memo").isEmpty())
                 .andReturn().getResponse().getContentAsString();
         // 이름 · 보낸 가게는 응답에 없다(FR-CUS-05)
-        assertThat(body).doesNotContain(MEMBER_NAME).doesNotContain("고객 카드 가게 B").doesNotContain(String.valueOf(storeB) + "\"");
+        // ID 문자열로 찾으면 다른 ID(손님 ID 등)와 숫자가 겹칠 때 틀리게 실패하므로 필드 이름으로 본다
+        assertThat(body).doesNotContain(MEMBER_NAME).doesNotContain("고객 카드 가게 B").doesNotContain("senderStore");
 
         memo(owner, member, "  창가 자리 선호  ")
                 .andExpect(status().isOk())

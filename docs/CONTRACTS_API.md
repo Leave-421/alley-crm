@@ -568,6 +568,52 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 - **소개 수수료 총액**: 그 달(방문 처리된 달 = `settlement_month`)의 권역 소개 수수료 합계다. 금액 신고 정정 차액을 포함해 월 정산(A-04)과 같은 기준이다. 확정 여부와 관계없다.
 - 실패: `invalid`(`month` 형식) · `unauthorized` · `forbidden_role`
 
+### 상인회 가게 성과 비교 (C19)
+
+#### `GET /api/v1/association/store-performance` — 가게 성과 비교 (A-02)
+
+- 역할: 상인회(세션 계정의 권역). 사장님 · 손님은 `403 forbidden_role`.
+- 기간: 전체 기간(성공 지표 C18의 수락률 · 재방문율과 같다).
+- 응답 `200`:
+
+  ```json
+  {
+    "revisitDays": 60,
+    "stores": [
+      {
+        "storeId": "1",
+        "storeName": "…",
+        "reservations": {
+          "total": 51, "visited": 40, "canceled": 10, "cancelRate": 0.2,
+          "cancelRateByReason": { "customerCanceled": 0.12, "storeRejected": 0.06, "autoCanceled": 0.02 },
+          "belowMinimum": false
+        },
+        "referral": {
+          "sent": { "count": 5, "belowMinimum": false },
+          "received": { "count": null, "feePaid": null, "belowMinimum": true }
+        },
+        "revisit": { "customers": 10, "revisitedCustomers": 0, "rate": 0.0, "belowMinimum": false },
+        "acceptance": { "shownProposals": 10, "acceptedProposals": 0, "rate": 0.0 }
+      }
+    ]
+  }
+  ```
+
+- `stores`: 참여 가게(승인 · 탈퇴 신청 중), 이름 순.
+- **예약 · 방문 · 취소율**(FR-ANL-04 #1, FR-ANL-07 #1)
+  - `total`: 모든 상태의 예약 수. `visited`: 방문 처리된 예약 수. `canceled`: 취소된 예약 수.
+  - `cancelRate`: 취소 ÷ (방문 + 취소). 신청 · 확정 중인 예약은 결과가 정해지지 않아 분모에 넣지 않는다. 분모가 0이면 `null`.
+  - `cancelRateByReason`: 사유(`reservation.cancelReason`)별 취소 ÷ 같은 분모. 셋을 더하면 `cancelRate`다(반올림 차이는 있을 수 있다).
+  - 취소 건은 다른 지표(방문 · 재방문율 · 소개 · 수락)에 들지 않는다.
+- **소개 실적**: 확정된 소개(`referral_fee`, 예약 한 건당 1)만 센다.
+  - `sent.count`: 이 가게 예약에서 만든 코스 제안으로 확정된 소개 수(사장님 소개 실적 `sentCount`와 같은 기준).
+  - `received.count`: 이 가게가 받은 확정 소개 수. `received.feePaid`: 낸 수수료 합계(금액 신고 정정 차액 포함).
+  - 상대 가게는 내보내지 않는다.
+- **재방문율** `revisit`: C18 `stores[].revisit`과 같다.
+- **수락률** `acceptance`: C18 수락률을 이 가게 예약에 표시된 제안(기준 가게 = 이 가게)으로 나눈 값이다. 분모가 0이면 `rate: null`. 숨기지 않는다(제안 건수).
+- **5명 미만**(FR-ANL-04 #2, 「분석 공통」): 칸마다 고유 손님이 1 ~ 4명이면 그 칸의 숫자를 모두 `null`로 숨기고 `belowMinimum: true`다. 칸은 `reservations`(예약한 손님) · `sent`(소개된 손님) · `received`(받은 손님, `feePaid` 포함) · `revisit`(방문 손님)이다.
+- 실패: `unauthorized` · `forbidden_role`
+
 ## 2. 예약 · 잔액 · 수수료 · 정산 · 서버 시계 (담당 D)
 
 D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약 · 방문 처리, 가상 잔액 · 예약금, 수수료 · 정산, 시연용 시각 조작.
