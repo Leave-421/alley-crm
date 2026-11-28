@@ -536,6 +536,38 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 - 기간은 전체.
 - 실패: `unauthorized` · `forbidden_role`
 
+### 상인회 성공 지표 (C18)
+
+#### `GET /api/v1/association/success-metrics?month=2026-11` — 성공 지표 (A-01)
+
+- 역할: 상인회(세션 계정의 권역). 사장님 · 손님은 `403 forbidden_role`.
+- `month`(선택, `YYYY-MM`): 수수료 총액의 달. 없으면 서버 시각 기준 이번 달(운영 시간대). 수락률 · 재방문율은 전체 기간이다.
+- 응답 `200`:
+
+  ```json
+  {
+    "acceptance": { "shownProposals": 200, "acceptedProposals": 30, "rate": 0.15 },
+    "revisit": {
+      "revisitDays": 60,
+      "region": { "customers": 6, "revisitedCustomers": 2, "rate": 0.3333, "belowMinimum": false },
+      "stores": [ { "storeId": "1", "storeName": "…", "revisit": { "customers": null, "revisitedCustomers": null, "rate": null, "belowMinimum": true } } ]
+    },
+    "referralFee": { "month": "2026-11", "amount": 2000 }
+  }
+  ```
+
+- **코스 제안 수락률**(FR-ANL-06 #1 ~ #3)
+  - 분모 `shownProposals`: 권역 가게 예약에 표시된 정식 코스 제안 수(`course_proposal`, 같은 기준 예약 · 추천 가게 조합은 1건).
+  - 분자 `acceptedProposals`: 그중 코스 예약이 방문 처리되어 소개가 확정된(`referral_fee`가 있는) 제안 수. 한 제안으로 여러 예약이 확정돼도 1이다.
+  - `rate`: 분자 ÷ 분모(소수 넷째 자리, 0.15 = 15%). 분모가 0이면 `null`(표시하지 않음). 지도 추천 · 오늘의 코스 노출은 세지 않는다.
+- **재방문율**(FR-ANL-06 #4): 방문 처리된 손님 중 60일(`revisit_days` 설정값) 안에 다른 날짜에 다시 방문 처리된 손님의 비율이다.
+  - 날짜는 예약 시작 시각의 운영 시간대 날짜다. 같은 날 두 번은 재방문이 아니다. 간격이 정확히 60일이면 재방문이다.
+  - `region`은 권역 안 어느 가게든, `stores[].revisit`은 그 가게만 센다.
+  - `stores`: 참여 가게(승인 · 탈퇴 신청 중), 이름 순. 방문이 없으면 `0 · 0 · null`.
+  - 방문 손님이 1 ~ 4명이면 숫자를 모두 `null`로 숨기고 `belowMinimum: true`다(「분석 공통」).
+- **소개 수수료 총액**: 그 달(방문 처리된 달 = `settlement_month`)의 권역 소개 수수료 합계다. 금액 신고 정정 차액을 포함해 월 정산(A-04)과 같은 기준이다. 확정 여부와 관계없다.
+- 실패: `invalid`(`month` 형식) · `unauthorized` · `forbidden_role`
+
 ## 2. 예약 · 잔액 · 수수료 · 정산 · 서버 시계 (담당 D)
 
 D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약 · 방문 처리, 가상 잔액 · 예약금, 수수료 · 정산, 시연용 시각 조작.
