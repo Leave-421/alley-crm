@@ -568,6 +568,59 @@ C2 ~ C21. 로그인 · 회원가입 · 역할 · 비회원 조회, 가게 가입
 - **소개 수수료 총액**: 그 달(방문 처리된 달 = `settlement_month`)의 권역 소개 수수료 합계다. 금액 신고 정정 차액을 포함해 월 정산(A-04)과 같은 기준이다. 확정 여부와 관계없다.
 - 실패: `invalid`(`month` 형식) · `unauthorized` · `forbidden_role`
 
+### 추가 지표 · 쿠폰 지표 (C21)
+
+#### `GET /api/v1/owner/extra-metrics` — 사장님 추가 지표 (FR-ANL-08 · 09)
+#### `GET /api/v1/association/extra-metrics` — 상인회 추가 지표 (FR-ANL-08 · 09)
+
+- 역할: 사장님 경로는 사장님(내 가게, 승인 · 탈퇴 신청 중), 상인회 경로는 상인회(세션 계정의 권역). 다른 역할은 `403 forbidden_role`.
+- 범위: 사장님은 내 가게, 상인회는 권역 전체. 기간은 전체 기간이다.
+- 응답 `200` (두 경로가 같은 모양):
+
+  ```json
+  {
+    "funnel": { "clicks": 3, "exposures": 4, "reservations": 7, "visits": 6 },
+    "recommendationConversion": { "exposedPairs": 3, "convertedPairs": 1, "rate": 0.3333 },
+    "confirmedMoves": { "count": 6, "belowMinimum": false },
+    "categoryMoves": [
+      { "fromCategory": "cafe", "toCategory": "dessert", "moves": 5, "ratio": 0.8333, "belowMinimum": false },
+      { "fromCategory": "dessert", "toCategory": "cafe", "moves": null, "ratio": null, "belowMinimum": true }
+    ],
+    "hourlyReservations": [ { "dayOfWeek": 2, "hour": 12, "reservations": 5, "belowMinimum": false } ],
+    "storeCoupons": {
+      "downloads": 3, "applied": 1, "applyRate": 0.3333, "expired": 1, "expireRate": 0.3333,
+      "appliedVisited": 1, "visitCompletionRate": 1.0, "used": 1, "belowMinimum": false
+    },
+    "associationCoupons": null
+  }
+  ```
+
+- **단계별 건수** `funnel`(FR-ANL-08 #2): 서로 다른 기록에서 따로 센다.
+  - `clicks`: 가게 클릭(`store_click`).
+  - `exposures`: 이 가게(상인회는 권역 가게)가 지도 추천 카드에 보인 횟수(`recommendation_exposure`의 추천 가게).
+  - `reservations`: 모든 상태의 예약 수.
+  - `visits`: 방문 처리된 예약 수.
+- **추천 후 예약 전환율** `recommendationConversion`
+  - 분모 `exposedPairs`: (방문자, 추천 가게) 쌍의 수. 같은 방문자가 같은 가게를 여러 번 봐도 1이다.
+  - 분자 `convertedPairs`: 그 쌍을 처음 본 뒤에, 그 방문자와 이어진 손님이 그 가게에 예약을 신청한 쌍. 손님과 이어지지 않은 방문자는 분모에만 든다.
+  - 분모가 0이면 `rate: null`. 기간 제한은 없다.
+- **확인된 연계 방문** `confirmedMoves`: A-03 방문 흐름과 같은 기준이다(같은 손님이 같은 날 연달아 방문 처리한 서로 다른 두 가게). 사장님은 내 가게가 출발이나 도착인 이동만 센다.
+- **업종별 이동 비율** `categoryMoves`: 업종 → 업종 이동 수 ÷ 범위 안 전체 이동 수. 업종 이름 순이다.
+- **시간대별 예약** `hourlyReservations`: 예약 시작 시각(운영 시간대)의 요일(`1` 월 ~ `7` 일)과 시(`0` ~ `23`)별 예약 수다. 취소된 예약은 넣지 않는다(FR-ANL-07). 예약이 있는 칸만, 요일 · 시 순서로 준다.
+- **쿠폰 지표** `storeCoupons`(가게 쿠폰, 사장님은 내 가게 쿠폰) · `associationCoupons`(상인회 쿠폰 행사, 상인회 경로만. 사장님은 `null`)(FR-ANL-09)
+  - `downloads`: 발급된 쿠폰 수. 같은 회원이 여러 번 눌러도 발급된 장수만 센다(FR-ANL-09 #1). 클릭 기록은 섞지 않는다.
+  - `applied`: 한 번이라도 예약에 적용된 쿠폰(적용 뒤 사용 · 적용 취소 포함). `applyRate` = `applied` ÷ `downloads`.
+  - `expired`: 기간 만료 상태의 쿠폰. `expireRate` = `expired` ÷ `downloads`.
+  - `appliedVisited`: 적용된 예약이 방문 처리된 쿠폰. `visitCompletionRate` = `appliedVisited` ÷ `applied`.
+  - `used`: 사용 완료 수.
+  - 비율은 분모가 0이면 `null`이다.
+- **보낸 · 받은 손님 수**는 이 API에 넣지 않았다. 사장님은 `GET /api/v1/owner/referral-stats`(D16), 상인회는 가게 성과 비교(C19)를 쓴다.
+- **5명 미만**(「분석 공통」): 숨긴 묶음은 숫자가 `null`이고 `belowMinimum: true`다.
+  - 상인회: 이동 · 업종별 이동 · 시간대별 칸 · 쿠폰 묶음마다 고유 손님이 1 ~ 4명이면 숨긴다.
+  - 사장님: 다른 가게가 섞이는 이동(`confirmedMoves` · `categoryMoves`)만 숨긴다. 내 가게만의 숫자(단계별 건수 · 전환 · 시간대별 예약 · 쿠폰)는 숨기지 않는다.
+  - 단계별 건수 `funnel`과 추천 후 예약 전환율은 상인회에게도 숨기지 않는다(권역 전체 기록 건수).
+- 실패: `unauthorized` · `forbidden_role`
+
 ## 2. 예약 · 잔액 · 수수료 · 정산 · 서버 시계 (담당 D)
 
 D2 ~ D18. 예약 신청 · 상태 · 승인 · 취소 · 변경 · 코스 예약 · 방문 처리, 가상 잔액 · 예약금, 수수료 · 정산, 시연용 시각 조작.
