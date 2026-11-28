@@ -23,7 +23,7 @@ import java.util.Set;
  *
  * <ul>
  *   <li>손님: 회원 · 비회원, 성별 · 연령대(대학가라 20대 이하가 많음). 손님 수는 미결이라 설정값(NFR-07)</li>
- *   <li>예약: 학기 중 9 ~ 11월(운영 시간대), 업종별 시간 분포, 가게 영업시간 · 휴무일 · 슬롯 · 슬롯당 팀 수 · 최대 인원을 지킨다</li>
+ *   <li>예약: 어제까지 91일({@link DemoPeriod}, 운영 시간대), 업종별 시간 분포, 가게 영업시간 · 휴무일 · 슬롯 · 슬롯당 팀 수 · 최대 인원을 지킨다</li>
  *   <li>금요일 저녁 주점 예약 집중(NFR-08 패턴 2)</li>
  *   <li>취소 10% 안팎: 하루 전 · 당일 손님 취소, 가게 거절(NFR-08)</li>
  *   <li>나머지는 방문 처리, 방문 금액(쿠폰 할인 전)을 업종 · 인원으로 만든다</li>
@@ -40,12 +40,9 @@ import java.util.Set;
 public final class DemoReservationPlanner {
 
     public static final ZoneId SERVICE_ZONE = ZoneId.of("Asia/Seoul");
-    /** 학기 중 9 ~ 11월(NFR-07). */
-    public static final LocalDate PERIOD_START = LocalDate.of(2026, 9, 1);
-    public static final LocalDate PERIOD_END = LocalDate.of(2026, 11, 30);
 
     /** 예약번호 글자(CONTRACTS_API 「예약 응답」: 헷갈리는 0 O 1 I 제외). */
-    private static final String RESERVATION_NO_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    static final String RESERVATION_NO_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final int MAX_ATTEMPTS = 20;
 
     static final double CANCEL_DAY_BEFORE = 0.06;
@@ -74,24 +71,28 @@ public final class DemoReservationPlanner {
     /**
      * @param proposals 정식 코스 제안(E17)
      * @param courseLinks '다음 코스로 예약하기'로 만든 예약의 연결(E17)
+     * @param period 이 계획의 기간(뒤 계획들이 같은 기간을 쓴다)
      */
     public record Plan(List<Customer> customers, List<Reservation> reservations, List<Proposal> proposals,
-            List<CourseLink> courseLinks) {
+            List<CourseLink> courseLinks, DemoPeriod period) {
     }
 
     private final List<SeedRegionData.Store> stores;
+    private final DemoPeriod period;
     private final Random random;
 
-    private DemoReservationPlanner(List<SeedRegionData.Store> stores, long seed) {
+    private DemoReservationPlanner(List<SeedRegionData.Store> stores, DemoPeriod period, long seed) {
         this.stores = stores;
+        this.period = period;
         this.random = new Random(seed);
     }
 
-    public static Plan plan(List<SeedRegionData.Store> stores, int customerCount, long seed) {
+    /** 같은 seed · 같은 기간이면 같은 계획이다. */
+    public static Plan plan(List<SeedRegionData.Store> stores, DemoPeriod period, int customerCount, long seed) {
         if (customerCount < 1) {
             throw new IllegalArgumentException("가상 손님 수는 1 이상이어야 합니다: " + customerCount);
         }
-        return new DemoReservationPlanner(stores, seed).build(customerCount);
+        return new DemoReservationPlanner(stores, period, seed).build(customerCount);
     }
 
     private Plan build(int customerCount) {
@@ -115,7 +116,7 @@ public final class DemoReservationPlanner {
         List<Proposal> proposals = new ArrayList<>();
         List<CourseLink> links = new ArrayList<>();
         new CourseFlows(customers, reservations, teamsPerSlot, reservationNos, proposals, links).add();
-        return new Plan(customers, reservations, proposals, links);
+        return new Plan(customers, reservations, proposals, links, period);
     }
 
     // ---- 손님 ----
@@ -165,9 +166,8 @@ public final class DemoReservationPlanner {
 
     /** 요일 비중: 주말 · 금요일이 많다. */
     private LocalDate day() {
-        long days = ChronoUnit.DAYS.between(PERIOD_START, PERIOD_END) + 1;
         while (true) {
-            LocalDate day = PERIOD_START.plusDays(random.nextInt((int) days));
+            LocalDate day = period.start().plusDays(random.nextInt(period.days()));
             double weight = switch (day.getDayOfWeek()) {
                 case FRIDAY -> 1.4;
                 case SATURDAY -> 1.3;
@@ -508,9 +508,8 @@ public final class DemoReservationPlanner {
 
         /** 기간 안에서 평일 또는 주말 하루. */
         private LocalDate dayOf(boolean weekend) {
-            long days = ChronoUnit.DAYS.between(PERIOD_START, PERIOD_END) + 1;
             while (true) {
-                LocalDate day = PERIOD_START.plusDays(random.nextInt((int) days));
+                LocalDate day = period.start().plusDays(random.nextInt(period.days()));
                 boolean isWeekend = day.getDayOfWeek() == DayOfWeek.SATURDAY || day.getDayOfWeek() == DayOfWeek.SUNDAY;
                 if (isWeekend == weekend) {
                     return day;
@@ -533,12 +532,12 @@ public final class DemoReservationPlanner {
     }
 
     /** E16 슬롯 키(가게 @ 날짜 T 시작). 슬롯당 팀 수를 센다. */
-    private static String slotKey(SeedRegionData.Store store, LocalDateTime start) {
+    static String slotKey(SeedRegionData.Store store, LocalDateTime start) {
         return store.code() + "@" + start.toLocalDate() + "T" + start.toLocalTime();
     }
 
     /** 영업시간 안의 슬롯 시작 시각들. 마지막 슬롯은 영업 종료까지 끝나야 한다(D5). */
-    private static List<LocalTime> slotStarts(SeedRegionData.Store store) {
+    static List<LocalTime> slotStarts(SeedRegionData.Store store) {
         List<LocalTime> starts = new ArrayList<>();
         LocalTime t = store.openTime();
         while (!t.plusMinutes(store.slotMinutes()).isAfter(store.closeTime())
@@ -693,7 +692,7 @@ public final class DemoReservationPlanner {
             LocalDate baseDay = LocalDateTime.ofInstant(base.startAt(), SERVICE_ZONE).toLocalDate();
             boolean sameDay = !late && random.nextDouble() < SAME_DAY_COURSE_RATE;
             LocalDate day = sameDay ? baseDay : baseDay.plusDays(between(1, 4));
-            if (day.isAfter(PERIOD_END) || store.closedDays().contains(dayCode(day.getDayOfWeek()))) {
+            if (day.isAfter(period.end()) || store.closedDays().contains(dayCode(day.getDayOfWeek()))) {
                 return null;
             }
             Instant earliest = sameDay ? base.startAt().plus(Duration.ofMinutes(1)) : requestedAt.plus(Duration.ofHours(1));
@@ -719,7 +718,7 @@ public final class DemoReservationPlanner {
         /** NFR-08 패턴 3: 소개로 방문한 가게를 10 ~ 45일 안에 다시 예약(기간 안일 때만). */
         private void revisit(Customer customer, SeedRegionData.Store store, Reservation course) {
             LocalDate day = LocalDateTime.ofInstant(course.startAt(), SERVICE_ZONE).toLocalDate().plusDays(between(10, 45));
-            if (day.isAfter(PERIOD_END) || store.closedDays().contains(dayCode(day.getDayOfWeek()))) {
+            if (day.isAfter(period.end()) || store.closedDays().contains(dayCode(day.getDayOfWeek()))) {
                 return;
             }
             List<LocalTime> free = slotStarts(store).stream().filter(t -> hasRoom(store, LocalDateTime.of(day, t))).toList();

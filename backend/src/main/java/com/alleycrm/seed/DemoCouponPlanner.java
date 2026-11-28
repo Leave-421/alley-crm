@@ -39,9 +39,6 @@ public final class DemoCouponPlanner {
     static final double CANCELED_WITH_COUPON_RATE = 0.5;
     /** 받은 뒤 30일 안에 다른 기준 가게에서 같은 가게를 다시 본 노출(중복 차단 사례) 수. */
     static final int BLOCKED_REVISITS = 10;
-    /** 가상 데이터의 끝: 기간 마지막 날 다음 날 00:00(운영 시간대). 이때 기한이 지난 미사용 쿠폰은 만료로 둔다. */
-    static final Instant DATA_END = DemoReservationPlanner.PERIOD_END.plusDays(1)
-            .atStartOfDay(DemoReservationPlanner.SERVICE_ZONE).toInstant();
 
     /** 가게 쿠폰 행사(3.2). 쓰지 않는 칸은 null. */
     public record Event(String key, String storeCode, String benefitType, Integer discountAmount, Integer discountPercent,
@@ -83,34 +80,39 @@ public final class DemoCouponPlanner {
     }
 
     private final List<SeedRegionData.Store> stores;
+    private final DemoPeriod period;
+    /** 가상 데이터의 끝: 기간 마지막 날 다음 날 00:00(운영 시간대, {@link DemoPeriod#historyEnd}). 이때 기한이 지난 미사용 쿠폰은 만료로 둔다. */
+    private final Instant dataEnd;
     private final Random random;
 
-    private DemoCouponPlanner(List<SeedRegionData.Store> stores, long seed) {
+    private DemoCouponPlanner(List<SeedRegionData.Store> stores, DemoPeriod period, long seed) {
         this.stores = stores;
+        this.period = period;
+        this.dataEnd = period.historyEnd();
         this.random = new Random(seed);
     }
 
     public static Plan plan(List<SeedRegionData.Store> stores, DemoReservationPlanner.Plan reservations,
             DemoExplorationPlanner.Plan exploration, long seed) {
-        return new DemoCouponPlanner(stores, seed).build(reservations, exploration);
+        return new DemoCouponPlanner(stores, reservations.period(), seed).build(reservations, exploration);
     }
 
-    /** 행사 틀(시드 코드로 고정, 가게가 없으면 건너뜀). */
-    static List<Event> events() {
+    /** 행사 틀(시드 코드로 고정, 가게가 없으면 건너뜀). 날짜는 기간 첫날로부터 며칠 뒤(오늘이 2026-12-01이면 9/1 · 9/10 · 9/15 ~ 11/20 · 10/1). */
+    static List<Event> events(DemoPeriod period) {
         return List.of(
                 new Event("C1", "S08", "fixed_discount", 3000, null, null, null, null, 7, 80,
-                        kst(2026, 9, 1), null),
+                        kst(period, 0), null),
                 new Event("C2", "S05", "percent_discount", null, 10, 3000, null, null, 7, 60,
-                        kst(2026, 9, 10), null),
+                        kst(period, 9), null),
                 new Event("C3", "S10", "service", null, null, null, "선물 포장", 2000, 14, 40,
-                        kst(2026, 9, 15), kst(2026, 11, 20)),
+                        kst(period, 14), kst(period, 80)),
                 new Event("C4", "S12", "fixed_discount", 5000, null, null, null, null, 7, 50,
-                        kst(2026, 10, 1), null));
+                        kst(period, 30), null));
     }
 
     private Plan build(DemoReservationPlanner.Plan base, DemoExplorationPlanner.Plan exploration) {
         Set<String> storeCodes = stores.stream().map(SeedRegionData.Store::code).collect(Collectors.toSet());
-        List<Event> events = events().stream().filter(e -> storeCodes.contains(e.storeCode())).toList();
+        List<Event> events = events(period).stream().filter(e -> storeCodes.contains(e.storeCode())).toList();
         Map<Integer, Integer> visitorOf = new HashMap<>();
         Map<Integer, Instant> visitorSince = new HashMap<>();
         exploration.visitors().stream().filter(v -> v.customerIndex() != null).forEach(v -> {
@@ -180,7 +182,7 @@ public final class DemoCouponPlanner {
                 }
                 SourceExposure source = exposure(exposures, visitorOf.get(member.index()), event, downloadedAt);
                 Instant expiresAt = downloadedAt.plus(Duration.ofDays(event.validDays()));
-                boolean expired = !expiresAt.isAfter(DATA_END);
+                boolean expired = !expiresAt.isAfter(dataEnd);
                 coupons.add(new Coupon(event.key(), member.index(), event.storeCode(), source.baseStoreCode(),
                         source.key(), downloadedAt, expiresAt, expired ? "expired" : "downloaded", null, null, null,
                         expired ? Case.EXPIRED : Case.DOWNLOADED));
@@ -193,7 +195,7 @@ public final class DemoCouponPlanner {
         for (int i = 0; i < BLOCKED_REVISITS && !candidates.isEmpty(); i++) {
             Coupon c = candidates.remove(random.nextInt(candidates.size()));
             Instant shownAt = c.downloadedAt().plus(between(60, 25 * 24 * 60), ChronoUnit.MINUTES);
-            if (shownAt.isAfter(DATA_END)) {
+            if (shownAt.isAfter(dataEnd)) {
                 continue;
             }
             String otherBase = otherStore(c.storeCode(), c.baseStoreCode());
@@ -230,9 +232,8 @@ public final class DemoCouponPlanner {
 
     /** 행사 진행 중 · 데이터 기간 안의 임의 시각(10 ~ 22시). late면 기간 마지막 (쿠폰 기간 − 1)일 안. 없으면 null. */
     private Instant randomTime(Event event, boolean late) {
-        LocalDate from = late ? DemoReservationPlanner.PERIOD_END.minusDays(event.validDays() - 2)
-                : DemoReservationPlanner.PERIOD_START;
-        long days = ChronoUnit.DAYS.between(from, DemoReservationPlanner.PERIOD_END) + 1;
+        LocalDate from = late ? period.end().minusDays(event.validDays() - 2) : period.start();
+        long days = ChronoUnit.DAYS.between(from, period.end()) + 1;
         for (int attempt = 0; attempt < 20; attempt++) {
             LocalDate day = from.plusDays(random.nextInt((int) days));
             Instant at = LocalDateTime.of(day, LocalTime.of(10, 0).plusMinutes(between(0, 12 * 60)))
@@ -244,8 +245,9 @@ public final class DemoCouponPlanner {
         return null;
     }
 
-    private static Instant kst(int year, int month, int day) {
-        return LocalDate.of(year, month, day).atTime(9, 0).atZone(DemoReservationPlanner.SERVICE_ZONE).toInstant();
+    /** 기간 첫날로부터 days일 뒤 09:00(운영 시간대). */
+    private static Instant kst(DemoPeriod period, int days) {
+        return period.start().plusDays(days).atTime(9, 0).atZone(DemoReservationPlanner.SERVICE_ZONE).toInstant();
     }
 
     private String uuid() {

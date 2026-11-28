@@ -21,7 +21,8 @@ import org.junit.jupiter.api.Test;
 class DemoCouponPlannerTest {
 
     private static final SeedRegionData DATA = SeedDataLoader.loadRegionStores();
-    private static final DemoReservationPlanner.Plan RESERVATIONS = DemoReservationPlanner.plan(DATA.stores(), 600, 20261211L);
+    private static final DemoReservationPlanner.Plan RESERVATIONS = DemoReservationPlanner.plan(DATA.stores(),
+            DemoReservationPlannerTest.PERIOD, 600, 20261211L);
     private static final DemoExplorationPlanner.Plan EXPLORATION = DemoExplorationPlanner.plan(DATA.stores(), RESERVATIONS, 20261212L);
     private static final DemoCouponPlanner.Plan PLAN = DemoCouponPlanner.plan(DATA.stores(), RESERVATIONS, EXPLORATION, 20261213L);
     private static final Map<String, Event> EVENTS = PLAN.events().stream()
@@ -77,7 +78,7 @@ class DemoCouponPlannerTest {
         for (Coupon c : PLAN.coupons()) {
             if (c.reservationNo() == null) {
                 assertThat(c.kind()).isIn(Case.EXPIRED, Case.DOWNLOADED);
-                assertThat(c.expiresAt().isAfter(DemoCouponPlanner.DATA_END)).isEqualTo(c.kind() == Case.DOWNLOADED);
+                assertThat(c.expiresAt().isAfter(RESERVATIONS.period().historyEnd())).isEqualTo(c.kind() == Case.DOWNLOADED);
                 continue;
             }
             Reservation r = RESERVATION_BY_NO.get(c.reservationNo());

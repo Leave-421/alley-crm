@@ -97,6 +97,8 @@ class SeedRunner implements ApplicationRunner {
         log.info("[seed] 권역 1개, 가게 {}곳을 넣었습니다.", result.regionStores().storeIdsByCode().size());
         log.info("[seed] 시연 계정 {}", result.demoAccounts());
         log.info("[seed] 공공데이터 기본값 {}행", result.publicStats());
+        DemoPeriod period = result.period();
+        log.info("[seed] 가상 데이터 기간: 지난 기록 {} ~ {}, 오늘 {}(서버 시계 기준)", period.start(), period.end(), period.today());
         DemoReservationSeeder.Result demo = result.demoReservations();
         log.info("[seed] 가상 손님 {}명, 예약 {}건(방문 {} · 취소 {})", demo.customers(), demo.reservations(), demo.visited(),
                 demo.canceled());
@@ -107,6 +109,10 @@ class SeedRunner implements ApplicationRunner {
         DemoCouponSeeder.Result coupon = result.demoCoupons();
         log.info("[seed] 쿠폰 행사 {}개, 쿠폰 {}장 {}, 중복 차단 노출 {}건", coupon.events(), coupon.coupons(), coupon.byCase(),
                 coupon.blockedRevisits());
+        DemoUpcomingSeeder.Result upcoming = result.demoUpcoming();
+        log.info("[seed] 다가올 예약 {}건(신청 {} · 확정 {}, 변경 신청 {} · 지연 입력 {}), 방문 신고 {}건(사장님 알림 {}건)",
+                upcoming.reservations(), upcoming.requested(), upcoming.confirmed(), upcoming.changeRequests(),
+                upcoming.delays(), upcoming.reports(), upcoming.ownerNotifications());
     }
 
     private void logPlan(SeedRegionData data) {
