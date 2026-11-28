@@ -27,13 +27,14 @@ public class SuccessMetricsService {
 
     /** 분모: 권역 가게 예약에 표시된 정식 코스 제안(조합당 1행). 분자: 그중 소개가 확정된(수수료가 생긴) 제안, 제안당 1 */
     private static final String ACCEPTANCE = """
-            SELECT COUNT(*) AS shown,
+            SELECT %s AS grp, COUNT(*) AS shown,
                    COUNT(DISTINCT CASE WHEN EXISTS (SELECT 1 FROM reservation cr JOIN referral_fee f ON f.reservation_id = cr.id
                                                      WHERE cr.course_proposal_id = p.id) THEN p.id END) AS accepted
             FROM course_proposal p
             JOIN reservation b ON b.id = p.base_reservation_id
             JOIN store s ON s.id = b.store_id
             WHERE s.region_id = ?
+            GROUP BY grp
             """;
 
     /**
@@ -85,14 +86,9 @@ public class SuccessMetricsService {
         YearMonth ym = month(month);
         int revisitDays = settings.getInt(regionId, SettingKey.REVISIT_DAYS);
 
-        Acceptance acceptance = jdbc.queryForObject(ACCEPTANCE, (rs, i) -> {
-            long shown = rs.getLong("shown");
-            long accepted = rs.getLong("accepted");
-            return new Acceptance(shown, accepted, shown == 0 ? null : rate(accepted, shown));
-        }, regionId);
-
+        Acceptance acceptance = acceptance("0", regionId).getOrDefault("0", Acceptance.EMPTY);
         Map<String, Rate> region = revisit("0", revisitDays, regionId);
-        Map<String, Rate> byStore = revisit("r.store_id", revisitDays, regionId);
+        Map<String, Rate> byStore = revisitByStore(revisitDays, regionId);
         List<StoreRevisit> stores = jdbc.query("""
                 SELECT id, name FROM store WHERE region_id = ? AND join_status IN ('approved', 'withdraw_requested')
                 ORDER BY name, id
@@ -104,6 +100,26 @@ public class SuccessMetricsService {
         Long feeTotal = jdbc.queryForObject(FEE_TOTAL, Long.class, regionId, ym.toString());
         return new Metrics(acceptance, new RevisitSummary(revisitDays, region.getOrDefault("0", Rate.EMPTY), stores),
                 new FeeTotal(ym.toString(), feeTotal));
+    }
+
+    /** 가게 ID → 그 가게 예약에 표시된 제안의 수락률(가게 성과 비교 C19) */
+    Map<String, Acceptance> acceptanceByStore(long regionId) {
+        return acceptance("b.store_id", regionId);
+    }
+
+    /** 가게 ID → 그 가게만 센 재방문율(가게 성과 비교 C19) */
+    Map<String, Rate> revisitByStore(int days, long regionId) {
+        return revisit("r.store_id", days, regionId);
+    }
+
+    private Map<String, Acceptance> acceptance(String group, long regionId) {
+        Map<String, Acceptance> out = new HashMap<>();
+        jdbc.query(ACCEPTANCE.formatted(group), rs -> {
+            long shown = rs.getLong("shown");
+            long accepted = rs.getLong("accepted");
+            out.put(rs.getString("grp"), new Acceptance(shown, accepted, rate(accepted, shown)));
+        }, regionId);
+        return out;
     }
 
     /** 묶음 → 재방문율. 방문한 손님이 1 ~ 4명이면 숨긴다 */
@@ -130,13 +146,14 @@ public class SuccessMetricsService {
         }
     }
 
-    /** 소수 넷째 자리까지(0.15 = 15%) */
-    private static double rate(long numerator, long denominator) {
-        return Math.round(numerator * 10_000.0 / denominator) / 10_000.0;
+    /** 소수 넷째 자리까지(0.15 = 15%). 분모가 0이면 null(표시하지 않음) */
+    static Double rate(long numerator, long denominator) {
+        return denominator == 0 ? null : Math.round(numerator * 10_000.0 / denominator) / 10_000.0;
     }
 
     /** @param rate 분모가 0이면 null(표시하지 않음, FR-ANL-06 #3) */
     public record Acceptance(long shownProposals, long acceptedProposals, Double rate) {
+        static final Acceptance EMPTY = new Acceptance(0, 0, null);
     }
 
     /** 방문한 손님 수 · 재방문한 손님 수 · 비율. 숨기면(belowMinimum) 숫자는 모두 null, 방문이 없으면 0 · 0 · null */
