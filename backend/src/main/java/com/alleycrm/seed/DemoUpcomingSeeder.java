@@ -1,5 +1,6 @@
 package com.alleycrm.seed;
 
+import com.alleycrm.notification.NotificationType;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -13,7 +14,8 @@ import org.springframework.stereotype.Component;
 /**
  * ⑧ 다가올 예약 · 방문 신고(#315): {@link DemoUpcomingPlanner}의 계획을 예약 · 방문 신고 표에 넣는다.
  * 예약은 {@code data_source = 'demo'}이고(방문 신고 표에는 그 칸이 없다) 시각 칸은 UTC 값이다.
- * 지난 기록(⑤)과 같이 예약금은 예약 칸에만 남기고 가상 잔액 거래는 만들지 않는다. 소개 · 쿠폰 · 알림은 만들지 않는다.
+ * 지난 기록(⑤)과 같이 예약금은 예약 칸에만 남기고 가상 잔액 거래는 만들지 않는다. 소개 · 쿠폰은 만들지 않는다.
+ * 알림은 사장님 확인 요청 신고의 사장님 알림만 넣는다({@link #notifyOwnersOfCheckRequests}).
  */
 @Component
 @Profile("seed")
@@ -21,6 +23,8 @@ import org.springframework.stereotype.Component;
 class DemoUpcomingSeeder {
 
     static final String DEMO = DemoReservationSeeder.DEMO;
+    /** notification.recipient_type의 계정 값(C14 NotificationType은 패키지 안에서만 보인다). */
+    static final String RECIPIENT_ACCOUNT = "account";
 
     private final JdbcTemplate jdbc;
     private final DemoDataProperties properties;
@@ -30,8 +34,9 @@ class DemoUpcomingSeeder {
         this.properties = properties;
     }
 
-    /** 넣은 다가올 예약 수(신청 · 확정 · 그중 변경 신청 · 지연 입력)와 방문 신고 수. */
-    record Result(int reservations, int requested, int confirmed, int changeRequests, int delays, int reports) {
+    /** 넣은 다가올 예약 수(신청 · 확정 · 그중 변경 신청 · 지연 입력), 방문 신고 수, 신고 확인 요청 사장님 알림 수. */
+    record Result(int reservations, int requested, int confirmed, int changeRequests, int delays, int reports,
+            int ownerNotifications) {
     }
 
     /** @param now 시드를 돌린 시각(기간의 오늘과 같은 날) */
@@ -41,12 +46,14 @@ class DemoUpcomingSeeder {
                 properties.randomSeed() + 3);
         insertReservations(plan.reservations(), reservations.customerIds(), regionStores.storeIdsByCode());
         insertReports(plan.reports(), reservations.customerIds(), reservations.reservationIds());
+        int notified = notifyOwnersOfCheckRequests(now);
 
         List<DemoUpcomingPlanner.Upcoming> rows = plan.reservations();
         int requested = (int) rows.stream().filter(u -> DemoUpcomingPlanner.REQUESTED.equals(u.status())).count();
         int changes = (int) rows.stream().filter(DemoUpcomingPlanner.Upcoming::changeRequested).count();
         int delays = (int) rows.stream().filter(u -> u.delayEta() != null).count();
-        return new Result(rows.size(), requested, rows.size() - requested, changes, delays, plan.reports().size());
+        return new Result(rows.size(), requested, rows.size() - requested, changes, delays, plan.reports().size(),
+                notified);
     }
 
     private void insertReservations(List<DemoUpcomingPlanner.Upcoming> upcoming, Map<Integer, Long> customerIds,
@@ -77,6 +84,28 @@ class DemoUpcomingSeeder {
                 INSERT INTO visit_report (reservation_id, customer_id, type, claimed_amount, status, created_at)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """, rows);
+    }
+
+    /**
+     * 사장님 확인 요청 신고마다 그 가게 사장님에게 {@code visit_report_check_requested} 알림 한 행(C23 · C14
+     * {@code VisitReportNotificationListener}와 같은 칸 · payload). 사장님 계정이 있는 가게(시연 사장님 S01)만 생긴다.
+     * 상인회가 요청한 시각은 신고 30분 뒤로 두되 지금을 넘지 않는다. 읽지 않은 상태다.
+     *
+     * @return 넣은 알림 수
+     */
+    int notifyOwnersOfCheckRequests(Instant now) {
+        return jdbc.update("""
+                INSERT INTO notification (recipient_type, recipient_id, type, payload, created_at)
+                SELECT ?, a.id, ?,
+                       JSON_OBJECT('visitReportId', CAST(v.id AS CHAR), 'reservationId', CAST(v.reservation_id AS CHAR)),
+                       LEAST(v.created_at + INTERVAL 30 MINUTE, ?)
+                FROM visit_report v
+                JOIN reservation r ON r.id = v.reservation_id
+                JOIN account a ON a.store_id = r.store_id AND a.role = 'owner'
+                WHERE v.status = ? AND r.data_source = ?
+                ORDER BY v.id
+                """, RECIPIENT_ACCOUNT, NotificationType.VISIT_REPORT_CHECK_REQUESTED, utc(now),
+                DemoUpcomingPlanner.REPORT_OWNER_CHECK_REQUESTED, DEMO);
     }
 
     private static long storeId(Map<String, Long> storeIds, String code) {

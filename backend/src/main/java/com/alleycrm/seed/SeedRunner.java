@@ -110,8 +110,9 @@ class SeedRunner implements ApplicationRunner {
         log.info("[seed] 쿠폰 행사 {}개, 쿠폰 {}장 {}, 중복 차단 노출 {}건", coupon.events(), coupon.coupons(), coupon.byCase(),
                 coupon.blockedRevisits());
         DemoUpcomingSeeder.Result upcoming = result.demoUpcoming();
-        log.info("[seed] 다가올 예약 {}건(신청 {} · 확정 {}, 변경 신청 {} · 지연 입력 {}), 방문 신고 {}건", upcoming.reservations(),
-                upcoming.requested(), upcoming.confirmed(), upcoming.changeRequests(), upcoming.delays(), upcoming.reports());
+        log.info("[seed] 다가올 예약 {}건(신청 {} · 확정 {}, 변경 신청 {} · 지연 입력 {}), 방문 신고 {}건(사장님 알림 {}건)",
+                upcoming.reservations(), upcoming.requested(), upcoming.confirmed(), upcoming.changeRequests(),
+                upcoming.delays(), upcoming.reports(), upcoming.ownerNotifications());
     }
 
     private void logPlan(SeedRegionData data) {

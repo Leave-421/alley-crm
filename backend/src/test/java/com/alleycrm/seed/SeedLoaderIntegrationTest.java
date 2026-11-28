@@ -50,6 +50,9 @@ class SeedLoaderIntegrationTest {
     @Autowired
     AppClock clock;
 
+    @Autowired
+    DemoUpcomingSeeder upcomingSeeder;
+
     /** 시드를 돌린 시각: 2026-12-01 14:00 KST. */
     static final Instant NOW = Instant.parse("2026-12-01T05:00:00Z");
 
@@ -239,6 +242,41 @@ class SeedLoaderIntegrationTest {
                 SELECT COUNT(*) FROM reservation r JOIN customer c ON c.id = r.customer_id
                 WHERE r.status = 'visited' AND (c.last_visit_at IS NULL OR c.last_visit_at < r.visited_at)
                 """, Integer.class)).isZero();
+    }
+
+    @Test
+    void 사장님_확인_요청_신고는_그_가게_사장님_알림함에도_있다_315() {
+        SeedLoader.Result result = loader.resetAndLoad(data);
+        // 이 테스트는 시연 계정 없이 돈다: 사장님 계정이 없으면 알림도 없다
+        assertThat(result.demoUpcoming().ownerNotifications()).isZero();
+        assertThat(count("notification")).isZero();
+
+        // 확인 요청 신고가 있는 가게마다 사장님 계정을 둔다(시연에서는 S01의 demoowner)
+        List<Long> requestedStores = jdbc.queryForList("""
+                SELECT DISTINCT r.store_id FROM visit_report v JOIN reservation r ON r.id = v.reservation_id
+                WHERE v.status = 'owner_check_requested'""", Long.class);
+        for (long storeId : requestedStores) {
+            jdbc.update("INSERT INTO account (login_id, password_hash, role, store_id) VALUES (?, 'x', 'owner', ?)",
+                    "owner-" + storeId, storeId);
+        }
+        int requests = jdbc.queryForObject("SELECT COUNT(*) FROM visit_report WHERE status = 'owner_check_requested'",
+                Integer.class);
+
+        assertThat(requests).isPositive();
+        assertThat(upcomingSeeder.notifyOwnersOfCheckRequests(NOW)).isEqualTo(requests);
+        // C23 · C14와 같은 칸 · payload(ID는 문자열), 그 신고 가게의 사장님에게, 신고 뒤 · 지금까지, 읽지 않음
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM notification n
+                JOIN visit_report v ON v.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(n.payload, '$.visitReportId')) AS UNSIGNED)
+                JOIN reservation r ON r.id = v.reservation_id
+                JOIN account a ON a.id = n.recipient_id AND a.role = 'owner' AND a.store_id = r.store_id
+                WHERE n.recipient_type = 'account' AND n.type = 'visit_report_check_requested'
+                  AND JSON_TYPE(JSON_EXTRACT(n.payload, '$.visitReportId')) = 'STRING'
+                  AND JSON_UNQUOTE(JSON_EXTRACT(n.payload, '$.reservationId')) = CAST(v.reservation_id AS CHAR)
+                  AND v.status = 'owner_check_requested'
+                  AND n.created_at > v.created_at AND n.created_at <= ? AND n.read_at IS NULL
+                """, Integer.class, utc(NOW))).isEqualTo(requests);
+        assertThat(count("notification")).isEqualTo(requests);
     }
 
     @Test
